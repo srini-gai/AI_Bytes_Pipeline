@@ -1,0 +1,21 @@
+{
+  "name": "aibytes-remotion",
+  "version": "1.0.0",
+  "description": "Remotion video composition for AI Bytes Pipeline",
+  "private": true,
+  "scripts": {
+    "studio": "npx remotion studio",
+    "render": "npx remotion render AIBytesReel"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.292",
+    "remotion": "4.0.292",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.3.0"
+  }
+}

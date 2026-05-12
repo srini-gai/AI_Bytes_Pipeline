@@ -1,0 +1,28 @@
+# Claude API — script generation
+anthropic>=0.40.0
+
+# ElevenLabs — text-to-speech
+elevenlabs>=1.0.0
+
+# Faster-Whisper — local transcription via CTranslate2 (no PyTorch, faster than openai-whisper)
+faster-whisper>=1.0.0
+
+# Video processing
+moviepy>=1.0.3
+
+# FFmpeg-python — FFmpeg wrapper (FFmpeg binary must be installed separately)
+ffmpeg-python>=0.2.0
+
+# YouTube Data API v3
+google-api-python-client>=2.110.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+
+# Environment / config
+python-dotenv>=1.0.0
+
+# HTTP
+requests>=2.31.0
+
+# Utilities
+pathlib2>=2.3.7; python_version < "3.10"

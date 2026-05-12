@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Bytes Pipeline
+After=network.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/aibytes
+ExecStart=/opt/aibytes/venv/bin/python orchestrator.py
+EnvironmentFile=/opt/aibytes/.env
+StandardOutput=append:/var/log/aibytes/pipeline.log
+StandardError=append:/var/log/aibytes/pipeline.log
+TimeoutStartSec=7200
+
+[Install]
+WantedBy=multi-user.target

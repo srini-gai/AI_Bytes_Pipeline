@@ -1,0 +1,11 @@
+{
+  "name": "aibytes-pipeline",
+  "version": "1.0.0",
+  "description": "AI Bytes Pipeline — root package.json for Node.js scripts",
+  "private": true,
+  "scripts": {
+    "remotion:install": "cd remotion && npm install",
+    "remotion:studio": "cd remotion && npx remotion studio",
+    "remotion:render": "cd remotion && npx remotion render"
+  }
+}

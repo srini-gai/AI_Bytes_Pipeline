@@ -1,0 +1,52 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Output — generated files, can be large
+output/
+
+# Media files
+*.mp3
+*.mp4
+*.srt
+*.wav
+
+# JSON output files (generated per run)
+*.json
+!topics.txt
+!package.json
+!remotion/package.json
+!remotion/src/**/*.json
+
+# Pexels clip cache
+remotion/public/clips/
+
+# Logs
+orchestrator.log
+*.log
+
+# Node / Remotion
+node_modules/
+remotion/node_modules/
+remotion/out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

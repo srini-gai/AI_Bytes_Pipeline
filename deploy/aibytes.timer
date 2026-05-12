@@ -1,0 +1,11 @@
+[Unit]
+Description=AI Bytes Pipeline Weekly Timer
+Requires=aibytes.service
+
+[Timer]
+# Every Sunday at 06:00 IST = 00:30 UTC
+OnCalendar=Sun *-*-* 00:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
