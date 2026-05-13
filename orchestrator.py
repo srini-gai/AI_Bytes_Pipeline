@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import subprocess
 import sys
 import traceback
 from datetime import date, datetime, timezone
@@ -297,8 +298,27 @@ def _print_summary(all_results: list[dict], dry_run: bool) -> None:
         logger.info(f"Pipeline complete — {total}/{total} episodes ok")
 
 
+def sync_from_git() -> None:
+    """Pull latest code and topics from GitHub before running."""
+    try:
+        result = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd=Path(__file__).parent,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.info(f"Git pull successful: {result.stdout.strip()}")
+        else:
+            logger.warning(f"Git pull failed: {result.stderr.strip()} — continuing with existing files")
+    except Exception as e:
+        logger.warning(f"Git pull error: {e} — continuing with existing files")
+
+
 def main() -> None:
     _setup_logging()
+    sync_from_git()
 
     parser = argparse.ArgumentParser(description="AI Bytes Pipeline Orchestrator")
     parser.add_argument("--episode", type=int, help="Run only this episode number (1-based)")
