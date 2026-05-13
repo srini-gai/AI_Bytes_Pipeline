@@ -42,9 +42,9 @@ def _mp3_duration(path: Path) -> float:
 
 
 def _validate_duration(path: Path) -> float:
-    """Check MP3 duration is within 45–65 s. Returns duration."""
+    """Check MP3 duration is within MIN–MAX seconds. Returns duration."""
     duration = _mp3_duration(path)
-    if not (MIN_DURATION <= duration <= MAX_DURATION):
+    if duration < MIN_DURATION or duration > MAX_DURATION:
         raise ValueError(
             f"MP3 duration {duration:.1f}s is outside {MIN_DURATION}–{MAX_DURATION}s window"
         )

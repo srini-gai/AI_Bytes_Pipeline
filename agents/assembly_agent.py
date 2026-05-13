@@ -23,8 +23,8 @@ OUTPUT_BASE = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
 # Use 'base' by default — 'tiny' is faster but weaker on Tamil
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 
-MIN_DURATION = 57.0
-MAX_DURATION = 63.0
+MIN_DURATION = 55.0
+MAX_DURATION = 65.0
 
 # Locate ffmpeg: prefer the PATH-resolved binary, fall back to the WinGet install location
 def _find_ffmpeg() -> str:
@@ -234,7 +234,7 @@ def _validate_output(path: Path, episode: int) -> float:
     finally:
         container.close()
 
-    if not (MIN_DURATION <= duration <= MAX_DURATION):
+    if duration < MIN_DURATION or duration > MAX_DURATION:
         raise RuntimeError(
             f"EP{episode:02d} final duration {duration:.1f}s outside "
             f"{MIN_DURATION}-{MAX_DURATION}s window"

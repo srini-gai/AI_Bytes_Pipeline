@@ -160,9 +160,20 @@ def fetch_pexels_clip(
             return cached
         except (urllib.error.URLError, OSError) as e:
             last_error = e
-            logger.warning(f"Pexels download '{filename}' attempt {attempt}/3: {e}")
+            # WinError 10054 = connection reset by peer — CDN drops long downloads;
+            # wait 30s to let the connection settle before retrying.
+            winerror = getattr(e, "winerror", None) or getattr(getattr(e, "reason", None), "winerror", None)
+            if winerror == 10054:
+                wait = 30
+                logger.warning(
+                    f"Pexels download '{filename}' attempt {attempt}/3: WinError 10054 "
+                    f"(connection reset) — waiting {wait}s before retry"
+                )
+            else:
+                wait = 2 ** attempt
+                logger.warning(f"Pexels download '{filename}' attempt {attempt}/3: {e}")
             if attempt < 3:
-                time.sleep(2 ** attempt)
+                time.sleep(wait)
 
     raise RuntimeError(f"Pexels download failed for '{query}': {last_error}")
 
