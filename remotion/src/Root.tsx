@@ -34,19 +34,28 @@ const defaultProps: AIBytesReelProps = {
   voiceover: 'Sample voiceover — replace with real script voiceover field.',
   takeaway: 'RAG = LLM + Your Real Data. No fine-tuning needed.',
   tags: '#AIBytes #RAG #LLM #GenerativeAI',
+  diagram_spec: {
+    type: 'flow',
+    steps: [
+      {icon: '🔍', label: 'Retrieve'},
+      {icon: '📎', label: 'Augment'},
+      {icon: '✨', label: 'Generate'},
+      {icon: '✅', label: 'Answer'},
+    ],
+  },
 };
 
 export const RemotionRoot: React.FC = () => {
   return (
     <Composition
       id="AIBytesReel"
-      component={AIBytesReel}
+      // Cast required: Remotion's LooseComponentType expects Record<string,unknown>
+      component={AIBytesReel as unknown as React.ComponentType<Record<string, unknown>>}
       durationInFrames={1800}
       fps={30}
       width={1080}
       height={1920}
-      defaultProps={defaultProps}
+      defaultProps={defaultProps as unknown as Record<string, unknown>}
     />
   );
 };
-

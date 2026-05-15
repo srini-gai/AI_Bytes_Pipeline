@@ -18,8 +18,13 @@ REQUIRED_FIELDS = [
     "episode", "topic", "title", "hook", "concept",
     "slides", "voiceover", "takeaway", "tags",
     "youtube_title", "youtube_description", "scheduled_publish",
-    "theme",
+    "theme", "diagram_spec",
 ]
+
+_VALID_DIAGRAM_TYPES = {
+    "hub_spoke", "cluster", "split_compare",
+    "dial", "bar_chart", "side_by_side", "flow",
+}
 
 # Rotate through 5 hook formulas by episode number
 HOOK_FORMULAS = [
@@ -62,7 +67,8 @@ Required JSON schema:
     "accent2": "<secondary hex color from theme guide>",
     "overlay": "<rgba CSS string, e.g. rgba(20,0,0,0.45)>",
     "pexels_mood": "<2-4 word mood for Pexels video searches>"
-  }
+  },
+  "diagram_spec": "<object — see DIAGRAM GUIDE below for exact schema per type>"
 }
 
 RULES (violation = invalid output):
@@ -71,6 +77,7 @@ RULES (violation = invalid output):
 - slides: EXACTLY 4 items. Each covers a different angle.
 - youtube_title: MUST end with ' #Shorts' (space then #Shorts).
 - theme.name: MUST be exactly one of the 6 values listed. Use the exact colors from the THEME GUIDE.
+- diagram_spec.type: MUST be exactly one of the 7 values in the DIAGRAM GUIDE. Populate only the fields for that type.
 - Output raw JSON only — no ```json fences, no preamble.
 
 THEME GUIDE — pick based on the topic's emotional feel:
@@ -79,7 +86,35 @@ THEME GUIDE — pick based on the topic's emotional feel:
 - creative : prompting, ideas, writing, generation          → accent=#f59e0b, accent2=#fb923c, overlay=rgba(20,10,0,0.40),   pexels_mood="warm golden creative"
 - future   : agents, automation, next-gen AI, robotics      → accent=#22d3ee, accent2=#818cf8, overlay=rgba(0,10,20,0.45),   pexels_mood="cyan space futuristic"
 - technical: databases, architecture, code, vectors, search → accent=#22c55e, accent2=#4ade80, overlay=rgba(0,15,5,0.45),    pexels_mood="green tech dark"
-- energy   : general AI concepts, exciting breakthroughs    → accent=#a78bfa, accent2=#34d399, overlay=rgba(5,5,16,0.35),    pexels_mood="purple neon dark"\
+- energy   : general AI concepts, exciting breakthroughs    → accent=#a78bfa, accent2=#34d399, overlay=rgba(5,5,16,0.35),    pexels_mood="purple neon dark"
+
+DIAGRAM GUIDE — pick type by topic, then output ONLY the fields shown for that type:
+
+hub_spoke   → MCP Protocol, AI Agents
+  {"type":"hub_spoke","hub":"<center node label>","spokes":["<node>","<node>","<node>","<node>"]}
+  (4-6 spokes; each is a short label for a connected capability or client)
+
+cluster     → Embeddings
+  {"type":"cluster","groups":[{"label":"<group name>","items":["<item>","<item>","<item>"]},{"label":"<group name>","items":["<item>","<item>","<item>"]}]}
+  (2-3 groups of semantically similar words/concepts)
+
+split_compare → Hallucination
+  {"type":"split_compare","left":{"label":"<what AI says>","points":["<point>","<point>"]},"right":{"label":"<reality>","points":["<point>","<point>"]},"verdict":"<one-line conclusion about the gap>"}
+
+dial        → Temperature parameter
+  {"type":"dial","label":"<parameter name>","min_label":"<low end description>","max_label":"<high end description>","ticks":[{"value":0.0,"description":"<what this setting does>"},{"value":0.7,"description":"<what this setting does>"},{"value":1.0,"description":"<what this setting does>"}]}
+
+bar_chart   → Few-shot prompting, LLM evaluation
+  {"type":"bar_chart","title":"<chart title>","bars":[{"label":"<category>","value":<0-100>},{"label":"<category>","value":<0-100>},...]}
+  (3-5 bars; values are relative 0-100 scores/percentages)
+
+side_by_side → Local LLMs, Fine-tuning vs RAG
+  {"type":"side_by_side","left":{"label":"<option A>","points":["<point>","<point>","<point>"]},"right":{"label":"<option B>","points":["<point>","<point>","<point>"]}}
+  (neutral comparison — no verdict)
+
+flow        → RAG, Chain of Thought, Second Brain
+  {"type":"flow","steps":[{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"}]}
+  (3-5 steps in execution order)\
 """
 
 _TAMIL_SYSTEM_SUFFIX = (
@@ -128,6 +163,67 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text)
 
 
+def _validate_diagram_spec(spec: object, episode: int) -> None:
+    if not isinstance(spec, dict):
+        raise ValueError("'diagram_spec' must be a JSON object")
+    dtype = spec.get("type")
+    if dtype not in _VALID_DIAGRAM_TYPES:
+        raise ValueError(
+            f"diagram_spec.type '{dtype}' must be one of {sorted(_VALID_DIAGRAM_TYPES)}"
+        )
+    if dtype == "hub_spoke":
+        if not spec.get("hub"):
+            raise ValueError("diagram_spec hub_spoke requires 'hub'")
+        spokes = spec.get("spokes", [])
+        if not isinstance(spokes, list) or len(spokes) < 3:
+            raise ValueError("diagram_spec hub_spoke requires at least 3 spokes")
+    elif dtype == "cluster":
+        groups = spec.get("groups", [])
+        if not isinstance(groups, list) or len(groups) < 2:
+            raise ValueError("diagram_spec cluster requires at least 2 groups")
+        for g in groups:
+            if not g.get("label") or not isinstance(g.get("items"), list) or len(g["items"]) < 2:
+                raise ValueError("diagram_spec cluster each group needs 'label' and at least 2 items")
+    elif dtype == "split_compare":
+        for side in ("left", "right"):
+            s = spec.get(side)
+            if not isinstance(s, dict) or not s.get("label") or not isinstance(s.get("points"), list):
+                raise ValueError(f"diagram_spec split_compare requires '{side}' with label and points[]")
+        if not spec.get("verdict"):
+            raise ValueError("diagram_spec split_compare requires 'verdict'")
+    elif dtype == "dial":
+        for key in ("label", "min_label", "max_label"):
+            if not spec.get(key):
+                raise ValueError(f"diagram_spec dial requires '{key}'")
+        ticks = spec.get("ticks", [])
+        if not isinstance(ticks, list) or len(ticks) < 2:
+            raise ValueError("diagram_spec dial requires at least 2 ticks")
+        for tick in ticks:
+            if not isinstance(tick.get("value"), (int, float)) or not tick.get("description"):
+                raise ValueError("diagram_spec dial each tick needs 'value' (number) and 'description'")
+    elif dtype == "bar_chart":
+        if not spec.get("title"):
+            raise ValueError("diagram_spec bar_chart requires 'title'")
+        bars = spec.get("bars", [])
+        if not isinstance(bars, list) or len(bars) < 2:
+            raise ValueError("diagram_spec bar_chart requires at least 2 bars")
+        for bar in bars:
+            if not bar.get("label") or not isinstance(bar.get("value"), (int, float)):
+                raise ValueError("diagram_spec bar_chart each bar needs 'label' and numeric 'value'")
+    elif dtype == "side_by_side":
+        for side in ("left", "right"):
+            s = spec.get(side)
+            if not isinstance(s, dict) or not s.get("label") or not isinstance(s.get("points"), list):
+                raise ValueError(f"diagram_spec side_by_side requires '{side}' with label and points[]")
+    elif dtype == "flow":
+        steps = spec.get("steps", [])
+        if not isinstance(steps, list) or len(steps) < 2:
+            raise ValueError("diagram_spec flow requires at least 2 steps")
+        for step in steps:
+            if not step.get("icon") or not step.get("label"):
+                raise ValueError("diagram_spec flow each step needs 'icon' and 'label'")
+
+
 def _validate(data: dict, episode: int) -> None:
     missing = [f for f in REQUIRED_FIELDS if f not in data]
     if missing:
@@ -163,6 +259,8 @@ def _validate(data: dict, episode: int) -> None:
         raise ValueError(
             f"theme.name '{theme['name']}' must be one of {sorted(_VALID_THEMES)}"
         )
+
+    _validate_diagram_spec(data.get("diagram_spec"), episode)
 
 
 def run(topic: str, episode: int, week: int, lang: str = "en") -> dict:

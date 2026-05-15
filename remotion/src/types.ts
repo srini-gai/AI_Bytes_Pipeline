@@ -22,6 +22,83 @@ export interface ClipsMap {
   cta?: string;
 }
 
+// ─── Diagram spec types ───────────────────────────────────────────────────────
+
+export interface SplitPanel {
+  label: string;
+  points: string[];
+}
+
+export interface HubSpokeSpec {
+  type: 'hub_spoke';
+  hub: string;
+  spokes: string[];
+}
+
+export interface ClusterGroup {
+  label: string;
+  items: string[];
+}
+export interface ClusterSpec {
+  type: 'cluster';
+  groups: ClusterGroup[];
+}
+
+export interface SplitCompareSpec {
+  type: 'split_compare';
+  left: SplitPanel;
+  right: SplitPanel;
+  verdict: string;
+}
+
+export interface SideBySideSpec {
+  type: 'side_by_side';
+  left: SplitPanel;
+  right: SplitPanel;
+}
+
+export interface DialTick {
+  value: number;
+  description: string;
+}
+export interface DialSpec {
+  type: 'dial';
+  label: string;
+  min_label: string;
+  max_label: string;
+  ticks: DialTick[];
+}
+
+export interface Bar {
+  label: string;
+  value: number;
+}
+export interface BarChartSpec {
+  type: 'bar_chart';
+  title: string;
+  bars: Bar[];
+}
+
+export interface FlowStep {
+  icon: string;
+  label: string;
+}
+export interface FlowSpec {
+  type: 'flow';
+  steps: FlowStep[];
+}
+
+export type DiagramSpec =
+  | HubSpokeSpec
+  | ClusterSpec
+  | SplitCompareSpec
+  | SideBySideSpec
+  | DialSpec
+  | BarChartSpec
+  | FlowSpec;
+
+// ─── Main composition props ───────────────────────────────────────────────────
+
 export interface AIBytesReelProps {
   episode: string;
   topic: string;
@@ -34,4 +111,5 @@ export interface AIBytesReelProps {
   tags: string;
   theme?: Theme;
   clips?: ClipsMap;
+  diagram_spec?: DiagramSpec;
 }

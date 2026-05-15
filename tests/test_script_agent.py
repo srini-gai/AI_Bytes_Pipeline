@@ -49,6 +49,15 @@ MINIMAL_SCRIPT = {
         "overlay": "rgba(20,0,0,0.45)",
         "pexels_mood": "dark dramatic red",
     },
+    "diagram_spec": {
+        "type": "flow",
+        "steps": [
+            {"icon": "🔍", "label": "Retrieve"},
+            {"icon": "📎", "label": "Augment"},
+            {"icon": "✨", "label": "Generate"},
+            {"icon": "✅", "label": "Answer"},
+        ],
+    },
 }
 
 
@@ -113,6 +122,112 @@ def test_validate_rejects_title_without_shorts():
     bad = {**MINIMAL_SCRIPT, "youtube_title": "Missing the tag"}
     with pytest.raises(ValueError, match="#Shorts"):
         script_agent._validate(bad, 1)
+
+
+# ── diagram_spec validation ───────────────────────────────────────────────────
+
+def test_validate_rejects_missing_diagram_spec():
+    bad = {k: v for k, v in MINIMAL_SCRIPT.items() if k != "diagram_spec"}
+    with pytest.raises(ValueError, match="Missing fields"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_invalid_diagram_type():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {"type": "pie_chart"}}
+    with pytest.raises(ValueError, match="diagram_spec.type"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_diagram_spec_not_object():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": "flow"}
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_hub_spoke_missing_hub():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {"type": "hub_spoke", "spokes": ["A", "B", "C"]}}
+    with pytest.raises(ValueError, match="hub"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_hub_spoke_too_few_spokes():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {"type": "hub_spoke", "hub": "Center", "spokes": ["A", "B"]}}
+    with pytest.raises(ValueError, match="3 spokes"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_flow_too_few_steps():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {"type": "flow", "steps": [{"icon": "🔍", "label": "Retrieve"}]}}
+    with pytest.raises(ValueError, match="2 steps"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_flow_step_missing_icon():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {"type": "flow", "steps": [{"label": "Retrieve"}, {"label": "Generate"}]}}
+    with pytest.raises(ValueError, match="icon"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_bar_chart_missing_title():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {"type": "bar_chart", "bars": [{"label": "A", "value": 80}, {"label": "B", "value": 60}]}}
+    with pytest.raises(ValueError, match="title"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_bar_chart_non_numeric_value():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {"type": "bar_chart", "title": "Test", "bars": [{"label": "A", "value": "high"}, {"label": "B", "value": 60}]}}
+    with pytest.raises(ValueError, match="numeric"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_split_compare_missing_verdict():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {
+        "type": "split_compare",
+        "left": {"label": "AI", "points": ["Sounds right"]},
+        "right": {"label": "Reality", "points": ["Actually wrong"]},
+    }}
+    with pytest.raises(ValueError, match="verdict"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_cluster_single_group():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {
+        "type": "cluster",
+        "groups": [{"label": "Only Group", "items": ["a", "b", "c"]}],
+    }}
+    with pytest.raises(ValueError, match="2 groups"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_dial_missing_ticks():
+    bad = {**MINIMAL_SCRIPT, "diagram_spec": {
+        "type": "dial", "label": "Temperature",
+        "min_label": "Precise", "max_label": "Creative",
+    }}
+    with pytest.raises(ValueError, match="2 ticks"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_passes_all_diagram_types():
+    valid_specs = [
+        {"type": "hub_spoke", "hub": "MCP Server", "spokes": ["Tool A", "Tool B", "Tool C", "Tool D"]},
+        {"type": "cluster", "groups": [{"label": "Animals", "items": ["cat", "dog"]}, {"label": "Vehicles", "items": ["car", "bus"]}]},
+        {"type": "split_compare", "left": {"label": "AI", "points": ["Confident"]}, "right": {"label": "Reality", "points": ["Wrong"]}, "verdict": "Hallucination"},
+        {"type": "dial", "label": "Temp", "min_label": "0", "max_label": "1", "ticks": [{"value": 0.0, "description": "exact"}, {"value": 1.0, "description": "wild"}]},
+        {"type": "bar_chart", "title": "Accuracy", "bars": [{"label": "0-shot", "value": 45}, {"label": "3-shot", "value": 87}]},
+        {"type": "side_by_side", "left": {"label": "Fine-tune", "points": ["Expensive"]}, "right": {"label": "RAG", "points": ["Flexible"]}},
+        {"type": "flow", "steps": [{"icon": "🔍", "label": "Retrieve"}, {"icon": "✨", "label": "Generate"}]},
+    ]
+    for spec in valid_specs:
+        script_agent._validate_diagram_spec(spec, 1)  # should not raise
+
+
+def test_system_prompt_contains_diagram_guide():
+    prompt = script_agent._build_system_prompt("en")
+    assert "DIAGRAM GUIDE" in prompt
+    assert "hub_spoke" in prompt
+    assert "split_compare" in prompt
+    assert "bar_chart" in prompt
 
 
 # ── _parse_json ───────────────────────────────────────────────────────────────
