@@ -79,6 +79,18 @@ def test_build_props_empty_clips_dict_omitted():
     assert "clips" not in props
 
 
+def test_build_props_passes_diagram_spec():
+    spec = {"type": "hub_spoke", "hub": "LLM", "spokes": ["Tool A", "Tool B", "Tool C"]}
+    script = {**SAMPLE_SCRIPT, "diagram_spec": spec}
+    props = visual_agent._build_props(script)
+    assert props["diagram_spec"] == spec
+
+
+def test_build_props_omits_diagram_spec_when_absent():
+    props = visual_agent._build_props(SAMPLE_SCRIPT)
+    assert "diagram_spec" not in props
+
+
 # ── fetch_pexels_clip ─────────────────────────────────────────────────────────
 
 def _make_pexels_response(width: int = 1920, height: int = 1080) -> bytes:

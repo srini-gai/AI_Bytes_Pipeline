@@ -1,7 +1,7 @@
-What is RAG?
-Prompt Engineering
-AI Agents
-Vector Databases
-Fine-tuning vs RAG
-Chain of Thought
-Second Brain
+MCP Protocol
+Embeddings explained
+Hallucination explained
+Temperature parameter
+Few-shot prompting
+LLM evaluation
+Local LLMs with Ollama
