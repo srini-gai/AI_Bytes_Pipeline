@@ -1,8 +1,8 @@
 """
 Phase 6 - Assembly Agent
-Merges voice audio + visuals video, burns word-level captions via faster-whisper.
+Merges voice audio + visuals video. Remotion handles word-by-word captions.
 Runs once per language per episode.
-Output: ep{NN}_final_{LANG}.mp4  (1080x1920, 58-62s, with burnt captions)
+Output: ep{NN}_final_{LANG}.mp4  (1080x1920, 58-62s)
 Also saves: ep{NN}_captions_{LANG}.srt  (for archive / review)
 """
 import logging
@@ -61,14 +61,6 @@ def _ffmpeg(*args: str, timeout: int = 300, cwd: str | None = None) -> None:
         )
 
 
-
-
-def _ts_ass(secs: float) -> str:
-    """Seconds -> ASS timestamp  h:mm:ss.cc"""
-    h = int(secs // 3600)
-    m = int((secs % 3600) // 60)
-    s = secs % 60
-    return f"{h:d}:{m:02d}:{s:05.2f}"
 
 
 def _ts_srt(secs: float) -> str:
@@ -168,34 +160,6 @@ def _write_srt(words: list[dict], path: Path) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _write_ass(words: list[dict], path: Path) -> None:
-    """Write styled ASS subtitle file for ffmpeg caption burning."""
-    header = (
-        "[Script Info]\n"
-        "ScriptType: v4.00+\n"
-        "PlayResX: 1080\n"
-        "PlayResY: 1920\n"
-        "WrapStyle: 0\n\n"
-        "[V4+ Styles]\n"
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
-        "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
-        "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
-        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        # White bold text, opaque box background, lower-third position (520px from bottom)
-        "Style: Caption,Montserrat,68,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,"
-        "-1,0,0,0,100,100,0,0,3,0,0,2,80,80,520,1\n\n"
-        "[Events]\n"
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
-    )
-    lines = [header]
-    for w in words:
-        # Strip ASS control chars from transcript text
-        text = w["text"].replace("{", "").replace("}", "").replace("\n", " ")
-        lines.append(
-            f"Dialogue: 0,{_ts_ass(w['start'])},{_ts_ass(w['end'])}"
-            f",Caption,,0,0,0,,{text}\n"
-        )
-    path.write_text("".join(lines), encoding="utf-8")
 
 
 def _validate_output(path: Path, episode: int) -> float:
@@ -249,8 +213,7 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
       1. Transcribe voice MP3 with faster-whisper -> word timestamps
       2. Save SRT to episode dir (ep{NN}_captions_{LANG}.srt)
       3. FFmpeg: replace visuals audio with voice audio (-shortest)
-      4. FFmpeg: burn ASS captions into merged video
-      5. PyAV: validate 1080x1920 and 58-62s duration
+      4. PyAV: validate 1080x1920 and 58-62s duration
 
     Args:
         episode: Episode number 1-7
@@ -302,65 +265,41 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
     _write_srt(words, srt_path)
     logger.info(f"EP{episode:02d} [{lang.upper()}] SRT saved -> {srt_path}")
 
-    # Steps 3 + 4 run inside a temp dir to keep ASS away from paths with spaces
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path    = Path(tmp)
-        ass_path    = tmp_path / "captions.ass"
-        merged_path = tmp_path / "merged.mp4"
+    # Step 3: Merge video + voice (+ optional lo-fi music bed at 8% volume)
+    music_str = os.getenv("BACKGROUND_MUSIC_PATH", "")
+    music_path = Path(music_str) if music_str else None
 
-        _write_ass(words, ass_path)
-
-        # Step 3: Merge video + voice (+ optional lo-fi music bed at 8% volume)
-        music_str = os.getenv("BACKGROUND_MUSIC_PATH", "")
-        music_path = Path(music_str) if music_str else None
-
-        if music_path and music_path.exists():
-            logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video + music bed")
-            _ffmpeg(
-                "-i", str(visuals_path),
-                "-i", str(voice_path),
-                "-i", str(music_path),
-                "-filter_complex",
-                "[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=first[aout]",
-                "-map", "0:v",
-                "-map", "[aout]",
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
-                str(merged_path),
-            )
-        else:
-            logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video")
-            _ffmpeg(
-                "-i", str(visuals_path),
-                "-i", str(voice_path),
-                "-map", "0:v:0",
-                "-map", "1:a:0",
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
-                str(merged_path),
-            )
-
-        # Step 4: Burn ASS captions
-        # Run with cwd=tmp_path so the filter uses a relative "captions.ass"
-        # path — avoids Windows drive-letter colon escaping in ffmpeg filters.
-        logger.info(f"EP{episode:02d} [{lang.upper()}] burning captions")
+    if music_path and music_path.exists():
+        logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video + music bed")
         _ffmpeg(
-            "-i", str(merged_path.resolve()),
-            "-vf", "ass=captions.ass",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "20",
-            "-c:a", "copy",
-            str(output_path.resolve()),
-            cwd=str(tmp_path),
-            timeout=600,
+            "-i", str(visuals_path),
+            "-i", str(voice_path),
+            "-i", str(music_path),
+            "-filter_complex",
+            "[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=first[aout]",
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            str(output_path),
+        )
+    else:
+        logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video")
+        _ffmpeg(
+            "-i", str(visuals_path),
+            "-i", str(voice_path),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            str(output_path),
         )
 
-    # Step 5: Validate output
+    # Step 4: Validate output
     duration = _validate_output(output_path, episode)
     assembly_time = time.monotonic() - t0
 

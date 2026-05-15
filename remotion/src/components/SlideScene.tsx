@@ -79,24 +79,6 @@ export const SlideScene: React.FC<SlideSceneProps> = ({
         }}
       />
 
-      {/* Slide number — top-right */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 72,
-          right: 72,
-          fontSize: 30,
-          color: t.accent,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          fontWeight: 700,
-          letterSpacing: 1,
-          zIndex: 2,
-          textShadow: `0 2px 10px rgba(0,0,0,0.8), 0 0 20px ${t.accent}66`,
-        }}
-      >
-        {slideIndex + 1}/{totalSlides}
-      </div>
-
       {/* Main content — positioned at top 28%, slides up on enter */}
       <div
         style={{

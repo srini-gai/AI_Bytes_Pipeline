@@ -50,7 +50,7 @@ Required JSON schema:
     {"icon": "<single emoji>", "heading": "<3-5 word heading>", "body": "<2-3 sentence explanation>"},
     {"icon": "<single emoji>", "heading": "<3-5 word heading>", "body": "<2-3 sentence explanation>"}
   ],
-  "voiceover": "<EXACTLY 150–165 WORDS — full narration. Opens with the hook. Explains concept simply. Ends with CTA to follow AI Bytes.>",
+  "voiceover": "<EXACTLY 150–165 WORDS — full narration. Opens with the hook. Explains concept simply. Ends with CTA to follow AI Bytes every day.>",
   "takeaway": "<one-line key lesson, max 10 words>",
   "tags": "<space-separated hashtags, always include #AIBytes>",
   "youtube_title": "<title MUST end with exactly ' #Shorts'>",
