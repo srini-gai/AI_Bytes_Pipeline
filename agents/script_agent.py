@@ -55,7 +55,7 @@ Required JSON schema:
     {"icon": "<single emoji>", "heading": "<3-5 word heading>", "body": "<2-3 sentence explanation>"},
     {"icon": "<single emoji>", "heading": "<3-5 word heading>", "body": "<2-3 sentence explanation>"}
   ],
-  "voiceover": "<EXACTLY 150–165 WORDS — full narration. Opens with the hook. Explains concept simply. Ends with CTA to follow AI Bytes every day.>",
+  "voiceover": "<EXACTLY 150–175 WORDS — full narration. Opens with the hook. Explains concept simply. Ends with CTA to follow AI Bytes every day.>",
   "takeaway": "<one-line key lesson, max 10 words>",
   "tags": "<space-separated hashtags, always include #AIBytes>",
   "youtube_title": "<title MUST end with exactly ' #Shorts'>",
@@ -73,7 +73,7 @@ Required JSON schema:
 
 RULES (violation = invalid output):
 - hook: MUST be 10 words or fewer. Statement, not question. Creates urgency.
-- voiceover: The voiceover field MUST be 150-165 words. Count carefully before responding. This ensures the ElevenLabs audio output at 0.95 speed is 55-62 seconds long. Do not go below 150 words under any circumstances.
+- voiceover: The voiceover field MUST be 150-175 words. Count carefully before responding. This ensures the ElevenLabs audio output at 0.95 speed is 55-65 seconds long. Do not go below 150 words under any circumstances.
 - slides: EXACTLY 4 items. Each covers a different angle.
 - youtube_title: MUST end with ' #Shorts' (space then #Shorts).
 - theme.name: MUST be exactly one of the 6 values listed. Use the exact colors from the THEME GUIDE.
@@ -242,8 +242,8 @@ def _validate(data: dict, episode: int) -> None:
         raise ValueError(f"Hook is {hook_words} words — must be ≤10: '{data['hook']}'")
 
     vo_words = len(data["voiceover"].split())
-    if not (150 <= vo_words <= 165):
-        raise ValueError(f"Voiceover is {vo_words} words — must be 150–165")
+    if not (150 <= vo_words <= 175):
+        raise ValueError(f"Voiceover is {vo_words} words — must be 150–175")
 
     if not data["youtube_title"].strip().endswith("#Shorts"):
         raise ValueError(f"youtube_title must end with '#Shorts': '{data['youtube_title']}'")
