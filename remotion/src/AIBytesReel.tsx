@@ -31,13 +31,13 @@ const CTA_DURATION = 10 * FPS;        // 50–60s
 const slideKey = (i: number): keyof ClipsMap =>
   `slide_${i}` as keyof ClipsMap;
 
-// Wraps a scene with fade-in and fade-out crossfade
-const Fade: React.FC<{duration: number; children: React.ReactNode}> = ({duration, children}) => {
+// Wraps a scene with fade-in and fade-out crossfade.
+// noFadeIn=true skips the fade-in so frame 0 is fully opaque (used for HookScene thumbnail).
+const Fade: React.FC<{duration: number; noFadeIn?: boolean; children: React.ReactNode}> = ({duration, noFadeIn, children}) => {
   const frame = useCurrentFrame();
-  const opacity = Math.min(
-    interpolate(frame, [0, CROSSFADE], [0, 1], {extrapolateRight: 'clamp'}),
-    interpolate(frame, [duration - CROSSFADE, duration], [1, 0], {extrapolateRight: 'clamp'}),
-  );
+  const fadeIn  = noFadeIn ? 1 : interpolate(frame, [0, CROSSFADE], [0, 1], {extrapolateRight: 'clamp'});
+  const fadeOut = interpolate(frame, [duration - CROSSFADE, duration], [1, 0], {extrapolateRight: 'clamp'});
+  const opacity = Math.min(fadeIn, fadeOut);
   return <AbsoluteFill style={{opacity}}>{children}</AbsoluteFill>;
 };
 
@@ -68,7 +68,7 @@ function renderConceptScene(
 }
 
 export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
-  const {hook, concept, slides, takeaway, clips, theme, diagram_spec} = props;
+  const {episode, hook, concept, slides, takeaway, clips, theme, diagram_spec} = props;
   const t = theme ?? DEFAULT_THEME;
   const slideCount = slides.length;
   const slideDuration = Math.floor(SLIDES_TOTAL / slideCount);
@@ -77,8 +77,8 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
     <AbsoluteFill style={{backgroundColor: '#050510'}}>
       {/* Hook: 0–7s */}
       <Sequence from={HOOK_START} durationInFrames={HOOK_DURATION}>
-        <Fade duration={HOOK_DURATION}>
-          <HookScene hook={hook} videoSrc={clips?.hook} theme={t} />
+        <Fade duration={HOOK_DURATION} noFadeIn>
+          <HookScene hook={hook} videoSrc={clips?.hook} theme={t} emoji={slides[0]?.icon ?? '🧠'} episode={episode} />
         </Fade>
       </Sequence>
 

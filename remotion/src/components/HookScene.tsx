@@ -17,15 +17,24 @@ interface HookSceneProps {
   hook: string;
   videoSrc?: string;
   theme?: SceneTheme;
+  emoji?: string;
+  episode?: string;
 }
 
-export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme}) => {
+// Frames 0–4: static thumbnail frame (full hook visible, no animation)
+// Frame 5+:   word-by-word animation as normal
+const ANIM_START = 5;
+
+export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoji = '🧠', episode}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = theme ?? DEFAULT_THEME;
 
   const words = hook.split(' ');
   const framesPerWord = Math.round(fps * 0.15);
+
+  // Static layer: fully visible frames 0–4, instantly hidden from frame 5
+  const staticVisible = frame < ANIM_START;
 
   return (
     <AbsoluteFill style={{backgroundColor: '#050510'}}>
@@ -40,93 +49,151 @@ export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme}) => 
         </AbsoluteFill>
       )}
 
-      {/* Theme tinted overlay */}
+      {/* Strong base overlay — ensures text contrast at frame 0 / thumbnail */}
+      <AbsoluteFill style={{backgroundColor: 'rgba(5,5,16,0.7)'}} />
+
+      {/* Theme tint on top */}
       <AbsoluteFill style={{backgroundColor: t.overlay}} />
 
-      {/* Bottom gradient — caption readability only */}
+      {/* Bottom gradient — caption readability */}
       <AbsoluteFill
         style={{
           background: 'linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.80) 100%)',
         }}
       />
 
-      {/* AI BYTES watermark top-left */}
+      {/* Episode pill — top-left, fully visible frame 0 */}
       <div
         style={{
           position: 'absolute',
           top: 72,
           left: 72,
-          fontSize: 22,
-          letterSpacing: 5,
-          color: 'rgba(255,255,255,0.45)',
+          fontSize: 18,
+          letterSpacing: 3,
+          color: t.accent,
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           fontWeight: 700,
           textTransform: 'uppercase' as const,
-          zIndex: 2,
-          textShadow: '0 2px 8px rgba(0,0,0,0.6)',
+          zIndex: 3,
+          textShadow: '0 2px 8px rgba(0,0,0,0.8)',
+          background: 'rgba(0,0,0,0.4)',
+          padding: '6px 14px',
+          borderRadius: 20,
+          border: `1px solid ${t.accent}55`,
         }}
       >
-        AI BYTES
+        AI BYTES · EP{episode ?? '01'}
       </div>
 
-      {/* Hook text — word-by-word reveal */}
-      <AbsoluteFill
+      {/* Large topic emoji — top-center, fully visible frame 0 */}
+      <div
         style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '0 80px',
-          zIndex: 2,
+          position: 'absolute',
+          top: 200,
+          left: 0,
+          right: 0,
+          textAlign: 'center',
+          fontSize: 64,
+          zIndex: 3,
+          lineHeight: 1,
         }}
       >
-        <div style={{textAlign: 'center', lineHeight: 1.25}}>
-          {words.map((word, i) => {
-            const startFrame = i * framesPerWord;
-            const opacity = interpolate(
-              frame,
-              [startFrame, startFrame + framesPerWord],
-              [0, 1],
-              {extrapolateRight: 'clamp'}
-            );
-            const translateY = interpolate(
-              frame,
-              [startFrame, startFrame + framesPerWord],
-              [20, 0],
-              {extrapolateRight: 'clamp'}
-            );
-            return (
-              <span
-                key={i}
-                style={{
-                  display: 'inline-block',
-                  opacity,
-                  transform: `translateY(${translateY}px)`,
-                  fontSize: 72,
-                  fontWeight: 900,
-                  color: '#ffffff',
-                  margin: '0 8px 10px',
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                  textShadow: `0 4px 20px rgba(0,0,0,0.9), 0 0 40px ${t.accent}33`,
-                  letterSpacing: -0.5,
-                }}
-              >
-                {word}
-              </span>
-            );
-          })}
-          {/* Accent line under hook */}
+        {emoji}
+      </div>
+
+      {/* STATIC hook text — frames 0–4: full hook at 36px, no animation */}
+      {staticVisible && (
+        <AbsoluteFill
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '0 80px',
+            zIndex: 2,
+          }}
+        >
           <div
             style={{
-              height: 3,
-              width: interpolate(frame, [words.length * framesPerWord, words.length * framesPerWord + 15], [0, 160], {extrapolateRight: 'clamp'}),
-              background: `linear-gradient(90deg, ${t.accent}, ${t.accent2})`,
-              margin: '16px auto 0',
-              borderRadius: 2,
-              boxShadow: `0 0 16px ${t.accent}88`,
+              textAlign: 'center',
+              maxWidth: '85%',
+              fontSize: 36,
+              fontWeight: 900,
+              color: '#ffffff',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              textShadow: '0 4px 20px rgba(0,0,0,0.9)',
+              lineHeight: 1.35,
             }}
-          />
-        </div>
-      </AbsoluteFill>
+          >
+            {hook}
+          </div>
+        </AbsoluteFill>
+      )}
+
+      {/* ANIMATED hook text — word-by-word from frame 5 */}
+      {!staticVisible && (
+        <AbsoluteFill
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '0 80px',
+            zIndex: 2,
+          }}
+        >
+          <div style={{textAlign: 'center', lineHeight: 1.25}}>
+            {words.map((word, i) => {
+              const startFrame = ANIM_START + i * framesPerWord;
+              const opacity = interpolate(
+                frame,
+                [startFrame, startFrame + framesPerWord],
+                [0, 1],
+                {extrapolateRight: 'clamp'}
+              );
+              const translateY = interpolate(
+                frame,
+                [startFrame, startFrame + framesPerWord],
+                [20, 0],
+                {extrapolateRight: 'clamp'}
+              );
+              return (
+                <span
+                  key={i}
+                  style={{
+                    display: 'inline-block',
+                    opacity,
+                    transform: `translateY(${translateY}px)`,
+                    fontSize: 72,
+                    fontWeight: 900,
+                    color: '#ffffff',
+                    margin: '0 8px 10px',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    textShadow: `0 4px 20px rgba(0,0,0,0.9), 0 0 40px ${t.accent}33`,
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  {word}
+                </span>
+              );
+            })}
+            {/* Accent line under hook */}
+            <div
+              style={{
+                height: 3,
+                width: interpolate(
+                  frame,
+                  [ANIM_START + words.length * framesPerWord, ANIM_START + words.length * framesPerWord + 15],
+                  [0, 160],
+                  {extrapolateRight: 'clamp'}
+                ),
+                background: `linear-gradient(90deg, ${t.accent}, ${t.accent2})`,
+                margin: '16px auto 0',
+                borderRadius: 2,
+                boxShadow: `0 0 16px ${t.accent}88`,
+              }}
+            />
+          </div>
+        </AbsoluteFill>
+      )}
     </AbsoluteFill>
   );
 };
