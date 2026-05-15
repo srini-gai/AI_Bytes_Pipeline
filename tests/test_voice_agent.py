@@ -66,7 +66,7 @@ def test_validate_duration_fails_below_min(mock_dur):
         voice_agent._validate_duration(Path("short.mp3"))
 
 
-@patch("agents.voice_agent._mp3_duration", return_value=70.0)
+@patch("agents.voice_agent._mp3_duration", return_value=75.0)
 def test_validate_duration_fails_above_max(mock_dur):
     with pytest.raises(ValueError, match="outside"):
         voice_agent._validate_duration(Path("long.mp3"))

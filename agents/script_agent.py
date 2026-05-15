@@ -73,7 +73,7 @@ Required JSON schema:
 
 RULES (violation = invalid output):
 - hook: MUST be 10 words or fewer. Statement, not question. Creates urgency.
-- voiceover: The voiceover field MUST be 150-175 words. Count carefully before responding. This ensures the ElevenLabs audio output at 0.95 speed is 55-65 seconds long. Do not go below 150 words under any circumstances.
+- voiceover: The voiceover field MUST be 150-175 words. AIM FOR 155 WORDS — stay close to 155, never exceed 175. Count carefully before responding. This ensures the ElevenLabs audio output is 58-65 seconds long. Do not go below 150 words under any circumstances.
 - slides: EXACTLY 4 items. Each covers a different angle.
 - youtube_title: MUST end with ' #Shorts' (space then #Shorts).
 - theme.name: MUST be exactly one of the 6 values listed. Use the exact colors from the THEME GUIDE.

@@ -15,7 +15,7 @@ MODEL_ID = "eleven_multilingual_v2"
 OUTPUT_FORMAT = "mp3_44100_128"
 
 MIN_DURATION = 55.0
-MAX_DURATION = 65.0
+MAX_DURATION = 68.0
 
 
 def _episode_dir(episode: int, week: int) -> Path:
