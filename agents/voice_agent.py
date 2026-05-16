@@ -17,6 +17,9 @@ OUTPUT_FORMAT = "mp3_44100_128"
 MIN_DURATION = 55.0
 MAX_DURATION = 68.0
 
+TA_MIN_DURATION = 40.0
+TA_MAX_DURATION = 65.0
+
 
 def _episode_dir(episode: int, week: int) -> Path:
     base = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
@@ -41,12 +44,14 @@ def _mp3_duration(path: Path) -> float:
     raise ValueError(f"Could not determine duration of {path}")
 
 
-def _validate_duration(path: Path) -> float:
-    """Check MP3 duration is within MIN–MAX seconds. Returns duration."""
+def _validate_duration(path: Path, lang: str = "en") -> float:
+    """Check MP3 duration is within the lang-appropriate window. Returns duration."""
+    lo = TA_MIN_DURATION if lang == "ta" else MIN_DURATION
+    hi = TA_MAX_DURATION if lang == "ta" else MAX_DURATION
     duration = _mp3_duration(path)
-    if duration < MIN_DURATION or duration > MAX_DURATION:
+    if duration < lo or duration > hi:
         raise ValueError(
-            f"MP3 duration {duration:.1f}s is outside {MIN_DURATION}–{MAX_DURATION}s window"
+            f"MP3 duration {duration:.1f}s is outside {lo}–{hi}s window"
         )
     return duration
 
@@ -101,7 +106,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             output_path.write_bytes(audio_bytes)
             logger.info(f"EP{episode:02d} [{lang.upper()}] — MP3 written ({len(audio_bytes):,} bytes) -> {output_path}")
 
-            duration = _validate_duration(output_path)
+            duration = _validate_duration(output_path, lang)
             logger.info(f"EP{episode:02d} [{lang.upper()}] — duration {duration:.1f}s — PASS")
 
             return {"success": True, "output_path": str(output_path), "duration": duration, "lang": lang}

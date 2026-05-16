@@ -72,6 +72,30 @@ def test_validate_duration_fails_above_max(mock_dur):
         voice_agent._validate_duration(Path("long.mp3"))
 
 
+@patch("agents.voice_agent._mp3_duration", return_value=45.0)
+def test_validate_duration_ta_passes_at_45s(mock_dur):
+    result = voice_agent._validate_duration(Path("ta.mp3"), lang="ta")
+    assert abs(result - 45.0) < 0.01
+
+
+@patch("agents.voice_agent._mp3_duration", return_value=35.0)
+def test_validate_duration_ta_fails_below_40s(mock_dur):
+    with pytest.raises(ValueError, match="outside"):
+        voice_agent._validate_duration(Path("ta_short.mp3"), lang="ta")
+
+
+@patch("agents.voice_agent._mp3_duration", return_value=70.0)
+def test_validate_duration_ta_fails_above_65s(mock_dur):
+    with pytest.raises(ValueError, match="outside"):
+        voice_agent._validate_duration(Path("ta_long.mp3"), lang="ta")
+
+
+@patch("agents.voice_agent._mp3_duration", return_value=45.0)
+def test_validate_duration_en_rejects_45s(mock_dur):
+    with pytest.raises(ValueError, match="outside"):
+        voice_agent._validate_duration(Path("en_short.mp3"), lang="en")
+
+
 # ── run() — mocked API calls ──────────────────────────────────────────────────
 
 @patch("agents.voice_agent.av.open")
