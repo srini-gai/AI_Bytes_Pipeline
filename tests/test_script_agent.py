@@ -61,6 +61,24 @@ MINIMAL_SCRIPT = {
 }
 
 
+# Tamil fixture: voiceover is ~110 words (valid 95-135 range for lang='ta')
+MINIMAL_SCRIPT_TA = {
+    **MINIMAL_SCRIPT,
+    "voiceover": (
+        "உங்கள் AI உங்களுக்கு பொய் சொல்கிறது. "
+        "Large language models only know their training data. "
+        "When you ask about your own documents they often guess and get it completely wrong. "
+        "That is called hallucination and it is a very serious problem for any business relying on AI. "
+        "RAG or Retrieval Augmented Generation fixes this without any fine-tuning or retraining. "
+        "RAG fetches your actual documents at query time and injects them directly as context. "
+        "Now the model answers from real verified data not outdated training memory. "
+        "No retraining required no massive compute bill no months of waiting. "
+        "This is how production AI systems stay accurate and up to date. "
+        "Follow AI Bytes for one clear concept every single day."
+    ),
+}
+
+
 def _make_mock_response(data: dict) -> MagicMock:
     mock_resp = MagicMock()
     mock_resp.content = [MagicMock(text=json.dumps(data))]
@@ -222,6 +240,53 @@ def test_validate_passes_all_diagram_types():
         script_agent._validate_diagram_spec(spec, 1)  # should not raise
 
 
+def test_validate_ta_allows_hook_up_to_15_words():
+    long_hook = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
+    good = {**MINIMAL_SCRIPT_TA, "hook": long_hook}
+    script_agent._validate(good, 1, lang="ta")  # should not raise
+
+
+def test_validate_ta_rejects_hook_over_15_words():
+    too_long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"
+    bad = {**MINIMAL_SCRIPT, "hook": too_long}
+    with pytest.raises(ValueError, match="15"):
+        script_agent._validate(bad, 1, lang="ta")
+
+
+def test_validate_ta_accepts_valid_voiceover_length():
+    # 110 Tamil-length words — valid for lang='ta'
+    ta_vo = " ".join(["word"] * 110)
+    good = {**MINIMAL_SCRIPT, "voiceover": ta_vo}
+    script_agent._validate(good, 1, lang="ta")  # should not raise
+
+
+def test_validate_ta_rejects_short_voiceover():
+    bad = {**MINIMAL_SCRIPT, "voiceover": "Too short."}
+    with pytest.raises(ValueError, match="95"):
+        script_agent._validate(bad, 1, lang="ta")
+
+
+def test_validate_ta_rejects_long_voiceover():
+    too_long = " ".join(["word"] * 140)
+    bad = {**MINIMAL_SCRIPT, "voiceover": too_long}
+    with pytest.raises(ValueError, match="135"):
+        script_agent._validate(bad, 1, lang="ta")
+
+
+def test_validate_en_still_rejects_ta_length_voiceover():
+    # 110 words passes for Tamil but must fail for English
+    short_for_en = " ".join(["word"] * 110)
+    bad = {**MINIMAL_SCRIPT, "voiceover": short_for_en}
+    with pytest.raises(ValueError, match="150"):
+        script_agent._validate(bad, 1, lang="en")
+
+
+def test_system_prompt_ta_has_word_count_instruction():
+    prompt = script_agent._build_system_prompt("ta")
+    assert "100-130 words" in prompt
+    assert "110" in prompt  # AIM FOR target
+
+
 def test_system_prompt_contains_diagram_guide():
     prompt = script_agent._build_system_prompt("en")
     assert "DIAGRAM GUIDE" in prompt
@@ -271,7 +336,7 @@ def test_run_ta_uses_tamil_system_prompt(mock_anthropic_cls, tmp_path, monkeypat
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
     mock_client = MagicMock()
-    mock_client.messages.create.return_value = _make_mock_response(MINIMAL_SCRIPT)
+    mock_client.messages.create.return_value = _make_mock_response(MINIMAL_SCRIPT_TA)
     mock_anthropic_cls.return_value = mock_client
 
     script_agent.run("What is RAG?", episode=1, week=1, lang="ta")
@@ -287,7 +352,7 @@ def test_run_ta_saves_ta_filename(mock_anthropic_cls, tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
     mock_client = MagicMock()
-    mock_client.messages.create.return_value = _make_mock_response(MINIMAL_SCRIPT)
+    mock_client.messages.create.return_value = _make_mock_response(MINIMAL_SCRIPT_TA)
     mock_anthropic_cls.return_value = mock_client
 
     result = script_agent.run("What is RAG?", episode=1, week=1, lang="ta")

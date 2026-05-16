@@ -123,7 +123,12 @@ _TAMIL_SYSTEM_SUFFIX = (
     "tokens, embeddings, vector database, fine-tuning, etc. "
     "Use natural conversational Tamil, not formal or stiff. "
     "All other fields (title, hook, slides, takeaway, youtube_title, youtube_description) "
-    "remain in English."
+    "remain in English.\n\n"
+    "TAMIL WORD COUNT: The voiceover MUST be 100-130 words in Tamil. "
+    "This is equivalent to 150-165 English words in spoken duration. "
+    "AIM FOR 110 WORDS. Tamil uses longer words so fewer are needed for the same audio duration. "
+    "Count carefully before responding. Do not exceed 130 Tamil words.\n\n"
+    "TAMIL HOOK: The hook field remains in English but may be up to 15 words."
 )
 
 
@@ -224,7 +229,7 @@ def _validate_diagram_spec(spec: object, episode: int) -> None:
                 raise ValueError("diagram_spec flow each step needs 'icon' and 'label'")
 
 
-def _validate(data: dict, episode: int) -> None:
+def _validate(data: dict, episode: int, lang: str = "en") -> None:
     missing = [f for f in REQUIRED_FIELDS if f not in data]
     if missing:
         raise ValueError(f"Missing fields: {missing}")
@@ -237,13 +242,18 @@ def _validate(data: dict, episode: int) -> None:
             if not slide.get(key):
                 raise ValueError(f"Slide {i+1} missing '{key}'")
 
+    hook_limit = 15 if lang == "ta" else 10
     hook_words = len(data["hook"].split())
-    if hook_words > 10:
-        raise ValueError(f"Hook is {hook_words} words — must be ≤10: '{data['hook']}'")
+    if hook_words > hook_limit:
+        raise ValueError(f"Hook is {hook_words} words — must be ≤{hook_limit}: '{data['hook']}'")
 
     vo_words = len(data["voiceover"].split())
-    if not (150 <= vo_words <= 175):
-        raise ValueError(f"Voiceover is {vo_words} words — must be 150–175")
+    if lang == "ta":
+        if not (95 <= vo_words <= 135):
+            raise ValueError(f"Voiceover is {vo_words} words — must be 95–135 (Tamil)")
+    else:
+        if not (150 <= vo_words <= 175):
+            raise ValueError(f"Voiceover is {vo_words} words — must be 150–175")
 
     if not data["youtube_title"].strip().endswith("#Shorts"):
         raise ValueError(f"youtube_title must end with '#Shorts': '{data['youtube_title']}'")
@@ -314,7 +324,7 @@ def run(topic: str, episode: int, week: int, lang: str = "en") -> dict:
             data["episode"] = f"{episode:02d}"
             data["scheduled_publish"] = _scheduled_publish(episode)
 
-            _validate(data, episode)
+            _validate(data, episode, lang)
 
             output_path.write_text(
                 json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
