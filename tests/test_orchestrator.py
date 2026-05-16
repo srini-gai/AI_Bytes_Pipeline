@@ -63,6 +63,18 @@ def test_load_topics_empty_file(tmp_path, monkeypatch):
         orchestrator._load_topics()
 
 
+def test_load_topics_explicit_path(tmp_path):
+    custom = tmp_path / "topics_ta.txt"
+    custom.write_text("RAG Tamil\nLLM Tamil\n", encoding="utf-8")
+    topics = orchestrator._load_topics(custom)
+    assert topics == ["RAG Tamil", "LLM Tamil"]
+
+
+def test_load_topics_explicit_path_missing(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        orchestrator._load_topics(tmp_path / "nonexistent.txt")
+
+
 # ── _load_script_from_disk ────────────────────────────────────────────────────
 
 def test_load_script_from_disk_found(tmp_path, monkeypatch):

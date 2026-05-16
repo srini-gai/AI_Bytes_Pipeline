@@ -3,12 +3,13 @@ AI Bytes Pipeline Orchestrator
 Reads topics.txt, runs all agents for each episode across configured languages.
 
 Usage:
-    python orchestrator.py                        # all episodes, all langs from .env
-    python orchestrator.py --episode 1            # single episode, all langs
-    python orchestrator.py --lang en              # all episodes, English only
-    python orchestrator.py --episode 3 --lang ta  # single episode, Tamil only
-    python orchestrator.py --dry-run              # script + voice only, skip visual/assembly/publish
-    python orchestrator.py --week 2               # override week number
+    python orchestrator.py                                  # all episodes, all langs from .env
+    python orchestrator.py --episode 1                      # single episode, all langs
+    python orchestrator.py --lang en                        # all episodes, English only
+    python orchestrator.py --episode 3 --lang ta            # single episode, Tamil only
+    python orchestrator.py --dry-run                        # script + voice only, skip visual/assembly/publish
+    python orchestrator.py --week 2                         # override week number
+    python orchestrator.py --lang ta --topics-file topics_ta.txt  # Tamil batch with separate topics file
 """
 import argparse
 import json
@@ -69,18 +70,19 @@ def _auto_week() -> int:
         return 1
 
 
-def _load_topics() -> list[str]:
-    if not TOPICS_FILE.exists():
+def _load_topics(topics_file: Path | None = None) -> list[str]:
+    path = topics_file if topics_file is not None else TOPICS_FILE
+    if not path.exists():
         raise FileNotFoundError(
-            f"{TOPICS_FILE} not found. Create it with one topic per line."
+            f"{path} not found. Create it with one topic per line."
         )
     topics = [
         line.strip()
-        for line in TOPICS_FILE.read_text(encoding="utf-8").splitlines()
+        for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     ]
     if not topics:
-        raise ValueError("topics.txt is empty — add at least one topic.")
+        raise ValueError(f"{path.name} is empty — add at least one topic.")
     return topics
 
 
@@ -329,6 +331,10 @@ def main() -> None:
         action="store_true",
         help="Run script + voice only; skip visual, assembly, and publish",
     )
+    parser.add_argument(
+        "--topics-file",
+        help="Path to a topics file (default: topics.txt). Use for language-specific batches.",
+    )
     args = parser.parse_args()
 
     week = args.week if args.week is not None else _auto_week()
@@ -361,8 +367,10 @@ def main() -> None:
         else:
             print("\n(Dry run — continuing despite issues)\n")
 
-    topics = _load_topics()
-    print(f"\n  Topics   : {len(topics)} loaded from topics.txt")
+    topics_path = Path(args.topics_file) if args.topics_file else None
+    topics = _load_topics(topics_path)
+    topics_label = args.topics_file if args.topics_file else "topics.txt"
+    print(f"\n  Topics   : {len(topics)} loaded from {topics_label}")
     for i, t in enumerate(topics, 1):
         print(f"    {i}. {t}")
 
