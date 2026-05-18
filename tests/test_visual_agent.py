@@ -59,6 +59,43 @@ def test_clip_queries_strips_emojis():
     assert "🤖" not in queries["hook"]
 
 
+def test_clip_queries_all_contain_no_people():
+    queries = visual_agent._clip_queries(SAMPLE_SCRIPT)
+    for key, q in queries.items():
+        assert "no people" in q, f"Query for '{key}' missing 'no people': {q}"
+
+
+def test_clip_queries_all_contain_abstract():
+    queries = visual_agent._clip_queries(SAMPLE_SCRIPT)
+    for key, q in queries.items():
+        assert "abstract" in q, f"Query for '{key}' missing 'abstract': {q}"
+
+
+def test_clip_queries_concept_contains_neural_network():
+    queries = visual_agent._clip_queries(SAMPLE_SCRIPT)
+    assert "neural network" in queries["concept"]
+
+
+def test_clip_queries_slide1_contains_data_flow():
+    queries = visual_agent._clip_queries(SAMPLE_SCRIPT)
+    assert "data flow" in queries["slide_1"]
+
+
+def test_clip_queries_slide2_contains_network():
+    queries = visual_agent._clip_queries(SAMPLE_SCRIPT)
+    assert "network" in queries["slide_2"]
+
+
+def test_clip_queries_slide3_contains_future():
+    queries = visual_agent._clip_queries(SAMPLE_SCRIPT)
+    assert "future" in queries["slide_3"]
+
+
+def test_clip_queries_cta_contains_particles():
+    queries = visual_agent._clip_queries(SAMPLE_SCRIPT)
+    assert "particles" in queries["cta"]
+
+
 # ── _build_props ──────────────────────────────────────────────────────────────
 
 def test_build_props_no_clips():
@@ -196,6 +233,91 @@ def test_fetch_pexels_clip_raises_on_no_results(mock_urlopen, tmp_path):
 
     with pytest.raises(RuntimeError, match="No Pexels results"):
         visual_agent.fetch_pexels_clip("nothing found", 8, "key", tmp_path, "hook.mp4")
+
+
+@patch("urllib.request.urlopen")
+def test_fetch_pexels_clip_includes_portrait_orientation(mock_urlopen, tmp_path):
+    search_resp = MagicMock()
+    search_resp.read.return_value = _make_pexels_response()
+    search_resp.__enter__ = lambda s: s
+    search_resp.__exit__ = MagicMock(return_value=False)
+
+    dl_resp = MagicMock()
+    dl_resp.read.return_value = b"0" * 100_000
+    dl_resp.__enter__ = lambda s: s
+    dl_resp.__exit__ = MagicMock(return_value=False)
+
+    mock_urlopen.side_effect = [search_resp, dl_resp]
+
+    visual_agent.fetch_pexels_clip("abstract tech", 8, "key", tmp_path, "hook.mp4")
+
+    search_call = mock_urlopen.call_args_list[0][0][0]
+    search_url = search_call.full_url if hasattr(search_call, "full_url") else str(search_call)
+    assert "orientation=portrait" in search_url
+
+
+@patch("urllib.request.urlopen")
+def test_fetch_pexels_clip_skips_human_clips(mock_urlopen, tmp_path):
+    """First result has human URL; second is clean — should download the clean one."""
+    resp = MagicMock()
+    resp.read.return_value = json.dumps({
+        "videos": [
+            {
+                "id": 1,
+                "url": "https://www.pexels.com/video/business-team-meeting-1234/",
+                "video_files": [{"link": "https://cdn.pexels.com/human.mp4", "width": 1920, "height": 1080}],
+            },
+            {
+                "id": 2,
+                "url": "https://www.pexels.com/video/abstract-technology-5678/",
+                "video_files": [{"link": "https://cdn.pexels.com/clean.mp4", "width": 1920, "height": 1080}],
+            },
+        ]
+    }).encode()
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+
+    dl_resp = MagicMock()
+    dl_resp.read.return_value = b"0" * 100_000
+    dl_resp.__enter__ = lambda s: s
+    dl_resp.__exit__ = MagicMock(return_value=False)
+
+    mock_urlopen.side_effect = [resp, dl_resp]
+    visual_agent.fetch_pexels_clip("abstract technology", 8, "key", tmp_path, "hook.mp4")
+
+    download_call = mock_urlopen.call_args_list[1][0][0]
+    dl_url = download_call.full_url if hasattr(download_call, "full_url") else str(download_call)
+    assert "clean.mp4" in dl_url
+    assert "human.mp4" not in dl_url
+
+
+@patch("urllib.request.urlopen")
+def test_fetch_pexels_clip_falls_back_if_all_human(mock_urlopen, tmp_path):
+    """If every result is human-flagged, falls back to first result rather than failing."""
+    resp = MagicMock()
+    resp.read.return_value = json.dumps({
+        "videos": [
+            {
+                "id": 1,
+                "url": "https://www.pexels.com/video/business-people-1234/",
+                "video_files": [{"link": "https://cdn.pexels.com/human1.mp4", "width": 1920, "height": 1080}],
+            },
+        ]
+    }).encode()
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+
+    dl_resp = MagicMock()
+    dl_resp.read.return_value = b"0" * 100_000
+    dl_resp.__enter__ = lambda s: s
+    dl_resp.__exit__ = MagicMock(return_value=False)
+
+    mock_urlopen.side_effect = [resp, dl_resp]
+    visual_agent.fetch_pexels_clip("abstract technology", 8, "key", tmp_path, "hook.mp4")
+
+    download_call = mock_urlopen.call_args_list[1][0][0]
+    dl_url = download_call.full_url if hasattr(download_call, "full_url") else str(download_call)
+    assert "human1.mp4" in dl_url
 
 
 # ── _stage_clips_to_public ────────────────────────────────────────────────────

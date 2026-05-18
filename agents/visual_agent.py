@@ -59,25 +59,35 @@ def _strip_non_ascii(text: str) -> str:
     return re.sub(r"[^\x00-\x7F]+", " ", text).strip()
 
 
+_HUMAN_KEYWORDS = frozenset({
+    "person", "people", "man", "woman",
+    "business", "office", "team", "meeting", "worker",
+})
+
+
+def _is_human_clip(video: dict) -> bool:
+    """Return True if the Pexels video URL suggests human/people content."""
+    url_lower = video.get("url", "").lower()
+    return any(kw in url_lower for kw in _HUMAN_KEYWORDS)
+
+
 def _clip_queries(script: dict) -> dict[str, str]:
-    """Return {scene_key: pexels_search_query} for all 7 scenes, themed by topic mood."""
+    """Return {scene_key: pexels_search_query} for all 7 scenes."""
     topic = _strip_non_ascii(script.get("topic", "technology"))
     slides = script.get("slides", [{}, {}, {}, {}])
-    theme = script.get("theme", _DEFAULT_THEME)
-    mood = _strip_non_ascii(theme.get("pexels_mood", "dark cinematic technology"))
 
     def heading_kw(idx: int) -> str:
         h = slides[idx].get("heading", "") if idx < len(slides) else ""
         return _strip_non_ascii(h)
 
     return {
-        "hook":    f"{topic} {mood} cinematic",
-        "concept": f"artificial intelligence {mood}",
-        "slide_0": f"{heading_kw(0)} {mood}",
-        "slide_1": f"{heading_kw(1)} {mood}",
-        "slide_2": f"{heading_kw(2)} {mood}",
-        "slide_3": f"{heading_kw(3)} {mood}",
-        "cta":     f"abstract particles {mood} technology",
+        "hook":    f"{topic} technology dark cinematic abstract no people",
+        "concept": "artificial intelligence neural network abstract no people",
+        "slide_0": f"{heading_kw(0)} technology abstract no people",
+        "slide_1": f"{heading_kw(1)} data flow abstract no people",
+        "slide_2": f"{heading_kw(2)} network abstract no people",
+        "slide_3": f"{heading_kw(3)} technology future abstract no people",
+        "cta":     "technology abstract dark particles no people",
     }
 
 
@@ -104,6 +114,7 @@ def fetch_pexels_clip(
         "query": query,
         "per_page": 10,
         "min_duration": min_duration,
+        "orientation": "portrait",
     })
     search_url = f"{PEXELS_SEARCH_URL}?{params}"
 
@@ -138,7 +149,15 @@ def fetch_pexels_clip(
     if not videos:
         raise RuntimeError(f"No Pexels results for query: '{query}'")
 
-    video_files = videos[0].get("video_files", [])
+    # Skip clips whose Pexels URL indicates human/people content
+    clean_videos = [v for v in videos if not _is_human_clip(v)]
+    if not clean_videos:
+        logger.warning(
+            f"All {len(videos)} Pexels results for '{query}' matched human filter — using first result"
+        )
+        clean_videos = videos
+
+    video_files = clean_videos[0].get("video_files", [])
     if not video_files:
         raise RuntimeError(f"No downloadable files for '{query}'")
 
