@@ -55,12 +55,22 @@ def _client_secrets_path() -> Path:
     return path
 
 
-def _build_credentials_from_env() -> Credentials | None:
+def _build_credentials_from_env(lang: str = "en") -> Credentials | None:
     """
     Build OAuth2 credentials from .env refresh token.
-    Returns None if YOUTUBE_REFRESH_TOKEN is not set/configured.
+    Token lookup order:
+      lang='ta' → YOUTUBE_REFRESH_TOKEN_TA
+      lang='en' → YOUTUBE_REFRESH_TOKEN_EN, fallback to YOUTUBE_REFRESH_TOKEN
+    Returns None if no usable token is found.
     """
-    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
+    if lang == "ta":
+        refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN_TA", "")
+    else:
+        refresh_token = (
+            os.getenv("YOUTUBE_REFRESH_TOKEN_EN", "")
+            or os.getenv("YOUTUBE_REFRESH_TOKEN", "")
+        )
+
     client_id     = os.getenv("YOUTUBE_CLIENT_ID", "")
     client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 
@@ -78,7 +88,7 @@ def _build_credentials_from_env() -> Credentials | None:
         scopes=SCOPES,
     )
     creds.refresh(Request())
-    logger.info("YouTube credentials loaded from .env refresh token")
+    logger.info(f"YouTube credentials loaded from .env refresh token [{lang.upper()}]")
     return creds
 
 
@@ -127,7 +137,7 @@ def _get_youtube_client(lang: str):
     Return an authenticated YouTube API client.
     Tries .env refresh token -> stored pickle -> browser OAuth (in that order).
     """
-    creds = _build_credentials_from_env()
+    creds = _build_credentials_from_env(lang)
     if creds is None:
         creds = _build_credentials_from_pickle(lang)
     if creds is None:

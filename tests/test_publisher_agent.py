@@ -60,6 +60,7 @@ def test_parse_tags_ignores_non_hash():
 @patch("agents.publisher_agent.Request")
 @patch("agents.publisher_agent.Credentials")
 def test_env_credentials_uses_refresh_token(mock_creds_cls, mock_request, monkeypatch):
+    monkeypatch.delenv("YOUTUBE_REFRESH_TOKEN_EN", raising=False)  # ensure fallback path
     monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN", "real-refresh-token")
     monkeypatch.setenv("YOUTUBE_CLIENT_ID", "client-id")
     monkeypatch.setenv("YOUTUBE_CLIENT_SECRET", "client-secret")
@@ -78,13 +79,70 @@ def test_env_credentials_uses_refresh_token(mock_creds_cls, mock_request, monkey
 
 
 def test_env_credentials_returns_none_if_placeholder(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_REFRESH_TOKEN_EN", raising=False)
     monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN", "your-refresh-token")
     assert publisher_agent._build_credentials_from_env() is None
 
 
 def test_env_credentials_returns_none_if_missing(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_REFRESH_TOKEN_EN", raising=False)
+    monkeypatch.delenv("YOUTUBE_REFRESH_TOKEN_TA", raising=False)
     monkeypatch.delenv("YOUTUBE_REFRESH_TOKEN", raising=False)
     assert publisher_agent._build_credentials_from_env() is None
+
+
+@patch("agents.publisher_agent.Request")
+@patch("agents.publisher_agent.Credentials")
+def test_env_credentials_ta_uses_ta_token(mock_creds_cls, mock_request, monkeypatch):
+    """lang='ta' must use YOUTUBE_REFRESH_TOKEN_TA, never the EN token."""
+    monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN_TA", "ta-refresh-token")
+    monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN_EN", "en-refresh-token")
+    monkeypatch.setenv("YOUTUBE_CLIENT_ID", "client-id")
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET", "client-secret")
+
+    mock_creds = MagicMock()
+    mock_creds_cls.return_value = mock_creds
+
+    publisher_agent._build_credentials_from_env(lang="ta")
+
+    call_kwargs = mock_creds_cls.call_args[1]
+    assert call_kwargs["refresh_token"] == "ta-refresh-token"
+
+
+@patch("agents.publisher_agent.Request")
+@patch("agents.publisher_agent.Credentials")
+def test_env_credentials_en_uses_en_specific_token(mock_creds_cls, mock_request, monkeypatch):
+    """lang='en' with YOUTUBE_REFRESH_TOKEN_EN set must use that token."""
+    monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN_EN", "en-specific-token")
+    monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN", "generic-token")
+    monkeypatch.setenv("YOUTUBE_CLIENT_ID", "client-id")
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET", "client-secret")
+
+    mock_creds = MagicMock()
+    mock_creds_cls.return_value = mock_creds
+
+    publisher_agent._build_credentials_from_env(lang="en")
+
+    call_kwargs = mock_creds_cls.call_args[1]
+    assert call_kwargs["refresh_token"] == "en-specific-token"
+
+
+@patch("agents.publisher_agent.Request")
+@patch("agents.publisher_agent.Credentials")
+def test_env_credentials_en_falls_back_to_generic_token(mock_creds_cls, mock_request, monkeypatch):
+    """When YOUTUBE_REFRESH_TOKEN_EN is absent, EN falls back to YOUTUBE_REFRESH_TOKEN."""
+    monkeypatch.delenv("YOUTUBE_REFRESH_TOKEN_EN", raising=False)
+    monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN", "generic-token")
+    monkeypatch.setenv("YOUTUBE_CLIENT_ID", "client-id")
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET", "client-secret")
+
+    mock_creds = MagicMock()
+    mock_creds_cls.return_value = mock_creds
+
+    publisher_agent._build_credentials_from_env(lang="en")
+
+    call_kwargs = mock_creds_cls.call_args[1]
+    assert call_kwargs["refresh_token"] == "generic-token"
 
 
 # ── run() — happy path ────────────────────────────────────────────────────────
