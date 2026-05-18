@@ -347,6 +347,129 @@ def test_stage_clips_creates_directory(tmp_path):
     assert public_dir.exists()
 
 
+# ── _collect_disk_clips ───────────────────────────────────────────────────────
+
+def test_collect_disk_clips_returns_existing_clips(tmp_path):
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    (clips_dir / "concept.mp4").write_bytes(b"0" * 100_000)
+    (clips_dir / "hook.mp4").write_bytes(b"0" * 100_000)
+
+    result = visual_agent._collect_disk_clips(clips_dir, ["hook", "concept", "cta"])
+    assert set(result.keys()) == {"hook", "concept"}
+
+
+def test_collect_disk_clips_ignores_small_files(tmp_path):
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    (clips_dir / "concept.mp4").write_bytes(b"x" * 1_000)  # too small
+
+    result = visual_agent._collect_disk_clips(clips_dir, ["concept"])
+    assert result == {}
+
+
+def test_collect_disk_clips_returns_empty_when_dir_missing(tmp_path):
+    clips_dir = tmp_path / "clips"  # does not exist
+    result = visual_agent._collect_disk_clips(clips_dir, ["hook", "concept"])
+    assert result == {}
+
+
+def test_collect_disk_clips_returns_empty_when_no_clips(tmp_path):
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    result = visual_agent._collect_disk_clips(clips_dir, ["hook", "concept"])
+    assert result == {}
+
+
+# ── run() disk-reuse behavior ─────────────────────────────────────────────────
+
+@patch("agents.visual_agent._render")
+@patch("agents.visual_agent._validate_output", return_value=60.0)
+@patch("agents.visual_agent._stage_clips_to_public")
+def test_run_ta_reuses_cached_clips_without_pexels_key(
+    mock_stage, mock_validate, mock_render, tmp_path, monkeypatch
+):
+    """TA render must stage cached EN clips even when PEXELS_API_KEY is not set."""
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+
+    ep_dir = tmp_path / "week_01" / "ep01"
+    clips_dir = ep_dir / "clips"
+    clips_dir.mkdir(parents=True)
+    for scene in ("hook", "concept", "slide_0", "slide_1", "slide_2", "slide_3", "cta"):
+        (clips_dir / f"{scene}.mp4").write_bytes(b"0" * 100_000)
+
+    mock_stage.return_value = {"hook": "clips/hook.mp4", "concept": "clips/concept.mp4"}
+    mock_render.side_effect = lambda out, props, ep: out.write_bytes(b"0" * 200_000)
+
+    visual_agent.run(SAMPLE_SCRIPT, episode=1, week=1, lang="ta")
+
+    mock_stage.assert_called_once()
+    staged_arg = mock_stage.call_args[0][0]
+    assert "concept" in staged_arg
+
+
+@patch("agents.visual_agent.fetch_pexels_clip")
+@patch("agents.visual_agent._render")
+@patch("agents.visual_agent._validate_output", return_value=60.0)
+@patch("agents.visual_agent._stage_clips_to_public")
+def test_run_ta_skips_pexels_when_all_clips_cached(
+    mock_stage, mock_validate, mock_render, mock_fetch, tmp_path, monkeypatch
+):
+    """When all clips are on disk, Pexels must not be called even if key is set."""
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    monkeypatch.setenv("PEXELS_API_KEY", "test-pexels-key")
+
+    ep_dir = tmp_path / "week_01" / "ep01"
+    clips_dir = ep_dir / "clips"
+    clips_dir.mkdir(parents=True)
+    for scene in ("hook", "concept", "slide_0", "slide_1", "slide_2", "slide_3", "cta"):
+        (clips_dir / f"{scene}.mp4").write_bytes(b"0" * 100_000)
+
+    mock_stage.return_value = {s: f"clips/{s}.mp4" for s in
+                               ("hook", "concept", "slide_0", "slide_1", "slide_2", "slide_3", "cta")}
+    mock_render.side_effect = lambda out, props, ep: out.write_bytes(b"0" * 200_000)
+
+    visual_agent.run(SAMPLE_SCRIPT, episode=1, week=1, lang="ta")
+
+    mock_fetch.assert_not_called()
+
+
+@patch("agents.visual_agent.fetch_pexels_clip")
+@patch("agents.visual_agent._render")
+@patch("agents.visual_agent._validate_output", return_value=60.0)
+@patch("agents.visual_agent._stage_clips_to_public")
+def test_run_downloads_only_missing_clips(
+    mock_stage, mock_validate, mock_render, mock_fetch, tmp_path, monkeypatch
+):
+    """Only scenes absent from disk should trigger a Pexels download."""
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    monkeypatch.setenv("PEXELS_API_KEY", "test-pexels-key")
+
+    ep_dir = tmp_path / "week_01" / "ep01"
+    clips_dir = ep_dir / "clips"
+    clips_dir.mkdir(parents=True)
+    # Pre-populate only concept and hook — the other 5 must be downloaded
+    for scene in ("concept", "hook"):
+        (clips_dir / f"{scene}.mp4").write_bytes(b"0" * 100_000)
+
+    def fake_fetch(query, min_dur, key, clips_dir, filename):
+        p = clips_dir / filename
+        p.write_bytes(b"0" * 100_000)
+        return p
+
+    mock_fetch.side_effect = fake_fetch
+    mock_render.side_effect = lambda out, props, ep: out.write_bytes(b"0" * 200_000)
+    mock_stage.return_value = {}
+
+    visual_agent.run(SAMPLE_SCRIPT, episode=1, week=1, lang="en")
+
+    fetched_scenes = {call_args[0][4].replace(".mp4", "") for call_args in mock_fetch.call_args_list}
+    assert "concept" not in fetched_scenes
+    assert "hook" not in fetched_scenes
+    assert fetched_scenes == {"slide_0", "slide_1", "slide_2", "slide_3", "cta"}
+
+
 # ── _fetch_all_clips ──────────────────────────────────────────────────────────
 
 @patch("agents.visual_agent.fetch_pexels_clip")

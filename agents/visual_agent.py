@@ -197,6 +197,20 @@ def fetch_pexels_clip(
     raise RuntimeError(f"Pexels download failed for '{query}': {last_error}")
 
 
+def _collect_disk_clips(clips_dir: Path, scenes: list[str]) -> dict[str, str]:
+    """
+    Return {scene_key: abs_path} for every scene whose clip already exists on disk.
+    Clips < 50 KB are ignored (they are likely corrupt stubs).
+    This runs unconditionally — no Pexels key required.
+    """
+    found: dict[str, str] = {}
+    for scene_key in scenes:
+        cached = clips_dir / f"{scene_key}.mp4"
+        if cached.exists() and cached.stat().st_size > 50_000:
+            found[scene_key] = str(cached.resolve())
+    return found
+
+
 def _fetch_all_clips(script: dict, ep_dir: Path, api_key: str) -> dict[str, str]:
     """
     Download all 7 scene clips from Pexels.
@@ -377,21 +391,51 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             "message": "Visuals already rendered - skipping.",
         }
 
-    # Fetch Pexels background clips if API key is configured
+    # Step 1: always collect clips that already exist on disk.
+    # EN and TA share the same clips/ folder for the same episode, so a clip
+    # downloaded during the EN render is automatically reused for TA.
+    all_scenes = list(_clip_queries(script).keys())
+    clips_dir = ep_dir / "clips"
+    raw_clips = _collect_disk_clips(clips_dir, all_scenes)
+    if raw_clips:
+        logger.info(
+            f"EP{episode:02d} [{lang.upper()}] reusing {len(raw_clips)}/{len(all_scenes)} "
+            f"cached clips: {', '.join(sorted(raw_clips))}"
+        )
+
+    # Step 2: download only the scenes that are still missing (requires Pexels key).
+    pexels_key = os.getenv("PEXELS_API_KEY", "")
+    if pexels_key:
+        missing = {k: v for k, v in _clip_queries(script).items() if k not in raw_clips}
+        if missing:
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] downloading {len(missing)} missing clips from Pexels"
+            )
+            for scene_key, query in missing.items():
+                try:
+                    path = fetch_pexels_clip(
+                        query, CLIP_MIN_DURATION, pexels_key, clips_dir, f"{scene_key}.mp4"
+                    )
+                    raw_clips[scene_key] = str(path.resolve())
+                except Exception as e:
+                    logger.warning(
+                        f"Clip fetch failed for '{scene_key}': {e} — scene will use dark background"
+                    )
+        else:
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] all {len(raw_clips)} clips cached — skipping Pexels"
+            )
+    elif not raw_clips:
+        logger.info(
+            f"EP{episode:02d} [{lang.upper()}] PEXELS_API_KEY not set — rendering with dark gradient background"
+        )
+
     staged_clips: dict[str, str] | None = None
-    if PEXELS_API_KEY:
-        logger.info(f"EP{episode:02d} fetching Pexels background clips")
-        try:
-            raw_clips = _fetch_all_clips(script, ep_dir, PEXELS_API_KEY)
-            if raw_clips:
-                staged_clips = _stage_clips_to_public(
-                    raw_clips, REMOTION_DIR / "public" / "clips"
-                )
-                logger.info(f"EP{episode:02d} staged {len(staged_clips)}/7 clips for Remotion")
-        except Exception as e:
-            logger.warning(f"EP{episode:02d} Pexels integration failed — rendering without clips: {e}")
-    else:
-        logger.info(f"EP{episode:02d} PEXELS_API_KEY not set — rendering with dark gradient background")
+    if raw_clips:
+        staged_clips = _stage_clips_to_public(raw_clips, REMOTION_DIR / "public" / "clips")
+        logger.info(
+            f"EP{episode:02d} [{lang.upper()}] staged {len(staged_clips)}/{len(all_scenes)} clips for Remotion"
+        )
 
     props = _build_props(script, clips=staged_clips)
     last_error: Exception | None = None
