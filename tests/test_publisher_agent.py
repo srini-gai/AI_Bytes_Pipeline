@@ -231,3 +231,53 @@ def test_run_raises_on_invalid_lang(tmp_path, monkeypatch):
     monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
     with pytest.raises(RuntimeError, match="unsupported lang"):
         publisher_agent.run(SAMPLE_SCRIPT, episode=1, week=1, lang="fr")
+
+
+@patch("agents.publisher_agent._get_youtube_client")
+def test_run_en_does_not_use_ta_channel(mock_get_yt, tmp_path, monkeypatch):
+    """Even when both channels are configured, EN run must use YOUTUBE_CHANNEL_ID_EN."""
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN", "test-refresh-token")
+    monkeypatch.setenv("YOUTUBE_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setenv("YOUTUBE_CHANNEL_ID_EN", "UC_english_channel")
+    monkeypatch.setenv("YOUTUBE_CHANNEL_ID_TA", "UC_tamil_channel")
+    ep_dir = tmp_path / "week_01" / "ep01"
+    _make_final_mp4(ep_dir, "en")
+
+    mock_yt = MagicMock()
+    mock_yt.videos().insert().next_chunk.return_value = (None, {"id": "vid_en"})
+    mock_get_yt.return_value = mock_yt
+
+    with patch("agents.publisher_agent.MediaFileUpload"):
+        result = publisher_agent.run(SAMPLE_SCRIPT, episode=1, week=1, lang="en")
+
+    receipt_path = ep_dir / "ep01_upload_EN.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["channel_id"] == "UC_english_channel"
+    assert receipt["channel_id"] != "UC_tamil_channel"
+
+
+@patch("agents.publisher_agent._get_youtube_client")
+def test_run_ta_does_not_use_en_channel(mock_get_yt, tmp_path, monkeypatch):
+    """Tamil run must use YOUTUBE_CHANNEL_ID_TA, never YOUTUBE_CHANNEL_ID_EN."""
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    monkeypatch.setenv("YOUTUBE_REFRESH_TOKEN", "test-refresh-token")
+    monkeypatch.setenv("YOUTUBE_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setenv("YOUTUBE_CHANNEL_ID_EN", "UC_english_channel")
+    monkeypatch.setenv("YOUTUBE_CHANNEL_ID_TA", "UC_tamil_channel")
+    ep_dir = tmp_path / "week_01" / "ep01"
+    _make_final_mp4(ep_dir, "ta")
+
+    mock_yt = MagicMock()
+    mock_yt.videos().insert().next_chunk.return_value = (None, {"id": "vid_ta"})
+    mock_get_yt.return_value = mock_yt
+
+    with patch("agents.publisher_agent.MediaFileUpload"):
+        result = publisher_agent.run(SAMPLE_SCRIPT, episode=1, week=1, lang="ta")
+
+    receipt_path = ep_dir / "ep01_upload_TA.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["channel_id"] == "UC_tamil_channel"
+    assert receipt["channel_id"] != "UC_english_channel"

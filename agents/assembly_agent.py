@@ -229,7 +229,8 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
         raise RuntimeError(f"EP{episode:02d} unsupported lang '{lang}'")
 
     ep_dir = _episode_dir(episode, week)
-    visuals_path = ep_dir / f"ep{episode:02d}_visuals.mp4"
+    visuals_suffix = "_TA" if lang == "ta" else ""
+    visuals_path = ep_dir / f"ep{episode:02d}_visuals{visuals_suffix}.mp4"
     voice_path   = ep_dir / f"ep{episode:02d}_voice_{lang.upper()}.mp3"
     srt_path     = ep_dir / f"ep{episode:02d}_captions_{lang.upper()}.srt"
     output_path  = ep_dir / f"ep{episode:02d}_final_{lang.upper()}.mp4"

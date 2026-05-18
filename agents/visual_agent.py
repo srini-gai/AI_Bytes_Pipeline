@@ -350,18 +350,23 @@ def _render(output_path: Path, props: dict, episode: int) -> None:
         Path(props_file).unlink(missing_ok=True)
 
 
-def run(script: dict, episode: int, week: int) -> dict:
+def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
     """
-    Render Remotion composition for this episode (language-agnostic).
+    Render Remotion composition for this episode.
     Downloads Pexels background clips if PEXELS_API_KEY is configured.
     Retries once on failure. Validates 1080x1920 and 58-62s duration via PyAV.
+
+    Args:
+        lang: "en" → ep{NN}_visuals.mp4 | "ta" → ep{NN}_visuals_TA.mp4
 
     Returns:
         {"success": True, "output_path": str, "duration": float,
          "render_time": float, "size_mb": float, "skipped": bool}
     """
+    lang = lang.lower()
     ep_dir = _episode_dir(episode, week)
-    output_path = ep_dir / f"ep{episode:02d}_visuals.mp4"
+    visuals_suffix = "_TA" if lang == "ta" else ""
+    output_path = ep_dir / f"ep{episode:02d}_visuals{visuals_suffix}.mp4"
 
     if output_path.exists() and output_path.stat().st_size > 100_000:
         logger.info(f"EP{episode:02d} visuals already rendered — skipping")

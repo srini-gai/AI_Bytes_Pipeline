@@ -250,9 +250,13 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             "Run assembly_agent first."
         )
 
-    # Validate channel is configured
-    channel_id_key = f"YOUTUBE_CHANNEL_ID_{lang.upper()}"
-    channel_id = os.getenv(channel_id_key, "")
+    # Validate channel is configured — explicit per-lang to prevent cross-channel uploads
+    if lang == "ta":
+        channel_id = os.getenv("YOUTUBE_CHANNEL_ID_TA", "")
+        channel_id_key = "YOUTUBE_CHANNEL_ID_TA"
+    else:
+        channel_id = os.getenv("YOUTUBE_CHANNEL_ID_EN", "")
+        channel_id_key = "YOUTUBE_CHANNEL_ID_EN"
     if not channel_id or "your-" in channel_id:
         raise RuntimeError(
             f"{channel_id_key} not set in .env — cannot publish [{lang.upper()}]."
@@ -286,6 +290,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
     if scheduled_publish:
         body["status"]["publishAt"] = scheduled_publish
 
+    logger.info(f"EP{episode:02d} [{lang.upper()}] uploading to channel: {channel_id[:8]}...")
     logger.info(
         f"EP{episode:02d} [{lang.upper()}] uploading '{title}' "
         f"({final_path.stat().st_size / 1_048_576:.1f} MB) "

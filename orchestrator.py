@@ -205,7 +205,7 @@ def _run_episode(
     if reference_lang:
         print(f"\n[EP{episode:02d}] Rendering visuals...")
         try:
-            out = visual_agent.run(scripts[reference_lang], episode, week)
+            out = visual_agent.run(scripts[reference_lang], episode, week, lang=reference_lang)
             visual_ok = True
             if out.get("skipped"):
                 print(f"  SKIP {out.get('message', 'Visuals already rendered')}")
