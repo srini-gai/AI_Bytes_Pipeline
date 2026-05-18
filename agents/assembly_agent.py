@@ -26,6 +26,9 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 MIN_DURATION = 55.0
 MAX_DURATION = 65.0
 
+TA_MIN_DURATION = 35.0
+TA_MAX_DURATION = 65.0
+
 # Locate ffmpeg: prefer the PATH-resolved binary, fall back to the WinGet install location
 def _find_ffmpeg() -> str:
     if shutil.which("ffmpeg"):
@@ -162,12 +165,12 @@ def _write_srt(words: list[dict], path: Path) -> None:
 
 
 
-def _validate_output(path: Path, episode: int) -> float:
+def _validate_output(path: Path, episode: int, lang: str = "en") -> float:
     """
     Validate final MP4 with PyAV:
       - File exists and size > 500 KB
       - Video stream is 1080x1920
-      - Duration is 58-62 seconds
+      - Duration within lang window (EN: 55-65s, TA: 35-65s)
     Returns duration in seconds.
     """
     if not path.exists() or path.stat().st_size < 500_000:
@@ -198,10 +201,12 @@ def _validate_output(path: Path, episode: int) -> float:
     finally:
         container.close()
 
-    if duration < MIN_DURATION or duration > MAX_DURATION:
+    lo = TA_MIN_DURATION if lang == "ta" else MIN_DURATION
+    hi = TA_MAX_DURATION if lang == "ta" else MAX_DURATION
+    if duration < lo or duration > hi:
         raise RuntimeError(
             f"EP{episode:02d} final duration {duration:.1f}s outside "
-            f"{MIN_DURATION}-{MAX_DURATION}s window"
+            f"{lo}-{hi}s window"
         )
 
     return duration
@@ -301,7 +306,7 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
         )
 
     # Step 4: Validate output
-    duration = _validate_output(output_path, episode)
+    duration = _validate_output(output_path, episode, lang)
     assembly_time = time.monotonic() - t0
 
     logger.info(
