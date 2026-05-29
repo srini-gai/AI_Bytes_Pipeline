@@ -338,7 +338,7 @@ def _render(output_path: Path, props: dict, episode: int) -> None:
             "--codec", "h264",
             "--image-format", "jpeg",
             "--jpeg-quality", "90",
-            "--concurrency", "4",
+            "--concurrency", "2",
             "--log", "verbose",
         ]
 
