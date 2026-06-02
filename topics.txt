@@ -1,7 +1,7 @@
-Attention Mechanism explained
-Transformer Architecture simplified
-Cosine Similarity explained
-Neural Networks from scratch
-How Vector Search works
-Tokens and Tokenization
-Context Window explained
+AI Hallucination explained
+What is Prompt Injection?
+How AI Training works
+What is RLHF?
+AI Agents vs Chatbots
+What is Multimodal AI?
+How AI Sees Images
