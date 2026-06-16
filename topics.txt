@@ -1,7 +1,7 @@
-AI Hallucination explained
-What is Prompt Injection?
-How AI Training works
-What is RLHF?
-AI Agents vs Chatbots
-What is Multimodal AI?
-How AI Sees Images
+How AI Actually Reads Your Text
+Why Some AI Models Are Smarter Than Others
+How AI Generates Images Step by Step
+What Happens Inside ChatGPT When You Type
+How AI Models Are Trained on Trillions of Words
+Why AI Gets Confused by Simple Math
+How AI Understands Context Not Just Keywords
