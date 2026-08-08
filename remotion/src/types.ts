@@ -88,6 +88,10 @@ export interface FlowSpec {
   steps: FlowStep[];
 }
 
+export interface SketchDiagramSpec {
+  type: 'sketch';
+}
+
 export type DiagramSpec =
   | HubSpokeSpec
   | ClusterSpec
@@ -95,7 +99,32 @@ export type DiagramSpec =
   | SideBySideSpec
   | DialSpec
   | BarChartSpec
-  | FlowSpec;
+  | FlowSpec
+  | SketchDiagramSpec;
+
+// ─── Sketch scene types (animated SVG diagram) ────────────────────────────────
+
+export interface SketchNode {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  shape: 'rect' | 'circle' | 'diamond';
+  width?: number;
+  height?: number;
+}
+
+export interface SketchEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface SketchSpec {
+  nodes: SketchNode[];
+  edges: SketchEdge[];
+  title?: string;
+}
 
 // ─── Main composition props ───────────────────────────────────────────────────
 
@@ -112,4 +141,5 @@ export interface AIBytesReelProps {
   theme?: Theme;
   clips?: ClipsMap;
   diagram_spec?: DiagramSpec;
+  sketch_spec?: SketchSpec;
 }

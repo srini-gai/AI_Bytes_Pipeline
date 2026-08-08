@@ -268,6 +268,8 @@ def _build_props(script: dict, clips: dict[str, str] | None = None) -> dict:
     }
     if script.get("diagram_spec"):
         props["diagram_spec"] = script["diagram_spec"]
+    if script.get("sketch_spec"):
+        props["sketch_spec"] = script["sketch_spec"]
     if clips:
         props["clips"] = clips
     return props

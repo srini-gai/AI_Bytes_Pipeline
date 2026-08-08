@@ -10,7 +10,8 @@ import {SplitCompareScene} from './components/SplitCompareScene';
 import {BarChartScene} from './components/BarChartScene';
 import {ClusterScene} from './components/ClusterScene';
 import {DialScene} from './components/DialScene';
-import type {AIBytesReelProps, ClipsMap, DiagramSpec, Theme} from './types';
+import {SketchScene} from './components/SketchScene';
+import type {AIBytesReelProps, ClipsMap, DiagramSpec, SketchSpec, Theme} from './types';
 
 const FPS = 30;
 const CROSSFADE = 9; // 0.3s at 30fps
@@ -54,6 +55,8 @@ function renderConceptScene(
   concept: string,
   clips: ClipsMap | undefined,
   t: Theme,
+  sketchSpec: SketchSpec | undefined,
+  durationInFrames: number,
 ): React.ReactNode {
   switch (spec.type) {
     case 'flow':          return <FlowScene spec={spec} theme={t} />;
@@ -63,12 +66,16 @@ function renderConceptScene(
     case 'bar_chart':     return <BarChartScene spec={spec} theme={t} />;
     case 'cluster':       return <ClusterScene spec={spec} theme={t} />;
     case 'dial':          return <DialScene spec={spec} theme={t} />;
+    case 'sketch':
+      return sketchSpec
+        ? <SketchScene topic={concept} sketchSpec={sketchSpec} accentColor={t.accent} durationInFrames={durationInFrames} />
+        : <ConceptScene concept={concept} videoSrc={clips?.concept} theme={t} />;
     default:              return <ConceptScene concept={concept} videoSrc={clips?.concept} theme={t} />;
   }
 }
 
 export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
-  const {episode, hook, concept, slides, takeaway, clips, theme, diagram_spec} = props;
+  const {episode, hook, concept, slides, takeaway, clips, theme, diagram_spec, sketch_spec} = props;
   const t = theme ?? DEFAULT_THEME;
   const slideCount = slides.length;
   const slideDuration = Math.floor(SLIDES_TOTAL / slideCount);
@@ -86,7 +93,7 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
       <Sequence from={CONCEPT_START} durationInFrames={CONCEPT_DURATION}>
         <Fade duration={CONCEPT_DURATION}>
           {diagram_spec
-            ? renderConceptScene(diagram_spec, concept, clips, t)
+            ? renderConceptScene(diagram_spec, concept, clips, t, sketch_spec, CONCEPT_DURATION)
             : <ConceptScene concept={concept} videoSrc={clips?.concept} theme={t} />}
         </Fade>
       </Sequence>

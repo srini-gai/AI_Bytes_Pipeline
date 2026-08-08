@@ -23,7 +23,7 @@ REQUIRED_FIELDS = [
 
 _VALID_DIAGRAM_TYPES = {
     "hub_spoke", "cluster", "split_compare",
-    "dial", "bar_chart", "side_by_side", "flow",
+    "dial", "bar_chart", "side_by_side", "flow", "sketch",
 }
 
 # Rotate through 5 hook formulas by episode number
@@ -68,7 +68,8 @@ Required JSON schema:
     "overlay": "<rgba CSS string, e.g. rgba(20,0,0,0.45)>",
     "pexels_mood": "<2-4 word mood for Pexels video searches>"
   },
-  "diagram_spec": "<object — see DIAGRAM GUIDE below for exact schema per type>"
+  "diagram_spec": "<object — see DIAGRAM GUIDE below for exact schema per type>",
+  "sketch_spec": "<object — REQUIRED only when diagram_spec.type is 'sketch'. See DIAGRAM GUIDE.>"
 }
 
 RULES (violation = invalid output):
@@ -77,7 +78,8 @@ RULES (violation = invalid output):
 - slides: EXACTLY 4 items. Each covers a different angle.
 - youtube_title: MUST end with ' #Shorts' (space then #Shorts).
 - theme.name: MUST be exactly one of the 6 values listed. Use the exact colors from the THEME GUIDE.
-- diagram_spec.type: MUST be exactly one of the 7 values in the DIAGRAM GUIDE. Populate only the fields for that type.
+- diagram_spec.type: MUST be exactly one of the 8 values in the DIAGRAM GUIDE. Populate only the fields for that type.
+- When diagram_type is sketch, generate a sketch_spec with 3-6 nodes and edges that visually explain the concept as a flow diagram. Keep node labels under 20 chars. Keep edge labels under 10 chars.
 - Output raw JSON only — no ```json fences, no preamble.
 
 THEME GUIDE — pick based on the topic's emotional feel:
@@ -114,7 +116,13 @@ side_by_side → Local LLMs, Fine-tuning vs RAG
 
 flow        → RAG, Chain of Thought, Second Brain
   {"type":"flow","steps":[{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"}]}
-  (3-5 steps in execution order)\
+  (3-5 steps in execution order)
+
+sketch      → Abstract/novel concepts better shown as a hand-drawn flow diagram
+  diagram_spec: {"type":"sketch"}
+  ALSO output a top-level "sketch_spec" object:
+  {"nodes":[{"id":"<short id>","label":"<node label, under 20 chars>","x":<number>,"y":<number>,"shape":"rect|circle|diamond","width":<number>,"height":<number>},...],"edges":[{"from":"<id>","to":"<id>","label":"<optional, under 10 chars>"},...],"title":"<optional diagram title>"}
+  (3-6 nodes placed on a canvas roughly 720 wide x 500 tall; edges reference node ids and show the flow between them)\
 """
 
 _TAMIL_SYSTEM_SUFFIX = (
@@ -227,6 +235,42 @@ def _validate_diagram_spec(spec: object, episode: int) -> None:
         for step in steps:
             if not step.get("icon") or not step.get("label"):
                 raise ValueError("diagram_spec flow each step needs 'icon' and 'label'")
+    # dtype == "sketch": diagram_spec itself carries no extra fields —
+    # the actual diagram content lives in the top-level 'sketch_spec' field,
+    # validated separately by _validate_sketch_spec().
+
+
+_VALID_SKETCH_SHAPES = {"rect", "circle", "diamond"}
+
+
+def _validate_sketch_spec(spec: object) -> None:
+    if not isinstance(spec, dict):
+        raise ValueError("'sketch_spec' must be a JSON object when diagram_spec.type is 'sketch'")
+
+    nodes = spec.get("nodes", [])
+    if not isinstance(nodes, list) or not (3 <= len(nodes) <= 6):
+        raise ValueError("sketch_spec requires 3-6 nodes")
+
+    node_ids = set()
+    for node in nodes:
+        for key in ("id", "label", "x", "y", "shape"):
+            if key not in node:
+                raise ValueError(f"sketch_spec node missing '{key}'")
+        if node["shape"] not in _VALID_SKETCH_SHAPES:
+            raise ValueError(f"sketch_spec node shape '{node['shape']}' must be one of {sorted(_VALID_SKETCH_SHAPES)}")
+        if len(node["label"]) > 20:
+            raise ValueError(f"sketch_spec node label exceeds 20 chars: '{node['label']}'")
+        node_ids.add(node["id"])
+
+    edges = spec.get("edges", [])
+    if not isinstance(edges, list) or not edges:
+        raise ValueError("sketch_spec requires at least 1 edge")
+    for edge in edges:
+        if edge.get("from") not in node_ids or edge.get("to") not in node_ids:
+            raise ValueError("sketch_spec edge 'from'/'to' must reference valid node ids")
+        label = edge.get("label")
+        if label and len(label) > 10:
+            raise ValueError(f"sketch_spec edge label exceeds 10 chars: '{label}'")
 
 
 def _validate(data: dict, episode: int, lang: str = "en") -> None:
@@ -271,6 +315,8 @@ def _validate(data: dict, episode: int, lang: str = "en") -> None:
         )
 
     _validate_diagram_spec(data.get("diagram_spec"), episode)
+    if data["diagram_spec"].get("type") == "sketch":
+        _validate_sketch_spec(data.get("sketch_spec"))
 
 
 def run(topic: str, episode: int, week: int, lang: str = "en") -> dict:
