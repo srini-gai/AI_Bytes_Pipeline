@@ -82,6 +82,38 @@ RULES (violation = invalid output):
 - When diagram_type is sketch, generate a sketch_spec with 3-6 nodes and edges that visually explain the concept as a flow diagram. Keep node labels under 20 chars. Keep edge labels under 10 chars.
 - Output raw JSON only — no ```json fences, no preamble.
 
+DIAGRAM TYPE ROUTING — choose diagram_type="sketch" when the topic involves:
+- A process with 3-6 distinct steps that connect to each other (not just a linear list — steps that branch, merge, or feed into a shared destination).
+- Any topic containing words: tokenization, training, backpropagation, gradient, attention, transformer, neural network, context window, embedding, RLHF.
+- Whenever a flow diagram would benefit from showing data transformations between named components (e.g. text -> tokens -> embeddings -> model), prefer "sketch" over "flow" so the transformation between each node is visible.
+Do not default to "flow", "hub_spoke", or the other types out of habit — check this routing list first. Only fall back to the other diagram types when none of the above conditions apply.
+
+When diagram_type='sketch', you MUST also populate a top-level sketch_spec with:
+- 3 to 6 nodes: each has id, label (max 18 chars), x, y, shape.
+- At least 2 edges connecting the nodes.
+- A short title (max 30 chars).
+- Node spacing: x values between 80-580, y values between 150-500.
+- Shapes: "rect" for processes/data, "circle" for models/engines, "diamond" for decision points.
+
+Example for topic "How AI Actually Reads Your Text":
+sketch_spec = {
+  "title": "From Text to Tokens",
+  "nodes": [
+    {"id":"t","label":"Your Text","x":80,"y":280,"shape":"rect","width":140,"height":50},
+    {"id":"tk","label":"Tokenizer","x":280,"y":280,"shape":"diamond","width":130,"height":60},
+    {"id":"id","label":"Token IDs","x":480,"y":180,"shape":"rect","width":130,"height":50},
+    {"id":"em","label":"Embeddings","x":480,"y":380,"shape":"rect","width":130,"height":50},
+    {"id":"llm","label":"LLM","x":620,"y":280,"shape":"circle","width":80,"height":80}
+  ],
+  "edges": [
+    {"from":"t","to":"tk","label":"splits"},
+    {"from":"tk","to":"id","label":"maps"},
+    {"from":"tk","to":"em","label":"encodes"},
+    {"from":"id","to":"llm"},
+    {"from":"em","to":"llm","label":"feeds"}
+  ]
+}
+
 THEME GUIDE — pick based on the topic's emotional feel:
 - danger   : problems, errors, hallucinations, risks        → accent=#ff3333, accent2=#ff6600, overlay=rgba(20,0,0,0.45),    pexels_mood="dark dramatic red"
 - calm     : organisation, productivity, clarity, memory    → accent=#60a5fa, accent2=#e2e8f0, overlay=rgba(0,10,30,0.40),   pexels_mood="soft blue minimal calm"
@@ -118,7 +150,9 @@ flow        → RAG, Chain of Thought, Second Brain
   {"type":"flow","steps":[{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"}]}
   (3-5 steps in execution order)
 
-sketch      → Abstract/novel concepts better shown as a hand-drawn flow diagram
+sketch      → Tokenization, Training, Backpropagation, Attention, Transformers, Neural networks,
+              Context windows, Embeddings, RLHF, and any multi-step process (3-6 steps) whose
+              components transform data as it passes between them. See DIAGRAM TYPE ROUTING above.
   diagram_spec: {"type":"sketch"}
   ALSO output a top-level "sketch_spec" object:
   {"nodes":[{"id":"<short id>","label":"<node label, under 20 chars>","x":<number>,"y":<number>,"shape":"rect|circle|diamond","width":<number>,"height":<number>},...],"edges":[{"from":"<id>","to":"<id>","label":"<optional, under 10 chars>"},...],"title":"<optional diagram title>"}

@@ -240,6 +240,58 @@ def test_validate_passes_all_diagram_types():
         script_agent._validate_diagram_spec(spec, 1)  # should not raise
 
 
+SKETCH_SCRIPT = {
+    **MINIMAL_SCRIPT,
+    "diagram_spec": {"type": "sketch"},
+    "sketch_spec": {
+        "title": "From Text to Tokens",
+        "nodes": [
+            {"id": "t", "label": "Your Text", "x": 80, "y": 280, "shape": "rect", "width": 140, "height": 50},
+            {"id": "tk", "label": "Tokenizer", "x": 280, "y": 280, "shape": "diamond", "width": 130, "height": 60},
+            {"id": "id", "label": "Token IDs", "x": 480, "y": 180, "shape": "rect", "width": 130, "height": 50},
+        ],
+        "edges": [
+            {"from": "t", "to": "tk", "label": "splits"},
+            {"from": "tk", "to": "id", "label": "maps"},
+        ],
+    },
+}
+
+
+def test_validate_passes_valid_sketch_spec():
+    script_agent._validate(SKETCH_SCRIPT, 1)  # should not raise
+
+
+def test_validate_rejects_sketch_with_null_sketch_spec():
+    bad = {**SKETCH_SCRIPT, "sketch_spec": None}
+    with pytest.raises(ValueError, match="sketch_spec"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_sketch_with_missing_sketch_spec_key():
+    bad = {k: v for k, v in SKETCH_SCRIPT.items() if k != "sketch_spec"}
+    with pytest.raises(ValueError, match="sketch_spec"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_sketch_too_few_nodes():
+    bad = {**SKETCH_SCRIPT, "sketch_spec": {**SKETCH_SCRIPT["sketch_spec"], "nodes": SKETCH_SCRIPT["sketch_spec"]["nodes"][:2]}}
+    with pytest.raises(ValueError, match="3-6 nodes"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_sketch_no_edges():
+    bad = {**SKETCH_SCRIPT, "sketch_spec": {**SKETCH_SCRIPT["sketch_spec"], "edges": []}}
+    with pytest.raises(ValueError, match="edge"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_sketch_edge_bad_node_ref():
+    bad = {**SKETCH_SCRIPT, "sketch_spec": {**SKETCH_SCRIPT["sketch_spec"], "edges": [{"from": "t", "to": "ghost"}]}}
+    with pytest.raises(ValueError, match="node ids"):
+        script_agent._validate(bad, 1)
+
+
 def test_validate_ta_allows_hook_up_to_15_words():
     long_hook = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
     good = {**MINIMAL_SCRIPT_TA, "hook": long_hook}
@@ -293,6 +345,37 @@ def test_system_prompt_contains_diagram_guide():
     assert "hub_spoke" in prompt
     assert "split_compare" in prompt
     assert "bar_chart" in prompt
+
+
+# ── sketch routing rules in system prompt ──────────────────────────────────────
+
+def test_system_prompt_contains_sketch_routing_section():
+    prompt = script_agent._build_system_prompt("en")
+    assert "DIAGRAM TYPE ROUTING" in prompt
+    assert "sketch" in prompt
+
+
+def test_system_prompt_sketch_routing_lists_keywords():
+    prompt = script_agent._build_system_prompt("en")
+    for keyword in (
+        "tokenization", "training", "backpropagation", "gradient",
+        "attention", "transformer", "neural network", "context window",
+        "embedding", "RLHF",
+    ):
+        assert keyword in prompt, f"missing routing keyword: {keyword}"
+
+
+def test_system_prompt_sketch_has_worked_example():
+    prompt = script_agent._build_system_prompt("en")
+    assert "From Text to Tokens" in prompt
+    assert "Tokenizer" in prompt
+
+
+def test_system_prompt_sketch_spec_field_rules():
+    prompt = script_agent._build_system_prompt("en")
+    assert "3 to 6 nodes" in prompt
+    assert "max 18 chars" in prompt
+    assert "At least 2 edges" in prompt
 
 
 # ── _parse_json ───────────────────────────────────────────────────────────────
