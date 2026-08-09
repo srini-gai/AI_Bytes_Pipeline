@@ -168,8 +168,14 @@ def _make_pexels_response(width: int = 1920, height: int = 1080) -> bytes:
     }).encode()
 
 
+def _fake_scale_to_portrait(src: Path, dst: Path) -> None:
+    """Stand-in for ffmpeg during tests — just copies bytes through."""
+    dst.write_bytes(src.read_bytes())
+
+
 @patch("urllib.request.urlopen")
-def test_fetch_pexels_clip_downloads_and_caches(mock_urlopen, tmp_path):
+@patch("agents.visual_agent._scale_to_portrait", side_effect=_fake_scale_to_portrait)
+def test_fetch_pexels_clip_downloads_and_caches(mock_scale, mock_urlopen, tmp_path):
     search_resp = MagicMock()
     search_resp.read.return_value = _make_pexels_response()
     search_resp.__enter__ = lambda s: s
@@ -193,6 +199,15 @@ def test_fetch_pexels_clip_downloads_and_caches(mock_urlopen, tmp_path):
     assert path == tmp_path / "hook.mp4"
     assert path.exists()
     assert path.stat().st_size == 100_000
+    mock_scale.assert_called_once()
+
+    # scale ran against the raw download, writing the portrait-cropped result to `cached`
+    scale_src, scale_dst = mock_scale.call_args[0]
+    assert scale_dst == tmp_path / "hook.mp4"
+    assert scale_src != scale_dst
+
+    # the intermediate pre-scale download must not be left behind
+    assert not scale_src.exists()
 
 
 @patch("urllib.request.urlopen")
@@ -214,7 +229,8 @@ def test_fetch_pexels_clip_uses_cache(mock_urlopen, tmp_path):
 
 
 @patch("urllib.request.urlopen")
-def test_fetch_pexels_clip_picks_highest_resolution(mock_urlopen, tmp_path):
+@patch("agents.visual_agent._scale_to_portrait", side_effect=_fake_scale_to_portrait)
+def test_fetch_pexels_clip_picks_highest_resolution(mock_scale, mock_urlopen, tmp_path):
     """Best file should be the one with largest width*height."""
     search_resp = MagicMock()
     search_resp.read.return_value = json.dumps({
@@ -260,7 +276,8 @@ def test_fetch_pexels_clip_raises_on_no_results(mock_urlopen, tmp_path):
 
 
 @patch("urllib.request.urlopen")
-def test_fetch_pexels_clip_includes_portrait_orientation(mock_urlopen, tmp_path):
+@patch("agents.visual_agent._scale_to_portrait", side_effect=_fake_scale_to_portrait)
+def test_fetch_pexels_clip_includes_portrait_orientation(mock_scale, mock_urlopen, tmp_path):
     search_resp = MagicMock()
     search_resp.read.return_value = _make_pexels_response()
     search_resp.__enter__ = lambda s: s
@@ -281,7 +298,8 @@ def test_fetch_pexels_clip_includes_portrait_orientation(mock_urlopen, tmp_path)
 
 
 @patch("urllib.request.urlopen")
-def test_fetch_pexels_clip_skips_human_clips(mock_urlopen, tmp_path):
+@patch("agents.visual_agent._scale_to_portrait", side_effect=_fake_scale_to_portrait)
+def test_fetch_pexels_clip_skips_human_clips(mock_scale, mock_urlopen, tmp_path):
     """First result has human URL; second is clean — should download the clean one."""
     resp = MagicMock()
     resp.read.return_value = json.dumps({
@@ -316,7 +334,8 @@ def test_fetch_pexels_clip_skips_human_clips(mock_urlopen, tmp_path):
 
 
 @patch("urllib.request.urlopen")
-def test_fetch_pexels_clip_falls_back_if_all_human(mock_urlopen, tmp_path):
+@patch("agents.visual_agent._scale_to_portrait", side_effect=_fake_scale_to_portrait)
+def test_fetch_pexels_clip_falls_back_if_all_human(mock_scale, mock_urlopen, tmp_path):
     """If every result is human-flagged, falls back to first result rather than failing."""
     resp = MagicMock()
     resp.read.return_value = json.dumps({
@@ -342,6 +361,43 @@ def test_fetch_pexels_clip_falls_back_if_all_human(mock_urlopen, tmp_path):
     download_call = mock_urlopen.call_args_list[1][0][0]
     dl_url = download_call.full_url if hasattr(download_call, "full_url") else str(download_call)
     assert "human1.mp4" in dl_url
+
+
+# ── _scale_to_portrait ────────────────────────────────────────────────────────
+
+def test_portrait_scale_filter_crops_to_fill():
+    assert visual_agent.PORTRAIT_SCALE_FILTER == (
+        "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+    )
+
+
+@patch("agents.visual_agent.subprocess.run")
+def test_scale_to_portrait_invokes_ffmpeg_with_filter(mock_run, tmp_path):
+    mock_run.return_value = MagicMock(returncode=0, stderr="")
+    src = tmp_path / "raw.mp4"
+    dst = tmp_path / "out.mp4"
+
+    visual_agent._scale_to_portrait(src, dst)
+
+    cmd = mock_run.call_args[0][0]
+    assert cmd[0] == visual_agent.FFMPEG
+    assert "-vf" in cmd
+    assert cmd[cmd.index("-vf") + 1] == visual_agent.PORTRAIT_SCALE_FILTER
+    assert str(src) in cmd
+    assert str(dst) in cmd
+
+
+@patch("agents.visual_agent.subprocess.run")
+def test_scale_to_portrait_raises_on_ffmpeg_failure(mock_run, tmp_path):
+    mock_run.return_value = MagicMock(returncode=1, stderr="Invalid data found")
+    with pytest.raises(RuntimeError, match="ffmpeg portrait scale failed"):
+        visual_agent._scale_to_portrait(tmp_path / "raw.mp4", tmp_path / "out.mp4")
+
+
+@patch("agents.visual_agent.subprocess.run", side_effect=visual_agent.subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120))
+def test_scale_to_portrait_raises_on_timeout(mock_run, tmp_path):
+    with pytest.raises(RuntimeError, match="timed out"):
+        visual_agent._scale_to_portrait(tmp_path / "raw.mp4", tmp_path / "out.mp4")
 
 
 # ── _stage_clips_to_public ────────────────────────────────────────────────────

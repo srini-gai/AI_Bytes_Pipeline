@@ -38,6 +38,12 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 PEXELS_SEARCH_URL = "https://api.pexels.com/videos/search"
 CLIP_MIN_DURATION = 8  # seconds — all scenes are 7-10s
 
+FFMPEG = "ffmpeg"
+# Scale up to cover a 1080x1920 portrait frame, then center-crop — avoids the
+# letterboxing (black side bars) that plain scale-to-fit produces on Pexels'
+# landscape (16:9) source clips.
+PORTRAIT_SCALE_FILTER = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+
 _DEFAULT_THEME = {
     "name": "energy",
     "accent": "#a78bfa",
@@ -89,6 +95,29 @@ def _clip_queries(script: dict) -> dict[str, str]:
         "slide_3": f"{heading_kw(3)} technology future abstract no people",
         "cta":     "technology abstract dark particles no people",
     }
+
+
+def _scale_to_portrait(src: Path, dst: Path) -> None:
+    """
+    Re-encode src to fill a 1080x1920 portrait frame via PORTRAIT_SCALE_FILTER.
+    Raises RuntimeError on non-zero ffmpeg exit.
+    """
+    cmd = [
+        FFMPEG, "-y",
+        "-i", str(src),
+        "-vf", PORTRAIT_SCALE_FILTER,
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-an",
+        str(dst),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ffmpeg portrait scale timed out for {src.name}")
+
+    if result.returncode != 0:
+        stderr_tail = result.stderr[-2000:] if result.stderr else "(no stderr)"
+        raise RuntimeError(f"ffmpeg portrait scale failed for {src.name}: {stderr_tail}")
 
 
 def fetch_pexels_clip(
@@ -170,11 +199,13 @@ def fetch_pexels_clip(
 
     # Download — CDN also requires a browser User-Agent to avoid 403
     _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    raw_path = clips_dir / f"{filename}.raw.mp4"
     for attempt in range(1, 4):
         try:
             dl_req = urllib.request.Request(download_url, headers={"User-Agent": _UA})
             with urllib.request.urlopen(dl_req, timeout=120) as resp:
-                cached.write_bytes(resp.read())
+                raw_path.write_bytes(resp.read())
+            _scale_to_portrait(raw_path, cached)
             logger.info(f"Clip saved: {filename} ({cached.stat().st_size // 1024} KB)")
             return cached
         except (urllib.error.URLError, OSError) as e:
@@ -193,6 +224,8 @@ def fetch_pexels_clip(
                 logger.warning(f"Pexels download '{filename}' attempt {attempt}/3: {e}")
             if attempt < 3:
                 time.sleep(wait)
+        finally:
+            raw_path.unlink(missing_ok=True)
 
     raise RuntimeError(f"Pexels download failed for '{query}': {last_error}")
 
