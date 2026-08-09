@@ -23,7 +23,7 @@ REQUIRED_FIELDS = [
 
 _VALID_DIAGRAM_TYPES = {
     "hub_spoke", "cluster", "split_compare",
-    "dial", "bar_chart", "side_by_side", "flow", "sketch",
+    "dial", "bar_chart", "side_by_side", "flow", "sketch", "data",
 }
 
 # Rotate through 5 hook formulas by episode number
@@ -69,7 +69,8 @@ Required JSON schema:
     "pexels_mood": "<2-4 word mood for Pexels video searches>"
   },
   "diagram_spec": "<object — see DIAGRAM GUIDE below for exact schema per type>",
-  "sketch_spec": "<object — REQUIRED only when diagram_spec.type is 'sketch'. See DIAGRAM GUIDE.>"
+  "sketch_spec": "<object — REQUIRED only when diagram_spec.type is 'sketch'. See DIAGRAM GUIDE.>",
+  "data_spec": "<object — REQUIRED only when diagram_spec.type is 'data'. See DIAGRAM GUIDE.>"
 }
 
 RULES (violation = invalid output):
@@ -78,8 +79,9 @@ RULES (violation = invalid output):
 - slides: EXACTLY 4 items. Each covers a different angle.
 - youtube_title: MUST end with ' #Shorts' (space then #Shorts).
 - theme.name: MUST be exactly one of the 6 values listed. Use the exact colors from the THEME GUIDE.
-- diagram_spec.type: MUST be exactly one of the 8 values in the DIAGRAM GUIDE. Populate only the fields for that type.
+- diagram_spec.type: MUST be exactly one of the 9 values in the DIAGRAM GUIDE. Populate only the fields for that type.
 - When diagram_type is sketch, generate a sketch_spec with 3-6 nodes and edges that visually explain the concept as a flow diagram. Keep node labels under 20 chars. Keep edge labels under 10 chars.
+- When diagram_type is data, generate a data_spec (see DIAGRAM GUIDE) matching the chosen data sub-type ("bars", "counter", or "comparison").
 - Output raw JSON only — no ```json fences, no preamble.
 
 DIAGRAM TYPE ROUTING — choose diagram_type="sketch" when the topic involves:
@@ -87,6 +89,34 @@ DIAGRAM TYPE ROUTING — choose diagram_type="sketch" when the topic involves:
 - Any topic containing words: tokenization, training, backpropagation, gradient, attention, transformer, neural network, context window, embedding, RLHF.
 - Whenever a flow diagram would benefit from showing data transformations between named components (e.g. text -> tokens -> embeddings -> model), prefer "sketch" over "flow" so the transformation between each node is visible.
 Do not default to "flow", "hub_spoke", or the other types out of habit — check this routing list first. Only fall back to the other diagram types when none of the above conditions apply.
+
+Choose diagram_type="data" when the topic involves:
+- Statistics, benchmark numbers, or performance metrics (accuracy %, latency, cost, throughput, token counts).
+- A before/after or old-way/new-way comparison where the story is "X was slow, Y is fast" or "X used to cost N, now it costs M".
+- A single striking number worth building the whole scene around (e.g. "trained on 45 terabytes of text", "processes 100,000 tokens per second").
+Pick the data_spec sub-type to match:
+- "bars" — 2-5 labeled quantities being ranked or compared against each other (e.g. accuracy across model sizes, cost per provider).
+- "counter" — one hero number the whole scene builds up to (e.g. parameter count, dataset size, speed multiplier).
+- "comparison" — exactly two quantities in an old-vs-new / before-vs-after frame (bars[0] = old/slow, bars[1] = new/fast).
+
+When diagram_type='data', you MUST also populate a top-level data_spec with:
+- type: one of "bars" | "counter" | "comparison".
+- title: short scene title (max 30 chars).
+- For "bars": a "bars" array of 2-5 {label, value, maxValue, color?} objects.
+- For "comparison": a "bars" array of exactly 2 {label, value, maxValue, color?} objects — index 0 is old/slow, index 1 is new/fast.
+- For "counter": counterValue (the target number), counterLabel (what it means), and optionally counterSuffix (e.g. "x faster").
+- Optionally set "unit" (e.g. "%", "ms", "x") appended after numbers in bars/comparison.
+
+Example for topic "How Much Faster Is Local Inference?":
+data_spec = {
+  "type": "comparison",
+  "title": "Cloud vs Local",
+  "unit": "ms",
+  "bars": [
+    {"label": "Cloud API", "value": 850, "maxValue": 850},
+    {"label": "Local GPU", "value": 120, "maxValue": 850}
+  ]
+}
 
 When diagram_type='sketch', you MUST also populate a top-level sketch_spec with:
 - 3 to 6 nodes: each has id, label (max 18 chars), x, y, shape.
@@ -156,7 +186,16 @@ sketch      → Tokenization, Training, Backpropagation, Attention, Transformers
   diagram_spec: {"type":"sketch"}
   ALSO output a top-level "sketch_spec" object:
   {"nodes":[{"id":"<short id>","label":"<node label, under 20 chars>","x":<number>,"y":<number>,"shape":"rect|circle|diamond","width":<number>,"height":<number>},...],"edges":[{"from":"<id>","to":"<id>","label":"<optional, under 10 chars>"},...],"title":"<optional diagram title>"}
-  (3-6 nodes placed on a canvas roughly 720 wide x 500 tall; edges reference node ids and show the flow between them)\
+  (3-6 nodes placed on a canvas roughly 720 wide x 500 tall; edges reference node ids and show the flow between them)
+
+data        → Stats, benchmark numbers, performance metrics, before/after or old-way/new-way
+              comparisons, or a single hero number worth building a scene around.
+              See DIAGRAM TYPE ROUTING above for sub-type selection.
+  diagram_spec: {"type":"data"}
+  ALSO output a top-level "data_spec" object, matching the chosen sub-type:
+  bars       → {"type":"bars","title":"<chart title>","unit":"<optional, e.g. %>","bars":[{"label":"<category>","value":<number>,"maxValue":<number>,"color":"<optional hex>"},...]}  (2-5 bars)
+  counter    → {"type":"counter","title":"<scene title>","counterValue":<number>,"counterLabel":"<what it means>","counterSuffix":"<optional, e.g. x faster>","unit":"<optional>"}
+  comparison → {"type":"comparison","title":"<scene title>","unit":"<optional>","bars":[{"label":"<old/slow>","value":<number>,"maxValue":<number>},{"label":"<new/fast>","value":<number>,"maxValue":<number>}]}  (exactly 2 — index 0 is old/slow, index 1 is new/fast)\
 """
 
 _TAMIL_SYSTEM_SUFFIX = (
@@ -269,9 +308,9 @@ def _validate_diagram_spec(spec: object, episode: int) -> None:
         for step in steps:
             if not step.get("icon") or not step.get("label"):
                 raise ValueError("diagram_spec flow each step needs 'icon' and 'label'")
-    # dtype == "sketch": diagram_spec itself carries no extra fields —
-    # the actual diagram content lives in the top-level 'sketch_spec' field,
-    # validated separately by _validate_sketch_spec().
+    # dtype == "sketch"/"data": diagram_spec itself carries no extra fields —
+    # the actual diagram content lives in the top-level 'sketch_spec'/'data_spec'
+    # field, validated separately by _validate_sketch_spec()/_validate_data_spec().
 
 
 _VALID_SKETCH_SHAPES = {"rect", "circle", "diamond"}
@@ -305,6 +344,49 @@ def _validate_sketch_spec(spec: object) -> None:
         label = edge.get("label")
         if label and len(label) > 10:
             raise ValueError(f"sketch_spec edge label exceeds 10 chars: '{label}'")
+
+
+_VALID_DATA_TYPES = {"bars", "counter", "comparison"}
+
+
+def _validate_data_bar(bar: object, index: int) -> None:
+    if not isinstance(bar, dict):
+        raise ValueError(f"data_spec bars[{index}] must be a JSON object")
+    if not bar.get("label"):
+        raise ValueError(f"data_spec bars[{index}] missing 'label'")
+    if not isinstance(bar.get("value"), (int, float)):
+        raise ValueError(f"data_spec bars[{index}] needs numeric 'value'")
+    if not isinstance(bar.get("maxValue"), (int, float)):
+        raise ValueError(f"data_spec bars[{index}] needs numeric 'maxValue'")
+
+
+def _validate_data_spec(spec: object) -> None:
+    if not isinstance(spec, dict):
+        raise ValueError("'data_spec' must be a JSON object when diagram_spec.type is 'data'")
+
+    dstype = spec.get("type")
+    if dstype not in _VALID_DATA_TYPES:
+        raise ValueError(f"data_spec.type '{dstype}' must be one of {sorted(_VALID_DATA_TYPES)}")
+    if not spec.get("title"):
+        raise ValueError("data_spec requires 'title'")
+
+    if dstype == "bars":
+        bars = spec.get("bars", [])
+        if not isinstance(bars, list) or not (2 <= len(bars) <= 5):
+            raise ValueError("data_spec bars requires 2-5 bars")
+        for i, bar in enumerate(bars):
+            _validate_data_bar(bar, i)
+    elif dstype == "comparison":
+        bars = spec.get("bars", [])
+        if not isinstance(bars, list) or len(bars) != 2:
+            raise ValueError("data_spec comparison requires exactly 2 bars (old/slow, new/fast)")
+        for i, bar in enumerate(bars):
+            _validate_data_bar(bar, i)
+    elif dstype == "counter":
+        if not isinstance(spec.get("counterValue"), (int, float)):
+            raise ValueError("data_spec counter requires numeric 'counterValue'")
+        if not spec.get("counterLabel"):
+            raise ValueError("data_spec counter requires 'counterLabel'")
 
 
 def _validate(data: dict, episode: int, lang: str = "en") -> None:
@@ -351,6 +433,8 @@ def _validate(data: dict, episode: int, lang: str = "en") -> None:
     _validate_diagram_spec(data.get("diagram_spec"), episode)
     if data["diagram_spec"].get("type") == "sketch":
         _validate_sketch_spec(data.get("sketch_spec"))
+    if data["diagram_spec"].get("type") == "data":
+        _validate_data_spec(data.get("data_spec"))
 
 
 def run(topic: str, episode: int, week: int, lang: str = "en") -> dict:

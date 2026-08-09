@@ -92,6 +92,10 @@ export interface SketchDiagramSpec {
   type: 'sketch';
 }
 
+export interface DataDiagramSpec {
+  type: 'data';
+}
+
 export type DiagramSpec =
   | HubSpokeSpec
   | ClusterSpec
@@ -100,7 +104,8 @@ export type DiagramSpec =
   | DialSpec
   | BarChartSpec
   | FlowSpec
-  | SketchDiagramSpec;
+  | SketchDiagramSpec
+  | DataDiagramSpec;
 
 // ─── Sketch scene types (animated SVG diagram) ────────────────────────────────
 
@@ -126,6 +131,27 @@ export interface SketchSpec {
   title?: string;
 }
 
+// ─── Data scene types (animated numbers and bar charts) ───────────────────────
+
+export type DataSceneType = 'bars' | 'counter' | 'comparison';
+
+export interface DataBar {
+  label: string;
+  value: number;
+  maxValue: number;
+  color?: string;
+}
+
+export interface DataSpec {
+  type: DataSceneType;
+  title: string;
+  bars?: DataBar[];
+  counterValue?: number;
+  counterLabel?: string;
+  counterSuffix?: string;
+  unit?: string;
+}
+
 // ─── Main composition props ───────────────────────────────────────────────────
 
 export interface AIBytesReelProps {
@@ -142,4 +168,5 @@ export interface AIBytesReelProps {
   clips?: ClipsMap;
   diagram_spec?: DiagramSpec;
   sketch_spec?: SketchSpec;
+  data_spec?: DataSpec;
 }

@@ -128,6 +128,30 @@ def test_build_props_omits_diagram_spec_when_absent():
     assert "diagram_spec" not in props
 
 
+def test_build_props_passes_sketch_spec():
+    sketch_spec = {"nodes": [{"id": "a", "label": "A", "x": 0, "y": 0, "shape": "rect"}], "edges": []}
+    script = {**SAMPLE_SCRIPT, "diagram_spec": {"type": "sketch"}, "sketch_spec": sketch_spec}
+    props = visual_agent._build_props(script)
+    assert props["sketch_spec"] == sketch_spec
+
+
+def test_build_props_omits_sketch_spec_when_absent():
+    props = visual_agent._build_props(SAMPLE_SCRIPT)
+    assert "sketch_spec" not in props
+
+
+def test_build_props_passes_data_spec():
+    data_spec = {"type": "counter", "title": "Training Data", "counterValue": 45, "counterLabel": "TB of text"}
+    script = {**SAMPLE_SCRIPT, "diagram_spec": {"type": "data"}, "data_spec": data_spec}
+    props = visual_agent._build_props(script)
+    assert props["data_spec"] == data_spec
+
+
+def test_build_props_omits_data_spec_when_absent():
+    props = visual_agent._build_props(SAMPLE_SCRIPT)
+    assert "data_spec" not in props
+
+
 # ── fetch_pexels_clip ─────────────────────────────────────────────────────────
 
 def _make_pexels_response(width: int = 1920, height: int = 1080) -> bytes:

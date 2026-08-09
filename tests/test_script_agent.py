@@ -292,6 +292,141 @@ def test_validate_rejects_sketch_edge_bad_node_ref():
         script_agent._validate(bad, 1)
 
 
+BARS_DATA_SCRIPT = {
+    **MINIMAL_SCRIPT,
+    "diagram_spec": {"type": "data"},
+    "data_spec": {
+        "type": "bars",
+        "title": "Accuracy by Model",
+        "unit": "%",
+        "bars": [
+            {"label": "Small", "value": 62, "maxValue": 100},
+            {"label": "Medium", "value": 81, "maxValue": 100},
+            {"label": "Large", "value": 94, "maxValue": 100},
+        ],
+    },
+}
+
+COUNTER_DATA_SCRIPT = {
+    **MINIMAL_SCRIPT,
+    "diagram_spec": {"type": "data"},
+    "data_spec": {
+        "type": "counter",
+        "title": "Training Data",
+        "counterValue": 45,
+        "counterLabel": "terabytes of text",
+        "counterSuffix": "TB",
+    },
+}
+
+COMPARISON_DATA_SCRIPT = {
+    **MINIMAL_SCRIPT,
+    "diagram_spec": {"type": "data"},
+    "data_spec": {
+        "type": "comparison",
+        "title": "Cloud vs Local",
+        "unit": "ms",
+        "bars": [
+            {"label": "Cloud API", "value": 850, "maxValue": 850},
+            {"label": "Local GPU", "value": 120, "maxValue": 850},
+        ],
+    },
+}
+
+
+def test_validate_passes_valid_bars_data_spec():
+    script_agent._validate(BARS_DATA_SCRIPT, 1)  # should not raise
+
+
+def test_validate_passes_valid_counter_data_spec():
+    script_agent._validate(COUNTER_DATA_SCRIPT, 1)  # should not raise
+
+
+def test_validate_passes_valid_comparison_data_spec():
+    script_agent._validate(COMPARISON_DATA_SCRIPT, 1)  # should not raise
+
+
+def test_validate_rejects_data_with_null_data_spec():
+    bad = {**BARS_DATA_SCRIPT, "data_spec": None}
+    with pytest.raises(ValueError, match="data_spec"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_data_with_missing_data_spec_key():
+    bad = {k: v for k, v in BARS_DATA_SCRIPT.items() if k != "data_spec"}
+    with pytest.raises(ValueError, match="data_spec"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_data_spec_invalid_type():
+    bad = {**BARS_DATA_SCRIPT, "data_spec": {**BARS_DATA_SCRIPT["data_spec"], "type": "pie"}}
+    with pytest.raises(ValueError, match="data_spec.type"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_data_spec_missing_title():
+    bad = {**BARS_DATA_SCRIPT, "data_spec": {k: v for k, v in BARS_DATA_SCRIPT["data_spec"].items() if k != "title"}}
+    with pytest.raises(ValueError, match="title"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_bars_data_spec_too_few_bars():
+    bad = {**BARS_DATA_SCRIPT, "data_spec": {**BARS_DATA_SCRIPT["data_spec"], "bars": BARS_DATA_SCRIPT["data_spec"]["bars"][:1]}}
+    with pytest.raises(ValueError, match="2-5 bars"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_bars_data_spec_bar_missing_value():
+    bad_bars = [{"label": "Small", "maxValue": 100}, {"label": "Large", "value": 90, "maxValue": 100}]
+    bad = {**BARS_DATA_SCRIPT, "data_spec": {**BARS_DATA_SCRIPT["data_spec"], "bars": bad_bars}}
+    with pytest.raises(ValueError, match="value"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_comparison_data_spec_wrong_bar_count():
+    bad = {**COMPARISON_DATA_SCRIPT, "data_spec": {**COMPARISON_DATA_SCRIPT["data_spec"], "bars": COMPARISON_DATA_SCRIPT["data_spec"]["bars"] + [{"label": "Extra", "value": 1, "maxValue": 1}]}}
+    with pytest.raises(ValueError, match="exactly 2"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_counter_data_spec_missing_counter_value():
+    bad = {**COUNTER_DATA_SCRIPT, "data_spec": {k: v for k, v in COUNTER_DATA_SCRIPT["data_spec"].items() if k != "counterValue"}}
+    with pytest.raises(ValueError, match="counterValue"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_counter_data_spec_missing_counter_label():
+    bad = {**COUNTER_DATA_SCRIPT, "data_spec": {k: v for k, v in COUNTER_DATA_SCRIPT["data_spec"].items() if k != "counterLabel"}}
+    with pytest.raises(ValueError, match="counterLabel"):
+        script_agent._validate(bad, 1)
+
+
+# ── data routing rules in system prompt ─────────────────────────────────────────
+
+def test_system_prompt_contains_data_routing_section():
+    prompt = script_agent._build_system_prompt("en")
+    assert "data_spec" in prompt
+    assert "performance metrics" in prompt
+
+
+def test_system_prompt_data_routing_mentions_subtypes():
+    prompt = script_agent._build_system_prompt("en")
+    assert '"bars"' in prompt
+    assert '"counter"' in prompt
+    assert '"comparison"' in prompt
+
+
+def test_system_prompt_diagram_guide_lists_data_type():
+    prompt = script_agent._build_system_prompt("en")
+    assert "DIAGRAM GUIDE" in prompt
+    idx = prompt.index("DIAGRAM GUIDE")
+    assert "data        →" in prompt[idx:]
+
+
+def test_validate_diagram_spec_accepts_data_type():
+    script_agent._validate_diagram_spec({"type": "data"}, 1)  # should not raise
+
+
 def test_validate_ta_allows_hook_up_to_15_words():
     long_hook = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
     good = {**MINIMAL_SCRIPT_TA, "hook": long_hook}
