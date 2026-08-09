@@ -23,7 +23,7 @@ REQUIRED_FIELDS = [
 
 _VALID_DIAGRAM_TYPES = {
     "hub_spoke", "cluster", "split_compare",
-    "dial", "bar_chart", "side_by_side", "flow", "sketch", "data",
+    "dial", "bar_chart", "side_by_side", "flow", "sketch", "data", "token",
 }
 
 # Rotate through 5 hook formulas by episode number
@@ -70,7 +70,8 @@ Required JSON schema:
   },
   "diagram_spec": "<object — see DIAGRAM GUIDE below for exact schema per type>",
   "sketch_spec": "<object — REQUIRED only when diagram_spec.type is 'sketch'. See DIAGRAM GUIDE.>",
-  "data_spec": "<object — REQUIRED only when diagram_spec.type is 'data'. See DIAGRAM GUIDE.>"
+  "data_spec": "<object — REQUIRED only when diagram_spec.type is 'data'. See DIAGRAM GUIDE.>",
+  "token_spec": "<object — REQUIRED only when diagram_spec.type is 'token'. See DIAGRAM GUIDE.>"
 }
 
 RULES (violation = invalid output):
@@ -79,14 +80,19 @@ RULES (violation = invalid output):
 - slides: EXACTLY 4 items. Each covers a different angle.
 - youtube_title: MUST end with ' #Shorts' (space then #Shorts).
 - theme.name: MUST be exactly one of the 6 values listed. Use the exact colors from the THEME GUIDE.
-- diagram_spec.type: MUST be exactly one of the 9 values in the DIAGRAM GUIDE. Populate only the fields for that type.
+- diagram_spec.type: MUST be exactly one of the 10 values in the DIAGRAM GUIDE. Populate only the fields for that type.
 - When diagram_type is sketch, generate a sketch_spec with 3-6 nodes and edges that visually explain the concept as a flow diagram. Keep node labels under 20 chars. Keep edge labels under 10 chars.
 - When diagram_type is data, generate a data_spec (see DIAGRAM GUIDE) matching the chosen data sub-type ("bars", "counter", or "comparison").
+- When diagram_type is token, generate a token_spec (see DIAGRAM GUIDE) with a sentence, 2-12 tokens, and (if provided) a weights array matching tokens length.
 - Output raw JSON only — no ```json fences, no preamble.
+
+Choose diagram_type="token" when the topic involves:
+- Tokenization, tokens, context window, vocabulary, embeddings, text processing, or NLP — anything about how raw text gets split/counted/represented as discrete units.
+This takes priority over "sketch" whenever the concept is best shown as one example sentence breaking apart into token boxes, rather than a multi-component pipeline diagram.
 
 DIAGRAM TYPE ROUTING — choose diagram_type="sketch" when the topic involves:
 - A process with 3-6 distinct steps that connect to each other (not just a linear list — steps that branch, merge, or feed into a shared destination).
-- Any topic containing words: tokenization, training, backpropagation, gradient, attention, transformer, neural network, context window, embedding, RLHF.
+- Any topic containing words: training, backpropagation, gradient, attention, transformer, neural network, RLHF.
 - Whenever a flow diagram would benefit from showing data transformations between named components (e.g. text -> tokens -> embeddings -> model), prefer "sketch" over "flow" so the transformation between each node is visible.
 Do not default to "flow", "hub_spoke", or the other types out of habit — check this routing list first. Only fall back to the other diagram types when none of the above conditions apply.
 
@@ -116,6 +122,29 @@ data_spec = {
     {"label": "Cloud API", "value": 850, "maxValue": 850},
     {"label": "Local GPU", "value": 120, "maxValue": 850}
   ]
+}
+
+When diagram_type='token', you MUST also populate a top-level token_spec with:
+- sentence: the example sentence being tokenized (plain text).
+- tokens: 2-12 {text, color?, highlight?} objects — text is the token substring; set highlight:true on at most one or two tokens worth calling out.
+- title: optional short scene title (max 30 chars).
+- showIds: optional bool — show a fake-but-plausible token ID under each box.
+- showWeights: optional bool — show a small attention/importance bar under each box.
+- weights: REQUIRED if showWeights is true — array of numbers (0-1), same length as tokens, one per token.
+
+Example for topic "How AI Actually Reads Your Text":
+token_spec = {
+  "title": "Text -> Tokens -> Numbers",
+  "sentence": "Hello world how are you",
+  "tokens": [
+    {"text": "Hello", "highlight": true},
+    {"text": "world"},
+    {"text": "how"},
+    {"text": "are"},
+    {"text": "you"}
+  ],
+  "showIds": true,
+  "weights": [0.8, 0.6, 0.4, 0.5, 0.3]
 }
 
 When diagram_type='sketch', you MUST also populate a top-level sketch_spec with:
@@ -180,9 +209,10 @@ flow        → RAG, Chain of Thought, Second Brain
   {"type":"flow","steps":[{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"}]}
   (3-5 steps in execution order)
 
-sketch      → Tokenization, Training, Backpropagation, Attention, Transformers, Neural networks,
-              Context windows, Embeddings, RLHF, and any multi-step process (3-6 steps) whose
-              components transform data as it passes between them. See DIAGRAM TYPE ROUTING above.
+sketch      → Training, Backpropagation, Attention, Transformers, Neural networks, RLHF,
+              and any multi-step process (3-6 steps) whose components transform data as it
+              passes between them. See DIAGRAM TYPE ROUTING above. (For tokenization/text-
+              splitting specifically, use "token" instead — see below.)
   diagram_spec: {"type":"sketch"}
   ALSO output a top-level "sketch_spec" object:
   {"nodes":[{"id":"<short id>","label":"<node label, under 20 chars>","x":<number>,"y":<number>,"shape":"rect|circle|diamond","width":<number>,"height":<number>},...],"edges":[{"from":"<id>","to":"<id>","label":"<optional, under 10 chars>"},...],"title":"<optional diagram title>"}
@@ -195,7 +225,15 @@ data        → Stats, benchmark numbers, performance metrics, before/after or o
   ALSO output a top-level "data_spec" object, matching the chosen sub-type:
   bars       → {"type":"bars","title":"<chart title>","unit":"<optional, e.g. %>","bars":[{"label":"<category>","value":<number>,"maxValue":<number>,"color":"<optional hex>"},...]}  (2-5 bars)
   counter    → {"type":"counter","title":"<scene title>","counterValue":<number>,"counterLabel":"<what it means>","counterSuffix":"<optional, e.g. x faster>","unit":"<optional>"}
-  comparison → {"type":"comparison","title":"<scene title>","unit":"<optional>","bars":[{"label":"<old/slow>","value":<number>,"maxValue":<number>},{"label":"<new/fast>","value":<number>,"maxValue":<number>}]}  (exactly 2 — index 0 is old/slow, index 1 is new/fast)\
+  comparison → {"type":"comparison","title":"<scene title>","unit":"<optional>","bars":[{"label":"<old/slow>","value":<number>,"maxValue":<number>},{"label":"<new/fast>","value":<number>,"maxValue":<number>}]}  (exactly 2 — index 0 is old/slow, index 1 is new/fast)
+
+token       → Tokenization, tokens, context window, vocabulary, embeddings, text processing, NLP —
+              any topic best shown as one example sentence breaking apart into token boxes.
+              See "Choose diagram_type='token'" above.
+  diagram_spec: {"type":"token"}
+  ALSO output a top-level "token_spec" object:
+  {"sentence":"<example sentence>","tokens":[{"text":"<substring>","color":"<optional hex>","highlight":<optional bool>},...],"title":"<optional>","showIds":<optional bool>,"showWeights":<optional bool>,"weights":"<optional number[] — REQUIRED, same length as tokens, if showWeights is true>"}
+  (2-12 tokens; weights values are 0-1)\
 """
 
 _TAMIL_SYSTEM_SUFFIX = (
@@ -308,9 +346,10 @@ def _validate_diagram_spec(spec: object, episode: int) -> None:
         for step in steps:
             if not step.get("icon") or not step.get("label"):
                 raise ValueError("diagram_spec flow each step needs 'icon' and 'label'")
-    # dtype == "sketch"/"data": diagram_spec itself carries no extra fields —
-    # the actual diagram content lives in the top-level 'sketch_spec'/'data_spec'
-    # field, validated separately by _validate_sketch_spec()/_validate_data_spec().
+    # dtype == "sketch"/"data"/"token": diagram_spec itself carries no extra fields —
+    # the actual diagram content lives in the top-level 'sketch_spec'/'data_spec'/
+    # 'token_spec' field, validated separately by _validate_sketch_spec()/
+    # _validate_data_spec()/_validate_token_spec().
 
 
 _VALID_SKETCH_SHAPES = {"rect", "circle", "diamond"}
@@ -389,6 +428,34 @@ def _validate_data_spec(spec: object) -> None:
             raise ValueError("data_spec counter requires 'counterLabel'")
 
 
+def _validate_token_spec(spec: object) -> None:
+    if not isinstance(spec, dict):
+        raise ValueError("'token_spec' must be a JSON object when diagram_spec.type is 'token'")
+
+    if not spec.get("sentence"):
+        raise ValueError("token_spec requires 'sentence'")
+
+    tokens = spec.get("tokens", [])
+    if not isinstance(tokens, list) or not (2 <= len(tokens) <= 12):
+        raise ValueError("token_spec requires 2-12 tokens")
+    for i, token in enumerate(tokens):
+        if not isinstance(token, dict) or not token.get("text"):
+            raise ValueError(f"token_spec tokens[{i}] missing 'text'")
+
+    if spec.get("showWeights"):
+        weights = spec.get("weights")
+        if not isinstance(weights, list) or len(weights) != len(tokens):
+            raise ValueError(
+                f"token_spec weights must be an array matching tokens length ({len(tokens)}) when showWeights is true"
+            )
+    elif spec.get("weights") is not None:
+        weights = spec["weights"]
+        if not isinstance(weights, list) or len(weights) != len(tokens):
+            raise ValueError(
+                f"token_spec weights must be an array matching tokens length ({len(tokens)})"
+            )
+
+
 def _validate(data: dict, episode: int, lang: str = "en") -> None:
     missing = [f for f in REQUIRED_FIELDS if f not in data]
     if missing:
@@ -435,6 +502,8 @@ def _validate(data: dict, episode: int, lang: str = "en") -> None:
         _validate_sketch_spec(data.get("sketch_spec"))
     if data["diagram_spec"].get("type") == "data":
         _validate_data_spec(data.get("data_spec"))
+    if data["diagram_spec"].get("type") == "token":
+        _validate_token_spec(data.get("token_spec"))
 
 
 def run(topic: str, episode: int, week: int, lang: str = "en") -> dict:

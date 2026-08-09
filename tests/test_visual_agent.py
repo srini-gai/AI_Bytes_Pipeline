@@ -152,6 +152,21 @@ def test_build_props_omits_data_spec_when_absent():
     assert "data_spec" not in props
 
 
+def test_build_props_passes_token_spec():
+    token_spec = {
+        "sentence": "Hello world how are you",
+        "tokens": [{"text": "Hello"}, {"text": "world"}, {"text": "how"}, {"text": "are"}, {"text": "you"}],
+    }
+    script = {**SAMPLE_SCRIPT, "diagram_spec": {"type": "token"}, "token_spec": token_spec}
+    props = visual_agent._build_props(script)
+    assert props["token_spec"] == token_spec
+
+
+def test_build_props_omits_token_spec_when_absent():
+    props = visual_agent._build_props(SAMPLE_SCRIPT)
+    assert "token_spec" not in props
+
+
 # ── fetch_pexels_clip ─────────────────────────────────────────────────────────
 
 def _make_pexels_response(width: int = 1920, height: int = 1080) -> bytes:

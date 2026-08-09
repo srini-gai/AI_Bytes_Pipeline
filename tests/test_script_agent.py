@@ -427,6 +427,141 @@ def test_validate_diagram_spec_accepts_data_type():
     script_agent._validate_diagram_spec({"type": "data"}, 1)  # should not raise
 
 
+# ── token_spec validation ────────────────────────────────────────────────────
+
+TOKEN_SCRIPT = {
+    **MINIMAL_SCRIPT,
+    "diagram_spec": {"type": "token"},
+    "token_spec": {
+        "title": "Text -> Tokens -> Numbers",
+        "sentence": "Hello world how are you",
+        "tokens": [
+            {"text": "Hello", "highlight": True},
+            {"text": "world"},
+            {"text": "how"},
+            {"text": "are"},
+            {"text": "you"},
+        ],
+        "showIds": True,
+        "weights": [0.8, 0.6, 0.4, 0.5, 0.3],
+    },
+}
+
+TOKEN_WEIGHTS_SCRIPT = {
+    **MINIMAL_SCRIPT,
+    "diagram_spec": {"type": "token"},
+    "token_spec": {
+        "sentence": "Attention is all you need",
+        "tokens": [{"text": "Attention"}, {"text": "is"}, {"text": "all"}, {"text": "you"}, {"text": "need"}],
+        "showWeights": True,
+        "weights": [0.9, 0.2, 0.3, 0.4, 0.7],
+    },
+}
+
+
+def test_validate_passes_valid_token_spec():
+    script_agent._validate(TOKEN_SCRIPT, 1)  # should not raise
+
+
+def test_validate_passes_valid_token_spec_with_weights():
+    script_agent._validate(TOKEN_WEIGHTS_SCRIPT, 1)  # should not raise
+
+
+def test_validate_rejects_token_with_null_token_spec():
+    bad = {**TOKEN_SCRIPT, "token_spec": None}
+    with pytest.raises(ValueError, match="token_spec"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_token_with_missing_token_spec_key():
+    bad = {k: v for k, v in TOKEN_SCRIPT.items() if k != "token_spec"}
+    with pytest.raises(ValueError, match="token_spec"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_token_spec_missing_sentence():
+    bad = {**TOKEN_SCRIPT, "token_spec": {k: v for k, v in TOKEN_SCRIPT["token_spec"].items() if k != "sentence"}}
+    with pytest.raises(ValueError, match="sentence"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_token_spec_too_few_tokens():
+    bad = {**TOKEN_SCRIPT, "token_spec": {**TOKEN_SCRIPT["token_spec"], "tokens": [{"text": "only_one"}]}}
+    with pytest.raises(ValueError, match="2-12 tokens"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_token_spec_too_many_tokens():
+    bad = {**TOKEN_SCRIPT, "token_spec": {**TOKEN_SCRIPT["token_spec"], "tokens": [{"text": f"t{i}"} for i in range(13)]}}
+    with pytest.raises(ValueError, match="2-12 tokens"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_token_spec_token_missing_text():
+    bad = {**TOKEN_SCRIPT, "token_spec": {**TOKEN_SCRIPT["token_spec"], "tokens": [{"text": "Hello"}, {"highlight": True}]}}
+    with pytest.raises(ValueError, match="text"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_show_weights_without_weights():
+    bad_spec = {k: v for k, v in TOKEN_WEIGHTS_SCRIPT["token_spec"].items() if k != "weights"}
+    bad = {**TOKEN_WEIGHTS_SCRIPT, "token_spec": bad_spec}
+    with pytest.raises(ValueError, match="weights"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_weights_length_mismatch_when_show_weights():
+    bad = {**TOKEN_WEIGHTS_SCRIPT, "token_spec": {**TOKEN_WEIGHTS_SCRIPT["token_spec"], "weights": [0.5, 0.5]}}
+    with pytest.raises(ValueError, match="weights"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_rejects_weights_length_mismatch_without_show_weights():
+    bad = {**TOKEN_SCRIPT, "token_spec": {**TOKEN_SCRIPT["token_spec"], "showIds": True, "weights": [0.1, 0.2]}}
+    with pytest.raises(ValueError, match="weights"):
+        script_agent._validate(bad, 1)
+
+
+def test_validate_token_spec_allows_omitted_weights_when_show_weights_false():
+    spec = {k: v for k, v in TOKEN_SCRIPT["token_spec"].items() if k != "weights"}
+    good = {**TOKEN_SCRIPT, "token_spec": spec}
+    script_agent._validate(good, 1)  # should not raise
+
+
+# ── token routing rules in system prompt ─────────────────────────────────────
+
+def test_system_prompt_contains_token_routing_section():
+    prompt = script_agent._build_system_prompt("en")
+    assert "token_spec" in prompt
+    assert 'diagram_type="token"' in prompt
+
+
+def test_system_prompt_token_routing_lists_keywords():
+    prompt = script_agent._build_system_prompt("en")
+    for keyword in ("Tokenization", "context window", "vocabulary", "embeddings", "text processing", "NLP"):
+        assert keyword in prompt, f"missing routing keyword: {keyword}"
+
+
+def test_system_prompt_diagram_guide_lists_token_type():
+    prompt = script_agent._build_system_prompt("en")
+    idx = prompt.index("DIAGRAM GUIDE")
+    assert "token       →" in prompt[idx:]
+
+
+def test_system_prompt_sketch_no_longer_lists_tokenization_keyword():
+    """Tokenization now routes to 'token', not 'sketch' — the sketch routing
+    bullet list must not claim it as a sketch trigger anymore."""
+    prompt = script_agent._build_system_prompt("en")
+    routing_start = prompt.index('DIAGRAM TYPE ROUTING — choose diagram_type="sketch"')
+    routing_end = prompt.index("Choose diagram_type=\"data\"")
+    routing_section = prompt[routing_start:routing_end]
+    assert "tokenization" not in routing_section.lower()
+
+
+def test_validate_diagram_spec_accepts_token_type():
+    script_agent._validate_diagram_spec({"type": "token"}, 1)  # should not raise
+
+
 def test_validate_ta_allows_hook_up_to_15_words():
     long_hook = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
     good = {**MINIMAL_SCRIPT_TA, "hook": long_hook}

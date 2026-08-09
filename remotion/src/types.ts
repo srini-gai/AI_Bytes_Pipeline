@@ -96,6 +96,10 @@ export interface DataDiagramSpec {
   type: 'data';
 }
 
+export interface TokenDiagramSpec {
+  type: 'token';
+}
+
 export type DiagramSpec =
   | HubSpokeSpec
   | ClusterSpec
@@ -105,7 +109,8 @@ export type DiagramSpec =
   | BarChartSpec
   | FlowSpec
   | SketchDiagramSpec
-  | DataDiagramSpec;
+  | DataDiagramSpec
+  | TokenDiagramSpec;
 
 // ─── Sketch scene types (animated SVG diagram) ────────────────────────────────
 
@@ -152,6 +157,23 @@ export interface DataSpec {
   unit?: string;
 }
 
+// ─── Token scene types (animated text tokenization) ────────────────────────────
+
+export interface Token {
+  text: string;
+  color?: string;
+  highlight?: boolean;
+}
+
+export interface TokenSpec {
+  sentence: string;
+  tokens: Token[];
+  title?: string;
+  showIds?: boolean;
+  showWeights?: boolean;
+  weights?: number[];
+}
+
 // ─── Main composition props ───────────────────────────────────────────────────
 
 export interface AIBytesReelProps {
@@ -169,4 +191,5 @@ export interface AIBytesReelProps {
   diagram_spec?: DiagramSpec;
   sketch_spec?: SketchSpec;
   data_spec?: DataSpec;
+  token_spec?: TokenSpec;
 }
