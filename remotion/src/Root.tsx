@@ -33,7 +33,7 @@ const defaultProps: AIBytesReelProps = {
   ],
   voiceover: 'Sample voiceover — replace with real script voiceover field.',
   takeaway: 'RAG = LLM + Your Real Data. No fine-tuning needed.',
-  tags: '#AIBytes #RAG #LLM #GenerativeAI',
+  tags: '#SriniOnAI #RAG #LLM #GenerativeAI',
   diagram_spec: {
     type: 'flow',
     steps: [

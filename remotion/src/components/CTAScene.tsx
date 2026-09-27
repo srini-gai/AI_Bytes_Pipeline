@@ -103,7 +103,7 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
           {takeaway}
         </div>
 
-        {/* Follow AI Bytes — theme gradient pill button */}
+        {/* Follow Srini on AI — theme gradient pill button */}
         <div
           style={{
             opacity: btnOpacity,
@@ -120,7 +120,7 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
             textAlign: 'center' as const,
           }}
         >
-          Follow AI Bytes
+          Follow Srini on AI
         </div>
       </AbsoluteFill>
     </AbsoluteFill>
