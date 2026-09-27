@@ -87,7 +87,7 @@ function renderConceptScene(
 }
 
 export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
-  const {episode, hook, concept, slides, takeaway, clips, theme, diagram_spec, sketch_spec, data_spec, token_spec} = props;
+  const {episode, topic, hook, concept, slides, takeaway, clips, theme, diagram_spec, sketch_spec, data_spec, token_spec} = props;
   const t = theme ?? DEFAULT_THEME;
   const slideCount = slides.length;
   const slideDuration = Math.floor(SLIDES_TOTAL / slideCount);
@@ -97,7 +97,7 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
       {/* Hook: 0–7s */}
       <Sequence from={HOOK_START} durationInFrames={HOOK_DURATION}>
         <Fade duration={HOOK_DURATION} noFadeIn>
-          <HookScene hook={hook} videoSrc={clips?.hook} theme={t} emoji={slides[0]?.icon ?? '🧠'} episode={episode} />
+          <HookScene hook={hook} videoSrc={clips?.hook} theme={t} emoji={slides[0]?.icon ?? '🧠'} episode={episode} topic={topic} />
         </Fade>
       </Sequence>
 
