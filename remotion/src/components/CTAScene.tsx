@@ -169,7 +169,7 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
             textAlign: 'center' as const,
           }}
         >
-          Follow Srini on AI
+          Follow for practical AI, daily
         </div>
       </AbsoluteFill>
     </AbsoluteFill>
