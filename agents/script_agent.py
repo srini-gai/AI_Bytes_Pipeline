@@ -36,8 +36,8 @@ HOOK_FORMULAS = [
 ]
 
 _SYSTEM_PROMPT_BASE = """\
-You are a YouTube Shorts scriptwriter for the AI Bytes channel.
-AI Bytes produces 60-second educational shorts explaining AI concepts to developers and founders.
+You are a YouTube Shorts scriptwriter for the Srini on AI channel.
+Srini on AI produces 60-second educational shorts explaining AI concepts to developers and founders.
 
 Your task: write a complete, structured script for the given topic as a single raw JSON object.
 Output ONLY the JSON — no markdown, no code fences, no explanation before or after.
@@ -55,9 +55,9 @@ Required JSON schema:
     {"icon": "<single emoji>", "heading": "<3-5 word heading>", "body": "<2-3 sentence explanation>"},
     {"icon": "<single emoji>", "heading": "<3-5 word heading>", "body": "<2-3 sentence explanation>"}
   ],
-  "voiceover": "<EXACTLY 150–175 WORDS — full narration. Opens with the hook. Explains concept simply. Ends with CTA to follow AI Bytes every day.>",
+  "voiceover": "<EXACTLY 150–165 WORDS — full narration. Opens with the hook. Explains concept simply. Ends with CTA: 'Follow Srini on AI for practical AI, daily.'>",
   "takeaway": "<one-line key lesson, max 10 words>",
-  "tags": "<space-separated hashtags, always include #AIBytes>",
+  "tags": "<space-separated hashtags, always include #SriniOnAI>",
   "youtube_title": "<title MUST end with exactly ' #Shorts'>",
   "youtube_description": "<3-5 lines with value prop + hashtag block>",
   "scheduled_publish": "<ISO 8601 UTC, will be filled by pipeline>",
