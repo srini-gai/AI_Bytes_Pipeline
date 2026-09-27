@@ -32,6 +32,10 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
   const btnOpacity = interpolate(frame, [35, 55], [0, 1], {extrapolateRight: 'clamp'});
   const btnY = interpolate(frame, [35, 55], [24, 0], {extrapolateRight: 'clamp'});
 
+  // Creator pip: fades in with the button
+  const pipOpacity = interpolate(frame, [40, 60], [0, 1], {extrapolateRight: 'clamp'});
+  const pipScale = interpolate(frame, [40, 60], [0.8, 1], {extrapolateRight: 'clamp'});
+
   return (
     <AbsoluteFill style={{backgroundColor: '#050510'}}>
       {/* Full screen Pexels background video */}
@@ -54,6 +58,51 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
           background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.85) 100%)',
         }}
       />
+
+      {/* ── Creator photo pip — bottom-left ── */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 160,
+          left: 60,
+          zIndex: 5,
+          opacity: pipOpacity,
+          transform: `scale(${pipScale})`,
+          transformOrigin: 'bottom left',
+        }}
+      >
+        {/* Gradient ring */}
+        <div
+          style={{
+            width: 120,
+            height: 120,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #22d3ee 0%, #818cf8 50%, #c084fc 100%)',
+            padding: 3,
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 0 24px rgba(129,140,248,0.6), 0 0 48px rgba(34,211,238,0.3)',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              backgroundColor: '#050510',
+            }}
+          >
+            <img
+              src={staticFile('srini-photo.png')}
+              alt="Srini"
+              style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block'}}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Floating text — no card, no box */}
       <AbsoluteFill
