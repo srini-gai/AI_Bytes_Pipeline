@@ -15,7 +15,7 @@ MODEL_ID = "eleven_multilingual_v2"
 OUTPUT_FORMAT = "mp3_44100_128"
 
 MIN_DURATION = 55.0
-MAX_DURATION = 68.0
+MAX_DURATION = 72.0
 
 TA_MIN_DURATION = 40.0
 TA_MAX_DURATION = 65.0
@@ -77,6 +77,15 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         raise RuntimeError(f"EP{episode:02d} script has no voiceover text")
 
     output_path = _episode_dir(episode, week) / f"ep{episode:02d}_voice_{lang.upper()}.mp3"
+
+    # Cache check — skip ElevenLabs call if valid MP3 already on disk
+    if output_path.exists():
+        try:
+            duration = _validate_duration(output_path, lang)
+            logger.info(f"EP{episode:02d} [{lang.upper()}] — voice already on disk ({duration:.1f}s) — skipping TTS")
+            return {"success": True, "output_path": str(output_path), "duration": duration, "lang": lang}
+        except ValueError:
+            logger.warning(f"EP{episode:02d} [{lang.upper()}] — existing MP3 failed validation, re-generating")
 
     voice_id_key = f"ELEVENLABS_VOICE_ID_{lang.upper()}"
     voice_id = os.getenv(voice_id_key, "")
