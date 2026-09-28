@@ -174,6 +174,65 @@ export interface TokenSpec {
   weights?: number[];
 }
 
+// ─── Storyboard types (Visual Director Agent output) ─────────────────────────
+
+export type SceneType =
+  | 'HOOK'
+  | 'DEMONSTRATION'
+  | 'TRANSFORMATION'
+  | 'FLOW'
+  | 'COMPARISON'
+  | 'DIAGRAM'
+  | 'DATA'
+  | 'ZOOM'
+  | 'SIMULATION'
+  | 'METAPHOR'
+  | 'TAKEAWAY'
+  | 'CTA';
+
+export type SceneComponent =
+  | 'KineticTypoScene'
+  | 'TokenScene'
+  | 'SketchScene'
+  | 'DataScene'
+  | 'SplitCompareScene'
+  | 'FlowScene'
+  | 'HubSpokeScene'
+  | 'ClusterScene'
+  | 'DialScene'
+  | 'BarChartScene'
+  | 'NumberCounterScene'
+  | 'TakeawayScene'
+  | 'CTAScene'
+  | 'HookScene'
+  | 'ConceptScene'
+  | 'SlideScene';
+
+/** Data payload for NumberCounterScene */
+export interface NumberCounterData {
+  type: 'counter';
+  value: number;
+  label: string;
+  suffix?: string;
+  start?: number;
+}
+
+/** Per-scene storyboard entry produced by visual_director_agent */
+export interface StoryboardScene {
+  scene_id: number;
+  duration_seconds: number;
+  narration: string;
+  scene_type: SceneType;
+  visual_goal: string;
+  component: SceneComponent;
+  objects: string[];
+  animation: string;
+  on_screen_text: string[];
+  /** Free-form data payload passed directly to component (e.g. NumberCounterData, TokenSpec, DataSpec) */
+  data?: NumberCounterData | DataSpec | TokenSpec | SketchSpec | Record<string, unknown>;
+  transition: string;
+}
+
 // ─── Main composition props ───────────────────────────────────────────────────
 
 export interface AIBytesReelProps {
@@ -192,4 +251,6 @@ export interface AIBytesReelProps {
   sketch_spec?: SketchSpec;
   data_spec?: DataSpec;
   token_spec?: TokenSpec;
+  /** Storyboard from visual_director_agent — when present, renders instead of legacy slides */
+  storyboard?: StoryboardScene[];
 }

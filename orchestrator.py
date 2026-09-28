@@ -32,6 +32,7 @@ from agents import (
     publisher_agent,
     script_agent,
     visual_agent,
+    visual_director_agent,
     voice_agent,
 )
 
@@ -171,6 +172,44 @@ def _run_episode(
             logger.error(f"EP{episode:02d} {msg}")
             print(f"  FAIL {msg}")
 
+    # ── Phase 2.5: Visual Director — storyboard (per lang) ────────────────────
+    # Runs before voice so the dry-run storyboard table is printed before TTS.
+    storyboards: dict[str, list] = {}
+    for lang in langs:
+        if lang not in scripts:
+            continue
+        print(f"\n[EP{episode:02d}][{lang.upper()}] Building visual storyboard...")
+        try:
+            out = visual_director_agent.run(
+                scripts[lang],
+                episode=episode,
+                week=week,
+                lang=lang,
+                dry_run=dry_run,
+            )
+            if out.get("skipped"):
+                print(f"  SKIP Storyboard already on disk ({len(out.get('storyboard', []))} scenes)")
+            elif out.get("violations"):
+                # Storyboard generated but with soft violations logged
+                n = len(out["storyboard"])
+                dur = out.get("total_duration", 0)
+                print(f"  WARN Storyboard {n} scenes / {dur:.1f}s (violations: {', '.join(out['violations'][:2])})")
+            else:
+                n = len(out["storyboard"])
+                dur = out.get("total_duration", 0)
+                print(f"  OK   Storyboard -> {out['output_path']} ({n} scenes, {dur:.1f}s)")
+            storyboards[lang] = out["storyboard"]
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] storyboard done "
+                f"({len(out.get('storyboard', []))} scenes) -> {out.get('output_path', '')}"
+            )
+        except Exception as e:
+            msg = f"visual_director_agent [{lang.upper()}]: {e}"
+            result["errors"].append(msg)
+            logger.error(f"EP{episode:02d} {msg}")
+            print(f"  WARN {msg} — will fall back to legacy rendering")
+            # Non-fatal: pipeline continues without storyboard (legacy mode)
+
     # ── Phase 3: Voice (per lang) ──────────────────────────────────────────────
     for lang in langs:
         if lang not in scripts:
@@ -194,7 +233,23 @@ def _run_episode(
 
     # Dry-run ends after voice
     if dry_run:
-        print(f"\n[EP{episode:02d}] Dry run complete — script + voice only")
+        # Print a summary of storyboards so the user can review before full run
+        if storyboards:
+            print(f"\n[EP{episode:02d}] --- Storyboard preview ---")
+            for lang, sb in storyboards.items():
+                total = sum(s.get("duration_seconds", 0) for s in sb)
+                print(f"  [{lang.upper()}] {len(sb)} scenes, {total:.1f}s total")
+                print(f"  {'#':<3} {'Type':<15} {'Component':<22} {'Dur':>5}  Visual action")
+                print(f"  {'-'*75}")
+                for s in sb:
+                    print(
+                        f"  {s.get('scene_id', '?'):<3} "
+                        f"{s.get('scene_type', '?'):<15} "
+                        f"{s.get('component', '?'):<22} "
+                        f"{s.get('duration_seconds', 0):>4.1f}s  "
+                        f"{s.get('visual_goal', '')[:40]}"
+                    )
+        print(f"\n[EP{episode:02d}] Dry run complete — script + storyboard + voice only")
         logger.info(f"EP{episode:02d} dry run complete")
         return result
 

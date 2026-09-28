@@ -277,8 +277,42 @@ def _stage_clips_to_public(clips: dict[str, str], public_clips_dir: Path) -> dic
     return staged
 
 
-def _build_props(script: dict, clips: dict[str, str] | None = None) -> dict:
-    """Map script JSON fields to AIBytesReel composition props."""
+def _load_storyboard(episode: int, week: int, lang: str) -> list | None:
+    """
+    Load storyboard JSON for this episode from disk, if it exists.
+    Returns the storyboard list, or None if not found.
+    """
+    base = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
+    lang_tag = lang.upper()
+    storyboard_path = (
+        base / f"week_{week:02d}" / f"ep{episode:02d}"
+        / f"ep{episode:02d}_storyboard_{lang_tag}.json"
+    )
+    if storyboard_path.exists():
+        try:
+            data = json.loads(storyboard_path.read_text(encoding="utf-8"))
+            if isinstance(data, list) and data:
+                logger.info(
+                    f"EP{episode:02d} [{lang_tag}] loaded storyboard "
+                    f"({len(data)} scenes) from {storyboard_path.name}"
+                )
+                return data
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"EP{episode:02d} storyboard load failed: {e}")
+    return None
+
+
+def _build_props(
+    script: dict,
+    clips: dict[str, str] | None = None,
+    storyboard: list | None = None,
+) -> dict:
+    """Map script JSON fields to AIBytesReel composition props.
+
+    When a storyboard is provided it is injected as the `storyboard` prop,
+    which causes AIBytesReel to render in Visual Director mode (dynamic scenes)
+    instead of the legacy fixed-section layout.
+    """
     slides = [
         {
             "icon": s.get("icon", "💡"),
@@ -299,25 +333,30 @@ def _build_props(script: dict, clips: dict[str, str] | None = None) -> dict:
         "tags": script.get("tags", ""),
         "theme": script.get("theme", _DEFAULT_THEME),
     }
-    if script.get("diagram_spec"):
-        props["diagram_spec"] = script["diagram_spec"]
-    if script.get("sketch_spec"):
-        props["sketch_spec"] = script["sketch_spec"]
-    if script.get("data_spec"):
-        props["data_spec"] = script["data_spec"]
-    if script.get("token_spec"):
-        props["token_spec"] = script["token_spec"]
+    if storyboard:
+        props["storyboard"] = storyboard
+        logger.info(f"Props include storyboard ({len(storyboard)} scenes) — Visual Director mode")
+    else:
+        # Legacy diagram / data specs only used in non-storyboard mode
+        if script.get("diagram_spec"):
+            props["diagram_spec"] = script["diagram_spec"]
+        if script.get("sketch_spec"):
+            props["sketch_spec"] = script["sketch_spec"]
+        if script.get("data_spec"):
+            props["data_spec"] = script["data_spec"]
+        if script.get("token_spec"):
+            props["token_spec"] = script["token_spec"]
     if clips:
         props["clips"] = clips
     return props
 
 
-def _validate_output(path: Path, episode: int) -> float:
+def _validate_output(path: Path, episode: int, expected_duration: float | None = None) -> float:
     """
     Check the rendered MP4:
       - File exists and is non-trivial
       - Video stream is 1080x1920
-      - Duration is 58-62 seconds
+      - Duration is within bounds (58-62s legacy, or within ±3s of expected storyboard duration)
     Returns duration in seconds.
     """
     if not path.exists() or path.stat().st_size < 100_000:
@@ -348,10 +387,21 @@ def _validate_output(path: Path, episode: int) -> float:
     finally:
         container.close()
 
-    if not (MIN_DURATION <= duration <= MAX_DURATION):
-        raise RuntimeError(
-            f"EP{episode:02d} output duration {duration:.1f}s outside {MIN_DURATION}-{MAX_DURATION}s window"
-        )
+    if expected_duration is not None:
+        # Storyboard mode: allow ±3s tolerance around the planned total
+        lo = max(40.0, expected_duration - 3.0)
+        hi = expected_duration + 3.0
+        if not (lo <= duration <= hi):
+            raise RuntimeError(
+                f"EP{episode:02d} output duration {duration:.1f}s outside "
+                f"{lo:.1f}-{hi:.1f}s window (storyboard planned {expected_duration:.1f}s)"
+            )
+    else:
+        # Legacy mode: strict 58-62s window
+        if not (MIN_DURATION <= duration <= MAX_DURATION):
+            raise RuntimeError(
+                f"EP{episode:02d} output duration {duration:.1f}s outside {MIN_DURATION}-{MAX_DURATION}s window"
+            )
 
     return duration
 
@@ -476,7 +526,17 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             f"EP{episode:02d} [{lang.upper()}] staged {len(staged_clips)}/{len(all_scenes)} clips for Remotion"
         )
 
-    props = _build_props(script, clips=staged_clips)
+    # Load storyboard from disk (written by visual_director_agent, if it ran)
+    storyboard = _load_storyboard(episode, week, lang)
+
+    props = _build_props(script, clips=staged_clips, storyboard=storyboard)
+
+    # When storyboard is present, compute expected total duration for validation
+    expected_duration: float | None = None
+    if storyboard:
+        expected_duration = sum(scene.get("duration_seconds", 0) for scene in storyboard)
+        logger.info(f"EP{episode:02d} storyboard total duration: {expected_duration:.1f}s")
+
     last_error: Exception | None = None
 
     for attempt in range(1, 3):  # max 2 attempts
@@ -484,7 +544,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         try:
             logger.info(f"EP{episode:02d} starting Remotion render (attempt {attempt}/2)")
             _render(output_path, props, episode)
-            duration = _validate_output(output_path, episode)
+            duration = _validate_output(output_path, episode, expected_duration=expected_duration)
             render_time = time.monotonic() - t0
 
             logger.info(
