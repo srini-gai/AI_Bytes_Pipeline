@@ -29,7 +29,7 @@ Pure Python agents + external APIs + FFmpeg + Remotion.
 ```
 aibytes-pipeline/
 ├── orchestrator.py        # Master runner — loops topics, calls all agents
-├── topics.txt             # 7 topics, one per line — human edits weekly
+├── topics.txt             # 5 topics, one per line (Mon–Fri) — human edits weekly
 ├── .env                   # All API keys (never commit)
 ├── requirements.txt
 ├── package.json           # Root Node.js (scripts only)

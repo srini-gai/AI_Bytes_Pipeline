@@ -221,7 +221,7 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
       4. PyAV: validate 1080x1920 and 58-62s duration
 
     Args:
-        episode: Episode number 1-7
+        episode: Episode number 1-5 (Mon–Fri)
         week:    Week number
         lang:    "en" or "ta"
 

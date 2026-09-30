@@ -222,7 +222,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
 
     Args:
         script:  Parsed script dict from script_agent (must have youtube_title etc.)
-        episode: Episode number 1-7
+        episode: Episode number 1-5 (Mon–Fri)
         week:    Week number
         lang:    "en" or "ta"
 

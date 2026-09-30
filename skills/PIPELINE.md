@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def run(episode: int, week: int, input_data: dict) -> dict:
     """
     Args:
-        episode: Episode number (1-7)
+        episode: Episode number (1-5, Mon–Fri)
         week: Week number (auto-detected or --week flag)
         input_data: Dict passed from previous agent or orchestrator
 
@@ -143,7 +143,7 @@ for ep in failed_episodes:
     except Exception as e:
         logger.error(f"EP{ep:02d} — RETRY FAILED: {e}")
 
-logger.info(f"Pipeline complete: {7 - len(failed_episodes)}/7 episodes published")
+logger.info(f"Pipeline complete: {5 - len(failed_episodes)}/5 episodes published")
 ```
 
 ---
