@@ -112,9 +112,10 @@ def run_regression_guard(
             "mid_luminance": round(lum, 2) if lum is not None else None,
             "has_content": has_content,
         }
+        lum_str = f"{lum:.2f}" if lum is not None else "ERR"
         logger.info(
             f"  {t['scene_id']} @ {t['mid_s']:.2f}s: "
-            f"lum={lum:.2f if lum is not None else 'ERR'} "
+            f"lum={lum_str} "
             f"{'✓' if has_content else '✗ DARK'}"
         )
         scene_results.append(result)
