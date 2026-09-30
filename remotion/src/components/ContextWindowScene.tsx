@@ -1,14 +1,16 @@
 /**
- * ContextWindowScene — Visual Director v3.1 (reviewed v3.2)
+ * ContextWindowScene — Visual Director v3.1
  *
  * Full-width context window fills the canvas from top.
  * Document chunks insert sequentially — each one lands with visible impact.
+ * The window grows to fill ~75% of the canvas height as chunks arrive.
  *
- * v3.2 QA NOTE: The '0.92', '0.87', '0.81' values on chunk badges are
- * COSINE SIMILARITY SCORES — they show relative retrieval ranking, not absolute
- * accuracy claims. These are internal retrieval metadata labels, not performance
- * statistics. They do NOT violate the no-fabricated-stats rule.
- * (Compare: MeterScene "+63pts accuracy lift" WAS a violation — removed.)
+ * v3.1 changes:
+ * - WIN_W = 980 (was 460) — context rect is nearly full canvas width
+ * - WIN_H grows from 200 → ~1100 as chunks are inserted
+ * - Chunks enter from screen-left (carry-in from DocumentRetrievalScene)
+ * - LLM indicator is at bottom, large (r=160) below the filled window
+ * - All action uses full vertical canvas, not a central horizontal strip
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';

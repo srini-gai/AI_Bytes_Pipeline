@@ -66,10 +66,7 @@ import type {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FPS = 30;
-// v3.2: reduced from 9 to 5 frames (0.17s) — keeps transitions under 0.25s threshold.
-// Beat-driven scenes carry their own content from frame 0, so the crossfade window
-// should be brief to avoid dark pauses between scenes.
-const CROSSFADE = 5; // 0.17s at 30fps
+const CROSSFADE = 9; // 0.3s at 30fps
 
 // Legacy fixed-section timings
 const HOOK_START      = 0;
@@ -89,17 +86,6 @@ const DEFAULT_THEME: Theme = {
   pexels_mood: 'purple neon dark',
 };
 
-// v3.2: beat-driven scenes that have content from frame 0. These skip fade-in
-// because their own beat animations handle entrance. Fade-out still applies at
-// brief CROSSFADE duration so there's visual continuity into the next scene.
-const BEAT_DRIVEN_SCENES = new Set([
-  'BeforeAfterScene', 'TransformScene', 'DataFlowScene', 'DocumentRetrievalScene',
-  'ContextWindowScene', 'TokenStreamScene', 'PipelineScene', 'MeterScene',
-  'SplitCompareScene', 'TakeawayScene', 'CTAScene',
-  'NetworkBuildScene', 'LayerRevealScene', 'TimelineScene', 'GraphGrowthScene',
-  'CodeExecutionScene', 'CardStackScene',
-]);
-
 // ─── Fade wrapper ─────────────────────────────────────────────────────────────
 
 const Fade: React.FC<{duration: number; noFadeIn?: boolean; children: React.ReactNode}> = ({
@@ -109,7 +95,6 @@ const Fade: React.FC<{duration: number; noFadeIn?: boolean; children: React.Reac
 }) => {
   const frame = useCurrentFrame();
   const fadeIn  = noFadeIn ? 1 : interpolate(frame, [0, CROSSFADE], [0, 1], {extrapolateRight: 'clamp'});
-  // v3.2: last scene (CTA) has no fade-out — let it hold to end
   const fadeOut = interpolate(frame, [duration - CROSSFADE, duration], [1, 0], {extrapolateRight: 'clamp'});
   const opacity = Math.min(fadeIn, fadeOut);
   return <AbsoluteFill style={{opacity}}>{children}</AbsoluteFill>;
@@ -569,33 +554,15 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
     return {scene, startFrame, durationFrames};
   });
 
-  const isLastScene = (i: number) => i === scenes.length - 1;
-
   return (
     <AbsoluteFill style={{backgroundColor: '#050510'}}>
-      {scenes.map(({scene, startFrame, durationFrames}, i) => {
-        // v3.2: beat-driven scenes handle their own entrance from frame 0 — skip fade-in.
-        // Last scene (CTA) also skips fade-out so it holds to end without a black tail.
-        const isBeatDriven = BEAT_DRIVEN_SCENES.has(scene.component);
-        const skipFadeIn = i === 0 || isBeatDriven;
-        // For the last scene, use a non-fading wrapper
-        if (isLastScene(i)) {
-          return (
-            <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames}>
-              <AbsoluteFill>
-                {renderStoryboardScene(scene, theme, durationFrames, topic, hook, takeaway, clips, episode)}
-              </AbsoluteFill>
-            </Sequence>
-          );
-        }
-        return (
-          <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames}>
-            <Fade duration={durationFrames} noFadeIn={skipFadeIn}>
-              {renderStoryboardScene(scene, theme, durationFrames, topic, hook, takeaway, clips, episode)}
-            </Fade>
-          </Sequence>
-        );
-      })}
+      {scenes.map(({scene, startFrame, durationFrames}, i) => (
+        <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames}>
+          <Fade duration={durationFrames} noFadeIn={i === 0}>
+            {renderStoryboardScene(scene, theme, durationFrames, topic, hook, takeaway, clips, episode)}
+          </Fade>
+        </Sequence>
+      ))}
     </AbsoluteFill>
   );
 };

@@ -1,16 +1,20 @@
 /**
- * MeterScene — Visual Director v3.2
+ * MeterScene — Visual Director v3.1
  *
  * Risk comparison: qualitative HIGH RISK → LOWER RISK.
  * No invented percentages. Gauges show qualitative zones only.
  *
- * v3.2 QA FIX: on_screen_text[2] from storyboard is "+63pts accuracy lift" — a
- * fabricated statistic. This component IGNORES on_screen_text[2] entirely and
- * hardcodes "with sources" for the SAFER chip subtitle.
+ * Layout: two large gauges stacked vertically, each R=260, using full canvas.
+ * First gauge (Vanilla) fills to ~25% of range and shows "HIGH RISK" zone.
+ * Second gauge (RAG) fills to ~75% of range and shows "LOWER RISK" zone.
+ * Needle settles into zone; zone label appears large below the gauge.
  *
- * QA RULE (permanent): The Visual Director must NEVER display on_screen_text[]
- * values that contain precise numeric claims (%, pts, x improvement) unless those
- * values are explicitly sourced in the episode's research data.
+ * v3.1 changes:
+ * - Removed VANILLA_SCORE=0.28 and RAG_SCORE=0.91 — no invented numbers
+ * - No percentages displayed — qualitative labels only
+ * - Gauges R=260 (was 220) — more dominant
+ * - Zone labels are 80px — readable on phone
+ * - Delta shows "LOWER RISK" not "+63pts"
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -225,8 +229,7 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
               points={`900,${CY_RAG - 70} 892,${CY_RAG - 90} 908,${CY_RAG - 90}`}
               fill={accentColor} opacity={0.5}/>
 
-            {/* Delta chip: qualitative only — on_screen_text[2] is IGNORED (may be a
-                fabricated stat like "+63pts accuracy lift"). Always display "with sources". */}
+            {/* Delta chip: qualitative, never a made-up number */}
             <rect x={830} y={(CY_VANILLA + CY_RAG) / 2 - 50} width={140} height={100}
               rx={18} fill={`${accentColor}18`} stroke={`${accentColor}66`} strokeWidth={2}/>
             <text x={900} y={(CY_VANILLA + CY_RAG) / 2 - 10} textAnchor="middle"
@@ -235,7 +238,7 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
             </text>
             <text x={900} y={(CY_VANILLA + CY_RAG) / 2 + 26} textAnchor="middle"
               fill={accentColor} fontFamily={FONT} fontSize={20} fontWeight="700">
-              with sources
+              {'with sources'}
             </text>
           </g>
         )}

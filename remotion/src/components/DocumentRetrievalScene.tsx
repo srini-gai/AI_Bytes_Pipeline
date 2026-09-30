@@ -1,13 +1,17 @@
 /**
- * DocumentRetrievalScene — Visual Director v3.2
+ * DocumentRetrievalScene — Visual Director v3.1
  *
  * Camera-led storytelling: viewer travels through the retrieval system.
- * v3.2 physicality improvements:
- * - Selected docs visibly "detach" from fan with a pop/pull motion (spring overshoot)
- * - Non-selected docs don't just fade; they also shrink back toward KB (direction sense)
- * - KB expansion now causes a visible "pulse" ring emanating outward (state change)
- * - Card fan spreads with staggered deceleration (natural acceleration)
- * - Exit: selected cards accelerate (ease-in) rightward, not constant-speed
+ * Sequence: query text large → query travels toward KB → KB cylinder expands
+ * to dominate screen → documents fan OUT across the full canvas → 3 selected
+ * chunks enlarge and leave frame-right (carry-over to ContextWindowScene).
+ *
+ * v3.1 changes:
+ * - Cards 240×300px (up from 76×104) — readable on phone
+ * - Fan radius 520px — fills full canvas width
+ * - Camera tracks: zooms in on KB as it expands, then pulls back to show fan
+ * - Selected chunks are 340×420px (giant), leaving frame-right
+ * - All action uses the full 1080×1920 canvas, not a central strip
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -60,22 +64,16 @@ export const DocumentRetrievalScene: React.FC<DocumentRetrievalSceneProps> = ({
   const camY       = interpolate(camZoomIn, [0, 1], [60, -80])
                    + interpolate(camZoomOut, [0, 1], [0, 80]);
 
-  // ── Layout constants (declared first — referenced below) ──────────────────
+  // ── Layout ────────────────────────────────────────────────────────────────
   const KB_X = 540;
   const KB_Y = 880;
   const KB_BASE_R = 90;
   const KB_R = KB_BASE_R + smoothstep(kbP) * 60; // expands from 90→150
 
-  // ── KB pulse ring when query data arrives (b0 impact) ─────────────────────
-  // Pulse ring expands outward and fades — visible response when query "enters" KB
-  const pulseStart = b0.start + 0.4;
-  const pulseP = linearProgress(frame, fps, pulseStart, pulseStart + 0.8);
-  const pulseR = KB_BASE_R + smoothstep(pulseP) * 240;  // expands from 90 → 330
-  const pulseOpacity = Math.max(0, (1 - smoothstep(pulseP)) * 0.7);
-
-  // ── Fan + query layout ────────────────────────────────────────────────────
+  // Fan: docs arc from top-left to bottom-right around the KB
   const FAN_RADIUS = 520;
 
+  // Query text position — large, top-left, moves toward KB
   const queryX = interpolate(queryP, [0, 1], [100, KB_X - 80]);
   const queryY = interpolate(queryP, [0, 1], [300, KB_Y - 180]);
   const queryScale = interpolate(queryP, [0, 1], [1.0, 0.6]);
@@ -121,13 +119,6 @@ export const DocumentRetrievalScene: React.FC<DocumentRetrievalSceneProps> = ({
             opacity={smoothstep(kbP)}/>
         )}
 
-        {/* ── KB pulse ring — visual response when query "enters" KB ───────── */}
-        {pulseP > 0 && pulseP < 1 && (
-          <circle cx={KB_X} cy={KB_Y} r={pulseR}
-            fill="none" stroke={accentColor} strokeWidth={4}
-            opacity={pulseOpacity}/>
-        )}
-
         {/* ── Knowledge Base cylinder ─────────────────────────────────────── */}
         <g opacity={smoothstep(kbP)}>
           {/* Glow ring */}
@@ -165,33 +156,23 @@ export const DocumentRetrievalScene: React.FC<DocumentRetrievalSceneProps> = ({
           const angle = (200 - (i / (TOTAL_DOCS - 1)) * 220) * (Math.PI / 180);
           const targetX = KB_X + Math.cos(angle) * FAN_RADIUS;
           const targetY = KB_Y + Math.sin(angle) * FAN_RADIUS;
-          // v3.2: deceleration spread — cards start fast then ease into position (easeOut curve)
-          const eased = smoothstep(docProgress); // smoothstep = ease-in-out, feels natural
-          const cx = interpolate(eased, [0, 1], [KB_X, targetX]);
-          const cy = interpolate(eased, [0, 1], [KB_Y, targetY]);
+          // Card starts at KB_X/KB_Y and spreads out
+          const cx = interpolate(docProgress, [0, 1], [KB_X, targetX]);
+          const cy = interpolate(docProgress, [0, 1], [KB_Y, targetY]);
           const cardScale = interpolate(docProgress, [0, 0.6], [0.2, 1]);
 
           const isSelected = SELECTED.has(i);
           const cardCol = isSelected ? MATCH_COL : DULL_COL;
           const borderOpacity = isSelected ? 0.9 : 0.25;
 
-          // In beat 2: non-selected shrink+fade, selected "pop" then exit right
+          // In beat 2: non-selected fade out, selected enlarge and exit right
           const beat2SelectP = isSelected ? selectP : 0;
-          const beat2FadeOut = isSelected
-            ? 1
-            : (1 - smoothstep(interpolate(selectP, [0, 0.6], [0, 1], {extrapolateRight: 'clamp'})));
+          const beat2FadeOut = isSelected ? 1 : (1 - smoothstep(selectP));
 
-          // v3.2: spring pop — card briefly overshoots to 1.1× then grows to 2.5×
-          const selScaleBase = isSelected ? (1 + smoothstep(beat2SelectP) * 1.5) : 1;
-          const popP = easeOut(frame, fps, b2.start, b2.start + 0.25);
-          const popScale = isSelected ? interpolate(popP, [0, 0.5, 1], [1, 1.12, 1]) : 1;
-          const selScale = selScaleBase * popScale;
-
-          // v3.2: acceleration exit — ease-in curve (card accelerates away, not constant speed)
-          // Quadratic ease-in: slow start, fast finish — feels like detach + fly
-          const exitRaw = linearProgress(frame, fps, b2.start + 0.5, b2.end);
-          const exitEased = exitRaw * exitRaw; // quadratic ease-in
-          const exitX = isSelected ? exitEased * 800 : 0;
+          // Selected cards grow in b2
+          const selScale = 1 + smoothstep(beat2SelectP) * 1.5;
+          // Exit: selected cards translate off-screen right
+          const exitX = smoothstep(exitP) * 700;
 
           const CARD_W = 160;
           const CARD_H = 210;

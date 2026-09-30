@@ -23,8 +23,7 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
   const frame = useCurrentFrame();
   const t = theme ?? DEFAULT_THEME;
 
-  // v3.2: start from frame 0 (no Fade wrapper — must show content immediately)
-  // Compressed to fit ≤3s (≤90 frames): label→f12, text→f30, button→f58
+  // Compressed to fit ≤3s (≤90 frames): label→f20, text→f40, button→f70
   const labelOpacity = interpolate(frame, [0, 12], [0, 1], {extrapolateRight: 'clamp'});
   const labelY = interpolate(frame, [0, 12], [14, 0], {extrapolateRight: 'clamp'});
 
