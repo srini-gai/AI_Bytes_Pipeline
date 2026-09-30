@@ -1,10 +1,16 @@
 """
-Visual Director Agent — Phase 2.5
+Visual Director Agent — Phase 2.5 / v3 Motion Storytelling
 Reads a script JSON and produces a storyboard JSON array.
 
-Each storyboard scene describes what VISUALLY HAPPENS on screen,
-decoupled from the slide-card model. The resulting storyboard is
-consumed by visual_agent.py which passes it to Remotion for rendering.
+v3 changes (Motion Storytelling Upgrade):
+  - Each scene contains timed "beats" (meaningful visual events every 2–4s)
+  - Visual complexity score (beats, demos, transformations, score/100)
+  - Stricter quality gate (≥8 beats, hook ≤4s, CTA ≤3s, ≥80 visual score)
+  - 14 new motion-first scene primitives
+  - Camera choreography per beat
+  - Continuity field: carry_object_from
+  - Typography runtime cap at 25%
+  - Tighter Short structure (0–3 hook, 3–8 demo, 8–40 explain, 40–50 why, 50–55 takeaway, 55–58 CTA)
 
 Pipeline position:  script_agent → visual_director_agent → visual_agent
 Output file:        ep{NN}_storyboard_{LANG}.json
@@ -24,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
 
-# ── Storyboard scene schema ───────────────────────────────────────────────────
+# ── Scene registry ────────────────────────────────────────────────────────────
 
 VALID_SCENE_TYPES = {
     "HOOK", "DEMONSTRATION", "TRANSFORMATION", "FLOW",
@@ -32,7 +38,9 @@ VALID_SCENE_TYPES = {
     "SIMULATION", "METAPHOR", "TAKEAWAY", "CTA",
 }
 
+# Original components + v3 motion-first primitives
 VALID_COMPONENTS = {
+    # Original
     "KineticTypoScene",
     "TokenScene",
     "SketchScene",
@@ -46,115 +54,225 @@ VALID_COMPONENTS = {
     "NumberCounterScene",
     "TakeawayScene",
     "CTAScene",
+    # v3 motion-first primitives
+    "TransformScene",
+    "PipelineScene",
+    "ContextWindowScene",
+    "TokenStreamScene",
+    "DocumentRetrievalScene",
+    "NetworkBuildScene",
+    "LayerRevealScene",
+    "TimelineScene",
+    "BeforeAfterScene",
+    "MeterScene",
+    "GraphGrowthScene",
+    "CodeExecutionScene",
+    "CardStackScene",
+    "DataFlowScene",
 }
 
-# ── Quality gate thresholds ───────────────────────────────────────────────────
+# ── Quality gate thresholds (v3) ──────────────────────────────────────────────
 
-MAX_TEXT_CARD_RATIO = 0.30          # no more than 30% pure text-card scenes
-MAX_CONSECUTIVE_SAME_TYPE = 2       # at most 2 in a row with same type
-MIN_VISUAL_DEMONSTRATIONS = 3       # at least 3 "real" visual scenes
+MIN_VISUAL_BEATS = 8
+MAX_TYPOGRAPHY_RATIO = 0.25          # ≤25% of total runtime as typography
+MAX_CONSECUTIVE_SAME_LAYOUT = 2      # no 3 in a row same composition
+MIN_VISUAL_DEMONSTRATIONS = 3
+MIN_VISUAL_FIRST_SCORE = 80          # 0–100 composite score
 TARGET_MIN_SECONDS = 55.0
 TARGET_MAX_SECONDS = 62.0
+MAX_HOOK_SECONDS = 4.0
+MAX_CTA_SECONDS = 4.0
+MAX_SCENE_SECONDS_WITHOUT_BEATS = 6.0  # scenes >6s MUST have ≥2 beats; >8s ≥3 beats
 
-# Scene types that count as genuine visual demonstrations (not text cards)
 DEMONSTRATION_TYPES = {
     "DEMONSTRATION", "TRANSFORMATION", "FLOW",
     "COMPARISON", "DIAGRAM", "DATA", "ZOOM", "SIMULATION",
 }
+TYPOGRAPHY_COMPONENTS = {"KineticTypoScene"}   # pure-text components
+# HOOK, TAKEAWAY, CTA are structural, not counted in typography ratio
 
-# Scene types that are essentially text cards (penalty in quality gate)
-TEXT_CARD_TYPES = {"METAPHOR"}   # only if objects/animation are empty
-# HOOK, TAKEAWAY, CTA are structural — not counted as text cards
+CAMERA_MOVES = {
+    "slow-push-in", "zoom-in", "zoom-out", "pan-left", "pan-right",
+    "pan-follow", "reveal", "static", "focus-shift", "track-object",
+}
 
+
+# ── System prompt (v3) ───────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
-You are the Visual Director for Srini on AI, a YouTube Shorts channel about AI for developers.
+You are the Visual Director for "Srini on AI", a YouTube Shorts channel about AI for developers.
 
-Your job: given a script JSON, produce a storyboard JSON array that describes what the viewer
-SEES on screen — not what they read. Visuals must complement the narration, not duplicate it.
+Your job: given a script JSON, produce a storyboard JSON that describes what the viewer
+SEES on screen — not what they read. Every visual event must DEMONSTRATE, not display.
 
-CORE PRINCIPLE
---------------
+══════════════════════════════════════════════════════
+CORE PRINCIPLE — Motion Storytelling
+══════════════════════════════════════════════════════
 Voice EXPLAINS. Visuals DEMONSTRATE.
-A viewer with the sound off should grasp the core idea from the animation alone.
-If the narration says "tokens become numbers", show: Hello → [Hello] → 15496 — not text.
+The viewer with sound off must understand the core idea from animation alone.
 
+A 50–60 second Short must contain ≥10 meaningful VISUAL BEATS.
+A beat = one meaningful visual event: object enters, transforms, moves, reveals, etc.
+Pulsing backgrounds and ambient particles do NOT count as beats.
+
+Every 2–4 seconds: at least one meaningful visual event must occur:
+  object enters • object transforms • information moves • comparison changes
+  meter fills • graph grows • nodes connect • item splits • camera reframes
+  state changes • result appears
+
+══════════════════════════════════════════════════════
+TARGET STRUCTURE (58 seconds total)
+══════════════════════════════════════════════════════
+0–3s      HOOK         — Visually surprise immediately; one punchy statement or phenomenon
+3–8s      DEMONSTRATION — Show the phenomenon BEFORE explaining it
+8–40s     EXPLANATION   — Multiple beats: diagrams, transformations, comparisons, simulations
+40–50s    WHY IT MATTERS — Apply concept to real scenario; concrete usage beats
+50–55s    TAKEAWAY      — Compress the entire lesson into one visual moment
+55–58s    CTA           — Always EXACTLY 3 seconds — no longer
+
+══════════════════════════════════════════════════════
 SCENE SCHEMA
-------------
+══════════════════════════════════════════════════════
 Each scene must be a JSON object with EXACTLY these keys:
 {
   "scene_id": <integer, 1-based>,
-  "duration_seconds": <float, 2.0–8.0>,
-  "narration": "<the portion of the voiceover spoken during this scene>",
-  "scene_type": "<one of: HOOK | DEMONSTRATION | TRANSFORMATION | FLOW | COMPARISON | DIAGRAM | DATA | ZOOM | SIMULATION | METAPHOR | TAKEAWAY | CTA>",
-  "visual_goal": "<one sentence: what the viewer must understand from this scene visually>",
-  "component": "<Remotion component: KineticTypoScene | TokenScene | SketchScene | DataScene | SplitCompareScene | FlowScene | HubSpokeScene | ClusterScene | DialScene | BarChartScene | NumberCounterScene | TakeawayScene | CTAScene>",
-  "objects": [<strings — the named visual elements present, e.g. token boxes, arrows, bar labels, node names>],
-  "animation": "<brief description of the motion/transition that happens in this scene>",
-  "on_screen_text": [<strings — SHORT labels only: max 7 words per item; NEVER a narration sentence; empty [] is fine and encouraged>],
-  "data": <object or null — for DataScene/NumberCounterScene: e.g. {"type":"counter","value":128000,"label":"token context window","suffix":"tokens"}>,
-  "transition": "<how this scene ends / how the next scene begins, e.g. 'fade', 'slide right', 'zoom out'>"
+  "duration_seconds": <float, 2.0–8.0 — prefer 2.5–5.0>,
+  "narration": "<the voiceover spoken during this scene>",
+  "scene_type": "<HOOK|DEMONSTRATION|TRANSFORMATION|FLOW|COMPARISON|DIAGRAM|DATA|ZOOM|SIMULATION|METAPHOR|TAKEAWAY|CTA>",
+  "visual_goal": "<one sentence: what the viewer must understand visually — not what they hear>",
+  "component": "<see COMPONENT GUIDE below>",
+  "objects": [<named visual elements present: e.g. 'query bubble', 'doc cards', 'context window'>],
+  "animation": "<brief description of all motion that happens in this scene>",
+  "on_screen_text": [<SHORT labels only — max 6 words each — NEVER a narration sentence>],
+  "data": <object or null — structured payload for data-driven components>,
+  "transition": "<how this scene ends / how the next begins: fade | slide-right | zoom-in | morph | cut>",
+  "carry_object_from": "<optional — name a visual object from the PREVIOUS scene that enters this scene to maintain continuity>",
+  "beats": [
+    {
+      "start": <float seconds from scene start>,
+      "end": <float seconds from scene start>,
+      "action": "<what visually happens — be specific: 'query bubble enters from bottom, lands in retrieval node'>",
+      "focus": "<optional — which element is in focus>",
+      "camera": "<optional — one of: slow-push-in | zoom-in | zoom-out | pan-left | pan-right | pan-follow | reveal | static | focus-shift | track-object>"
+    }
+  ]
 }
 
-COMPONENT GUIDE
----------------
-KineticTypoScene  — HOOK or key punchy statement; large animated text glitch/reveal
-TokenScene        — tokenization, text → token boxes → IDs; sentence split animation
-SketchScene       — node-edge diagram (pipeline, flow, architecture, process)
-DataScene         — bar chart or comparison bars (use "data" field with type "bars" or "comparison")
-NumberCounterScene — animating counter counting up to a hero number (use "data" field with type "counter")
-SplitCompareScene  — left vs right, before vs after, A vs B
-FlowScene         — linear steps with icons
-HubSpokeScene     — hub + spoke radial (MCP, agents)
-ClusterScene      — semantic groupings
-DialScene         — dial/knob (temperature, settings)
-BarChartScene     — simple 0-100 bar chart
-TakeawayScene     — single bold takeaway line
-CTAScene          — creator photo + follow CTA (always LAST scene)
+BEATS RULE: Every scene > 4 seconds MUST have ≥2 beats. Every scene > 6 seconds MUST have ≥3 beats.
+Any scene > 8 seconds with fewer than 3 beats will FAIL the quality gate.
 
-STORY STRUCTURE (60 seconds)
------------------------------
-0–2s     HOOK         — KineticTypoScene — punchy visual hook; one bold statement
-2–8s     DEMONSTRATION — show the problem or phenomenon immediately
-8–35s    EXPLANATION   — 4–7 short scenes: TRANSFORMATION, DIAGRAM, DATA, FLOW, COMPARISON
-35–50s   WHY IT MATTERS — connect to real usage, SIMULATION or COMPARISON
-50–57s   TAKEAWAY      — TakeawayScene — one visual summary
-57–60s   CTA           — CTAScene — always last
+══════════════════════════════════════════════════════
+COMPONENT GUIDE — choose by what the scene DOES
+══════════════════════════════════════════════════════
+ORIGINAL COMPONENTS:
+  KineticTypoScene      — HOOK only; punchy text glitch/reveal; max 3 seconds for hook
+  TokenScene            — tokenization: text → token boxes → IDs
+  SketchScene           — node-edge diagram (pipeline, architecture)
+  DataScene             — animated bar chart or comparison bars
+  NumberCounterScene    — large number counting up (use data: {type:"counter",...})
+  SplitCompareScene     — left vs right / before vs after comparison
+  FlowScene             — linear step-by-step pipeline with icons
+  HubSpokeScene         — radial hub+spokes (MCP, orchestrators)
+  ClusterScene          — semantic cluster groupings
+  DialScene             — dial/knob (temperature, confidence)
+  BarChartScene         — simple 0–100 bar gauge
+  TakeawayScene         — single bold takeaway line (TAKEAWAY zone only)
+  CTAScene              — follow CTA (CTA zone only, 3 seconds)
 
-HARD VISUAL RULES
------------------
-1. NEVER put a narration sentence as on_screen_text. Labels only (1-5 words).
-2. At least 70% of explanatory scenes (not HOOK/TAKEAWAY/CTA) must be DEMONSTRATION,
-   TRANSFORMATION, DIAGRAM, DATA, COMPARISON, FLOW, ZOOM, or SIMULATION.
-3. No more than 2 consecutive scenes with the same scene_type.
-4. Every 2–4 seconds something meaningful must visually change (animation must be non-trivial).
-5. Avoid empty screens. Transitions ≤ 0.4 seconds.
-6. Total duration of all scenes must sum to 57–62 seconds.
-7. CTAScene is ALWAYS the last scene and always exactly 3 seconds.
+MOTION-FIRST PRIMITIVES (v3 — prefer these for visual density):
+  TransformScene        — A morphs into B; shows state change visually (e.g. words → tokens → IDs)
+  PipelineScene         — horizontal multi-stage pipeline; data packet travels through stages
+  ContextWindowScene    — rectangle fills with chunks/tokens as context grows
+  TokenStreamScene      — tokens generate one-by-one from left to right
+  DocumentRetrievalScene — document cards fan out; relevant chunks light up and travel
+  NetworkBuildScene     — neural network or graph builds node-by-node with edges appearing
+  LayerRevealScene      — stacked system layers peel/reveal from top (e.g. LLM architecture)
+  TimelineScene         — horizontal timeline with animated event markers
+  BeforeAfterScene      — animated wipe comparing two visual states
+  MeterScene            — filling gauge/progress bar (accuracy, speed, cost)
+  GraphGrowthScene      — line or bar chart growing in real time
+  CodeExecutionScene    — code runs line-by-line with output appearing
+  CardStackScene        — deck of cards fans/sorts/filters
+  DataFlowScene         — labelled data packets move through a system diagram
 
-DATA FIELD FORMAT
------------------
-For NumberCounterScene (scene_type DATA, component NumberCounterScene):
-  "data": {"type": "counter", "value": <number>, "label": "<what it means>", "suffix": "<optional unit>"}
+══════════════════════════════════════════════════════
+COMPOSITION VARIETY — do NOT repeat the same layout
+══════════════════════════════════════════════════════
+Alternate between:
+  full-canvas visual | split screen | zoomed object | horizontal pipeline
+  vertical flow | graph/network | dashboard data | comparison | cinematic illustration
+No more than 2 consecutive scenes with the same composition type.
 
-For DataScene with bars (scene_type DATA or COMPARISON, component DataScene):
-  "data": {"type": "bars", "title": "<chart title>", "bars": [{"label": "...", "value": <0-100>}, ...]}
+══════════════════════════════════════════════════════
+CONTINUITY — carry objects between scenes
+══════════════════════════════════════════════════════
+Where possible, carry an object from one scene into the next.
+Example: token boxes created in scene 2 travel right into the context window in scene 3.
+Use "carry_object_from" to name the object that continues.
 
-For DataScene comparison (scene_type COMPARISON, component DataScene):
-  "data": {"type": "comparison", "title": "...", "bars": [{"label": "old", "value": <n>, "maxValue": <m>}, {"label": "new", "value": <n>, "maxValue": <m>}]}
+══════════════════════════════════════════════════════
+TEXT RESTRICTIONS (v3 — stricter)
+══════════════════════════════════════════════════════
+Full-screen typography is allowed ONLY for: HOOK, one key contrast, TAKEAWAY, CTA.
+All explanation scenes MUST use objects + motion + labels — not headlines + sentences.
+Typography-only scenes must be ≤25% of total episode runtime.
+NEVER duplicate voiceover narration as on_screen_text.
 
-For TokenScene: leave "data" null; the token details come from the script's token_spec.
+══════════════════════════════════════════════════════
+DATA FIELD FORMATS
+══════════════════════════════════════════════════════
+NumberCounterScene:
+  "data": {"type":"counter","value":<n>,"label":"<what it means>","suffix":"<unit>"}
 
-OUTPUT FORMAT
--------------
-Return a JSON object with EXACTLY this structure — no markdown fences, no explanation:
+DataScene bars:
+  "data": {"type":"bars","title":"<title>","bars":[{"label":"...","value":<0-100>},...]}
+
+DataScene comparison:
+  "data": {"type":"comparison","title":"...","bars":[{"label":"before","value":<n>,"maxValue":<m>},{"label":"after","value":<n>,"maxValue":<m>}]}
+
+══════════════════════════════════════════════════════
+VISUAL COMPLEXITY SCORE — compute this at the end
+══════════════════════════════════════════════════════
+Count these in your storyboard, then compute a score 0–100:
+
+  visual_beats            — total number of beats across all scenes
+  demonstrations          — scenes with scene_type in {DEMONSTRATION, TRANSFORMATION, FLOW, COMPARISON, DIAGRAM, DATA, ZOOM, SIMULATION}
+  transformations         — scenes explicitly showing A→B state change
+  diagrams_flows          — scenes with multi-node diagrams or flow animations
+  data_visuals            — scenes with charts, counters, meters
+  typography_only_scenes  — scenes where visuals are text-only (penalised)
+  repeated_layouts        — consecutive scenes with same composition (penalised)
+
+Score formula (approximate):
+  base = min(100, visual_beats * 7)
+  bonus = demonstrations * 3 + transformations * 4 + diagrams_flows * 3 + data_visuals * 2
+  penalty = typography_only_scenes * 8 + repeated_layouts * 6
+  visual_first_score = min(100, max(0, base + bonus - penalty))
+
+Storyboard FAILS if visual_first_score < 80.
+
+══════════════════════════════════════════════════════
+OUTPUT FORMAT — return ONLY this JSON object, no fences, no explanation
+══════════════════════════════════════════════════════
 {
   "storyboard": [<array of scene objects>],
   "total_duration_seconds": <float>,
-  "visual_summary": "<one line describing the visual journey of this episode>"
+  "visual_summary": "<one line: the visual journey of this episode>",
+  "visual_complexity": {
+    "visual_beats": <int>,
+    "demonstrations": <int>,
+    "transformations": <int>,
+    "diagrams_flows": <int>,
+    "data_visuals": <int>,
+    "typography_only_scenes": <int>,
+    "repeated_layouts": <int>,
+    "visual_first_score": <int 0-100>
+  }
 }
 """
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _episode_dir(episode: int, week: int) -> Path:
     base = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
@@ -173,9 +291,62 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text)
 
 
+def _count_beats(scenes: list) -> int:
+    """Count total meaningful visual beats across all scenes."""
+    total = 0
+    for s in scenes:
+        beats = s.get("beats", [])
+        total += len(beats)
+    return total
+
+
+def _compute_visual_complexity(scenes: list) -> dict:
+    """
+    Compute the visual complexity score from the storyboard.
+    Returns the full visual_complexity dict.
+    """
+    structural = {"HOOK", "TAKEAWAY", "CTA"}
+    demo_types = DEMONSTRATION_TYPES
+    transform_types = {"TRANSFORMATION"}
+    flow_diagram_types = {"FLOW", "DIAGRAM", "SIMULATION"}
+    data_types = {"DATA"}
+
+    beats = _count_beats(scenes)
+    demos = sum(1 for s in scenes if s.get("scene_type") in demo_types)
+    transforms = sum(1 for s in scenes if s.get("scene_type") in transform_types)
+    diag_flows = sum(1 for s in scenes if s.get("scene_type") in flow_diagram_types)
+    data_visuals = sum(1 for s in scenes if s.get("scene_type") in data_types)
+    typo_only = sum(
+        1 for s in scenes
+        if s.get("component") in TYPOGRAPHY_COMPONENTS
+        and s.get("scene_type") not in structural
+    )
+    repeated = 0
+    for i in range(len(scenes) - 2):
+        if (scenes[i].get("component") == scenes[i+1].get("component") ==
+                scenes[i+2].get("component")):
+            repeated += 1
+
+    base = min(100, beats * 7)
+    bonus = demos * 3 + transforms * 4 + diag_flows * 3 + data_visuals * 2
+    penalty = typo_only * 8 + repeated * 6
+    score = min(100, max(0, base + bonus - penalty))
+
+    return {
+        "visual_beats": beats,
+        "demonstrations": demos,
+        "transformations": transforms,
+        "diagrams_flows": diag_flows,
+        "data_visuals": data_visuals,
+        "typography_only_scenes": typo_only,
+        "repeated_layouts": repeated,
+        "visual_first_score": score,
+    }
+
+
 def _validate_storyboard(scenes: list, episode: int) -> list[str]:
     """
-    Run the quality gate. Returns a list of violation strings.
+    Run the v3 quality gate. Returns a list of violation strings.
     Empty list = storyboard passes.
     """
     violations: list[str] = []
@@ -190,15 +361,27 @@ def _validate_storyboard(scenes: list, episode: int) -> list[str]:
             f"Total duration {total:.1f}s outside {TARGET_MIN_SECONDS}–{TARGET_MAX_SECONDS}s"
         )
 
-    # ── CTA must be last ──────────────────────────────────────────────────────
+    # ── CTA must be last and ≤ MAX_CTA_SECONDS ───────────────────────────────
     last = scenes[-1]
     if last.get("component") != "CTAScene":
         violations.append("Last scene must be CTAScene")
+    elif last.get("duration_seconds", 999) > MAX_CTA_SECONDS:
+        violations.append(
+            f"CTA scene is {last['duration_seconds']}s — must be ≤{MAX_CTA_SECONDS}s"
+        )
+
+    # ── Hook must be ≤ MAX_HOOK_SECONDS ──────────────────────────────────────
+    first = scenes[0]
+    if first.get("scene_type") == "HOOK" and first.get("duration_seconds", 0) > MAX_HOOK_SECONDS:
+        violations.append(
+            f"HOOK scene is {first['duration_seconds']}s — must be ≤{MAX_HOOK_SECONDS}s"
+        )
 
     # ── Schema completeness ───────────────────────────────────────────────────
     required_keys = {
         "scene_id", "duration_seconds", "narration", "scene_type",
-        "visual_goal", "component", "objects", "animation", "on_screen_text", "transition"
+        "visual_goal", "component", "objects", "animation", "on_screen_text",
+        "transition", "beats",
     }
     for i, scene in enumerate(scenes):
         missing = required_keys - set(scene.keys())
@@ -212,78 +395,125 @@ def _validate_storyboard(scenes: list, episode: int) -> list[str]:
             violations.append(
                 f"Scene {i+1} invalid component: '{scene.get('component')}'"
             )
-        # Narration text must not appear verbatim in on_screen_text
+        # Narration must not appear verbatim in on_screen_text
         narration = scene.get("narration", "")
         for label in scene.get("on_screen_text", []):
-            if len(label.split()) > 10:
+            if len(label.split()) > 8:
                 violations.append(
-                    f"Scene {i+1} on_screen_text label too long (>10 words): '{label}'"
+                    f"Scene {i+1} on_screen_text too long (>8 words): '{label}'"
                 )
             if narration and label.lower() in narration.lower() and len(label.split()) > 5:
                 violations.append(
-                    f"Scene {i+1} on_screen_text appears to duplicate narration: '{label}'"
+                    f"Scene {i+1} on_screen_text duplicates narration: '{label}'"
                 )
 
-    # ── Text-card ratio (non-structural scenes only) ──────────────────────────
-    structural = {"HOOK", "TAKEAWAY", "CTA"}
-    explanatory = [s for s in scenes if s.get("scene_type") not in structural]
-    if explanatory:
-        text_cards = [
-            s for s in explanatory
-            if s.get("scene_type") == "METAPHOR"
-            and not s.get("objects") and not s.get("animation")
-        ]
-        ratio = len(text_cards) / len(explanatory)
-        if ratio > MAX_TEXT_CARD_RATIO:
+        # Beats required for longer scenes
+        dur = scene.get("duration_seconds", 0)
+        beats = scene.get("beats", [])
+        n_beats = len(beats) if isinstance(beats, list) else 0
+        if dur > 8.0 and n_beats < 3:
             violations.append(
-                f"Text-card ratio {ratio:.0%} exceeds {MAX_TEXT_CARD_RATIO:.0%} limit"
+                f"Scene {i+1} is {dur}s with only {n_beats} beat(s) — need ≥3 for scenes >8s"
+            )
+        elif dur > 6.0 and n_beats < 2:
+            violations.append(
+                f"Scene {i+1} is {dur}s with only {n_beats} beat(s) — need ≥2 for scenes >6s"
             )
 
-    # ── Visual demonstration count ────────────────────────────────────────────
-    demo_count = sum(
-        1 for s in explanatory if s.get("scene_type") in DEMONSTRATION_TYPES
-    )
-    if demo_count < MIN_VISUAL_DEMONSTRATIONS:
+    # ── Total visual beat count ───────────────────────────────────────────────
+    total_beats = _count_beats(scenes)
+    if total_beats < MIN_VISUAL_BEATS:
         violations.append(
-            f"Only {demo_count} visual demonstrations — need at least {MIN_VISUAL_DEMONSTRATIONS}"
+            f"Only {total_beats} visual beats total — need ≥{MIN_VISUAL_BEATS}"
         )
 
-    # ── Consecutive same scene_type ───────────────────────────────────────────
-    for i in range(len(scenes) - MAX_CONSECUTIVE_SAME_TYPE):
-        window_types = [
-            scenes[i + j].get("scene_type") for j in range(MAX_CONSECUTIVE_SAME_TYPE + 1)
+    # ── Typography runtime cap ────────────────────────────────────────────────
+    structural = {"HOOK", "TAKEAWAY", "CTA"}
+    typo_runtime = sum(
+        s.get("duration_seconds", 0)
+        for s in scenes
+        if s.get("component") in TYPOGRAPHY_COMPONENTS
+        and s.get("scene_type") not in structural
+    )
+    if total > 0 and (typo_runtime / total) > MAX_TYPOGRAPHY_RATIO:
+        violations.append(
+            f"Typography-only runtime {typo_runtime:.1f}s is "
+            f"{typo_runtime/total:.0%} — exceeds {MAX_TYPOGRAPHY_RATIO:.0%} cap"
+        )
+
+    # ── Visual demonstration count ────────────────────────────────────────────
+    explanatory = [s for s in scenes if s.get("scene_type") not in structural]
+    demo_count = sum(1 for s in explanatory if s.get("scene_type") in DEMONSTRATION_TYPES)
+    if demo_count < MIN_VISUAL_DEMONSTRATIONS:
+        violations.append(
+            f"Only {demo_count} visual demonstrations — need ≥{MIN_VISUAL_DEMONSTRATIONS}"
+        )
+
+    # ── Consecutive same composition (3+ in a row fails) ─────────────────────
+    for i in range(len(scenes) - MAX_CONSECUTIVE_SAME_LAYOUT):
+        window_comps = [
+            scenes[i + j].get("component")
+            for j in range(MAX_CONSECUTIVE_SAME_LAYOUT + 1)
         ]
-        if len(set(window_types)) == 1 and window_types[0] not in {"HOOK", "CTA"}:
+        if len(set(window_comps)) == 1 and window_comps[0] not in {"CTAScene", "TakeawayScene"}:
             violations.append(
-                f"Scene {i+1}–{i+MAX_CONSECUTIVE_SAME_TYPE+1}: "
-                f"{MAX_CONSECUTIVE_SAME_TYPE+1} consecutive '{window_types[0]}' scenes"
+                f"Scenes {i+1}–{i+MAX_CONSECUTIVE_SAME_LAYOUT+1}: "
+                f"3 consecutive '{window_comps[0]}' — vary composition"
             )
+
+    # ── Visual-first score gate ───────────────────────────────────────────────
+    complexity = _compute_visual_complexity(scenes)
+    score = complexity["visual_first_score"]
+    if score < MIN_VISUAL_FIRST_SCORE:
+        violations.append(
+            f"Visual-first score {score}/100 is below minimum {MIN_VISUAL_FIRST_SCORE}"
+        )
 
     return violations
 
 
-def _print_storyboard_summary(scenes: list, episode: int) -> None:
+def _print_storyboard_summary(scenes: list, episode: int, complexity: dict | None = None) -> None:
     """Print a human-readable storyboard table to stdout (used by dry-run)."""
-    print(f"\n{'─'*90}")
-    print(f"  EP{episode:02d} STORYBOARD ({len(scenes)} scenes)")
-    print(f"{'─'*90}")
-    print(f"  {'#':>2}  {'T':>5}  {'Type':<16}  {'Component':<22}  Visual action")
-    print(f"{'─'*90}")
+    print(f"\n{'─'*100}")
+    print(f"  EP{episode:02d} STORYBOARD v3 — {len(scenes)} scenes")
+    print(f"{'─'*100}")
+    print(f"  {'#':>2}  {'TIME':>7}  {'Type':<14}  {'Component':<24}  {'Beats':>5}  Visual action")
+    print(f"{'─'*100}")
     cumulative = 0.0
     for s in scenes:
         dur = s.get("duration_seconds", 0)
         end = cumulative + dur
         comp = s.get("component", "?")
         stype = s.get("scene_type", "?")
-        anim = s.get("animation", "")[:45]
+        anim = s.get("animation", "")[:40]
+        n_beats = len(s.get("beats") or [])
         print(
             f"  {s.get('scene_id', '?'):>2}  "
-            f"{cumulative:>4.1f}s  "
-            f"{stype:<16}  {comp:<22}  {anim}"
+            f"{cumulative:>4.1f}–{end:>4.1f}s  "
+            f"{stype:<14}  {comp:<24}  {n_beats:>5}  {anim}"
         )
+        for b in (s.get("beats") or []):
+            print(
+                f"      {b.get('start',0):>4.1f}–{b.get('end',0):>4.1f}s  "
+                f"    ↳ {b.get('action','')[:60]}"
+            )
         cumulative = end
-    print(f"{'─'*90}")
-    print(f"  Total: {cumulative:.1f}s\n")
+    print(f"{'─'*100}")
+    print(f"  Total: {cumulative:.1f}s")
+    if complexity:
+        print(f"\n  Visual Complexity Score:")
+        print(f"    Visual beats      : {complexity.get('visual_beats', 0)}")
+        print(f"    Demonstrations    : {complexity.get('demonstrations', 0)}")
+        print(f"    Transformations   : {complexity.get('transformations', 0)}")
+        print(f"    Diagrams / flows  : {complexity.get('diagrams_flows', 0)}")
+        print(f"    Data visuals      : {complexity.get('data_visuals', 0)}")
+        print(f"    Typography-only   : {complexity.get('typography_only_scenes', 0)}")
+        print(f"    Repeated layouts  : {complexity.get('repeated_layouts', 0)}")
+        print(f"    ─────────────────────────────────")
+        score = complexity.get('visual_first_score', 0)
+        status = "✓ PASS" if score >= MIN_VISUAL_FIRST_SCORE else "✗ FAIL"
+        print(f"    Visual-first score: {score}/100  {status}")
+    print()
 
 
 def run(
@@ -294,45 +524,61 @@ def run(
     dry_run: bool = False,
 ) -> dict:
     """
-    Generate a visual storyboard from a script JSON.
+    Generate a v3 visual storyboard (motion-storytelling) from a script JSON.
 
     Args:
-        script:   Script dict from script_agent (must contain voiceover, topic, concept, etc.)
+        script:   Script dict from script_agent
         episode:  Episode number
         week:     Week number
-        lang:     Language code (storyboard is lang-agnostic for visuals, but saved per lang)
-        dry_run:  If True, prints storyboard summary and exits without saving
+        lang:     Language code
+        dry_run:  If True, prints storyboard summary without saving
 
     Returns:
-        {"success": True, "output_path": str, "storyboard": list, "total_duration": float}
+        {
+          "success": True,
+          "output_path": str,
+          "storyboard": list,
+          "total_duration": float,
+          "visual_complexity": dict,
+          "violations": list[str],
+          "skipped": bool
+        }
     """
     lang = lang.lower()
-    output_path = _episode_dir(episode, week) / f"ep{episode:02d}_storyboard_{lang.upper()}.json"
+    output_path = (
+        _episode_dir(episode, week) / f"ep{episode:02d}_storyboard_{lang.upper()}.json"
+    )
 
-    # Cache check — skip Claude call if storyboard already on disk
+    # Cache check — skip Claude call if storyboard already on disk and passes
     if output_path.exists():
         try:
             cached = json.loads(output_path.read_text(encoding="utf-8"))
             scenes = cached.get("storyboard", [])
             violations = _validate_storyboard(scenes, episode)
             if not violations:
+                complexity = cached.get(
+                    "visual_complexity", _compute_visual_complexity(scenes)
+                )
                 logger.info(
                     f"EP{episode:02d} — storyboard already on disk "
-                    f"({len(scenes)} scenes) — skipping Visual Director"
+                    f"({len(scenes)} scenes, score {complexity.get('visual_first_score',0)}) "
+                    f"— skipping Visual Director"
                 )
                 if dry_run:
-                    _print_storyboard_summary(scenes, episode)
+                    _print_storyboard_summary(scenes, episode, complexity)
                 return {
                     "success": True,
                     "output_path": str(output_path),
                     "storyboard": scenes,
                     "total_duration": cached.get("total_duration_seconds", 0),
+                    "visual_complexity": complexity,
+                    "violations": [],
                     "skipped": True,
                 }
             else:
                 logger.warning(
-                    f"EP{episode:02d} — cached storyboard failed quality gate: "
-                    f"{violations} — regenerating"
+                    f"EP{episode:02d} — cached storyboard failed v3 quality gate: "
+                    f"{violations[:3]} — regenerating"
                 )
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"EP{episode:02d} — could not read cached storyboard: {e}")
@@ -348,28 +594,36 @@ def run(
         f"Full voiceover:\n{script.get('voiceover', '')}\n\n"
     )
 
-    # Pass diagram/token spec so Visual Director can make informed scene choices
     if script.get("token_spec"):
-        user_msg += f"Token spec (for TokenScene): {json.dumps(script['token_spec'])}\n\n"
+        user_msg += f"Token spec (for TokenScene/TokenStreamScene): {json.dumps(script['token_spec'])}\n\n"
     if script.get("sketch_spec"):
-        user_msg += f"Sketch spec (for SketchScene): {json.dumps(script['sketch_spec'])}\n\n"
+        user_msg += f"Sketch spec (for SketchScene/DataFlowScene): {json.dumps(script['sketch_spec'])}\n\n"
     if script.get("data_spec"):
-        user_msg += f"Data spec (for DataScene): {json.dumps(script['data_spec'])}\n\n"
+        user_msg += f"Data spec (for DataScene/MeterScene/GraphGrowthScene): {json.dumps(script['data_spec'])}\n\n"
 
-    user_msg += "Generate the storyboard JSON now."
+    user_msg += (
+        "Generate the v3 storyboard now. Remember:\n"
+        "- Include beats[] for every scene > 4 seconds\n"
+        "- Use motion-first primitives wherever possible\n"
+        "- Compute and include visual_complexity score\n"
+        "- Structure: 0–3s hook, 3–8s demo, 8–40s explain, 40–50s why, 50–55s takeaway, 55–58s CTA\n"
+        "- CTA must be exactly 3 seconds\n"
+        "- Total duration: 57–60 seconds\n"
+    )
 
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     last_error: Exception | None = None
+    violations: list[str] = []
 
     for attempt in range(1, 4):
         try:
             logger.info(
-                f"EP{episode:02d} — Visual Director Claude call (attempt {attempt}/3)"
+                f"EP{episode:02d} — Visual Director v3 Claude call (attempt {attempt}/3)"
             )
 
             response = client.messages.create(
                 model=MODEL,
-                max_tokens=3000,
+                max_tokens=4000,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
             )
@@ -384,37 +638,42 @@ def run(
             violations = _validate_storyboard(scenes, episode)
             if violations:
                 logger.warning(
-                    f"EP{episode:02d} — storyboard quality gate failed (attempt {attempt}): "
-                    f"{'; '.join(violations)}"
+                    f"EP{episode:02d} — v3 quality gate failed (attempt {attempt}): "
+                    f"{'; '.join(violations[:4])}"
                 )
                 if attempt < 3:
-                    # Give Claude feedback on what it got wrong
                     user_msg_retry = (
                         user_msg
-                        + f"\n\nYour previous storyboard FAILED the quality gate:\n"
+                        + f"\n\nYour previous storyboard FAILED the v3 quality gate:\n"
                         + "\n".join(f"- {v}" for v in violations)
-                        + "\n\nPlease fix these issues and regenerate the storyboard."
+                        + "\n\nFix these issues. Remember: "
+                        + "every scene >4s needs beats[], "
+                        + "CTA must be ≤3s, HOOK must be ≤4s, "
+                        + "visual_first_score must be ≥80."
                     )
                     user_msg = user_msg_retry
                     time.sleep(2 ** attempt)
                     continue
-                # 3rd attempt still failing — log violations and continue anyway
                 logger.error(
                     f"EP{episode:02d} — storyboard still has violations after 3 attempts; "
-                    f"proceeding with warnings: {violations}"
+                    f"proceeding with warnings"
                 )
 
-            # Normalise scene IDs to be sequential
+            # Normalise scene IDs
             for i, scene in enumerate(scenes):
                 scene["scene_id"] = i + 1
+
+            # Use model-reported complexity or recompute it
+            complexity = data.get("visual_complexity") or _compute_visual_complexity(scenes)
 
             result_data = {
                 "storyboard": scenes,
                 "total_duration_seconds": data.get(
                     "total_duration_seconds",
-                    round(sum(s.get("duration_seconds", 0) for s in scenes), 2)
+                    round(sum(s.get("duration_seconds", 0) for s in scenes), 2),
                 ),
                 "visual_summary": data.get("visual_summary", ""),
+                "visual_complexity": complexity,
                 "violations": violations,
             }
 
@@ -423,18 +682,19 @@ def run(
                     json.dumps(result_data, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
                 logger.info(
-                    f"EP{episode:02d} — storyboard saved ({len(scenes)} scenes) "
-                    f"-> {output_path}"
+                    f"EP{episode:02d} — v3 storyboard saved ({len(scenes)} scenes, "
+                    f"score {complexity.get('visual_first_score',0)}) -> {output_path}"
                 )
 
             if dry_run:
-                _print_storyboard_summary(scenes, episode)
+                _print_storyboard_summary(scenes, episode, complexity)
 
             return {
                 "success": True,
                 "output_path": str(output_path),
                 "storyboard": scenes,
                 "total_duration": result_data["total_duration_seconds"],
+                "visual_complexity": complexity,
                 "violations": violations,
                 "skipped": False,
             }
@@ -442,7 +702,7 @@ def run(
         except (json.JSONDecodeError, ValueError) as e:
             last_error = e
             logger.warning(
-                f"EP{episode:02d} — Visual Director attempt {attempt} bad output: {e}"
+                f"EP{episode:02d} — Visual Director v3 attempt {attempt} bad output: {e}"
             )
             if attempt < 3:
                 time.sleep(2 ** attempt)
@@ -461,7 +721,7 @@ def run(
         except Exception as e:
             last_error = e
             logger.error(
-                f"EP{episode:02d} — Visual Director attempt {attempt} error: {e}"
+                f"EP{episode:02d} — Visual Director v3 attempt {attempt} error: {e}"
             )
             if attempt < 3:
                 time.sleep(2 ** attempt)

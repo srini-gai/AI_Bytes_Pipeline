@@ -174,6 +174,26 @@ export interface TokenSpec {
   weights?: number[];
 }
 
+// ─── Beat types (Visual Director v3) ─────────────────────────────────────────
+
+/** A single timed visual event within a scene */
+export interface SceneBeat {
+  /** Beat start time in seconds, relative to scene start */
+  start: number;
+  /** Beat end time in seconds, relative to scene start */
+  end: number;
+  /** What visually happens — object enters, transforms, moves, reveals, etc. */
+  action: string;
+  /** Optional: which element is in focus during this beat */
+  focus?: string;
+  /**
+   * Optional: camera instruction for this beat.
+   * One of: slow-push-in | zoom-in | zoom-out | pan-left | pan-right |
+   *         pan-follow | reveal | static | focus-shift | track-object
+   */
+  camera?: string;
+}
+
 // ─── Storyboard types (Visual Director Agent output) ─────────────────────────
 
 export type SceneType =
@@ -191,6 +211,7 @@ export type SceneType =
   | 'CTA';
 
 export type SceneComponent =
+  // ── Original components ──────────────────────────────────────────────────
   | 'KineticTypoScene'
   | 'TokenScene'
   | 'SketchScene'
@@ -204,9 +225,25 @@ export type SceneComponent =
   | 'NumberCounterScene'
   | 'TakeawayScene'
   | 'CTAScene'
+  // ── Legacy fallback components (do not use in storyboard mode) ───────────
   | 'HookScene'
   | 'ConceptScene'
-  | 'SlideScene';
+  | 'SlideScene'
+  // ── Motion-first primitives (Visual Director v3) ─────────────────────────
+  | 'TransformScene'       // A → B transformation with morphing objects
+  | 'PipelineScene'        // Horizontal multi-stage pipeline animation
+  | 'ContextWindowScene'   // Filling context window with tokens/chunks
+  | 'TokenStreamScene'     // Streaming token-by-token generation
+  | 'DocumentRetrievalScene' // Document cards fan out, chunks illuminate
+  | 'NetworkBuildScene'    // Neural network or graph building node by node
+  | 'LayerRevealScene'     // Stacked layers peel away one at a time
+  | 'TimelineScene'        // Horizontal timeline with event markers
+  | 'BeforeAfterScene'     // Animated wipe or split comparing two states
+  | 'MeterScene'           // Filling gauge/meter bar (accuracy, speed, etc.)
+  | 'GraphGrowthScene'     // Line or bar graph growing over time
+  | 'CodeExecutionScene'   // Code executes line by line with output
+  | 'CardStackScene'       // Stack of cards splaying out or sorting
+  | 'DataFlowScene';       // Data packets moving through a system diagram
 
 /** Data payload for NumberCounterScene */
 export interface NumberCounterData {
@@ -215,6 +252,19 @@ export interface NumberCounterData {
   label: string;
   suffix?: string;
   start?: number;
+}
+
+/** Visual complexity score attached to each storyboard */
+export interface VisualComplexityScore {
+  visual_beats: number;
+  demonstrations: number;
+  transformations: number;
+  diagrams_flows: number;
+  data_visuals: number;
+  typography_only_scenes: number;
+  repeated_layouts: number;
+  /** 0–100; storyboard fails if < 80 */
+  visual_first_score: number;
 }
 
 /** Per-scene storyboard entry produced by visual_director_agent */
@@ -228,9 +278,28 @@ export interface StoryboardScene {
   objects: string[];
   animation: string;
   on_screen_text: string[];
-  /** Free-form data payload passed directly to component (e.g. NumberCounterData, TokenSpec, DataSpec) */
+  /** Free-form data payload passed directly to component */
   data?: NumberCounterData | DataSpec | TokenSpec | SketchSpec | Record<string, unknown>;
   transition: string;
+  /**
+   * Timed visual beats within this scene (Visual Director v3).
+   * Required for scenes > 4 seconds; each beat = one meaningful visual event.
+   */
+  beats?: SceneBeat[];
+  /**
+   * Optional continuity: name of a visual object from the PREVIOUS scene
+   * that carries into this scene to create a flowing narrative.
+   */
+  carry_object_from?: string;
+}
+
+/** Full storyboard output from visual_director_agent */
+export interface Storyboard {
+  storyboard: StoryboardScene[];
+  total_duration_seconds: number;
+  visual_summary: string;
+  visual_complexity: VisualComplexityScore;
+  violations: string[];
 }
 
 // ─── Main composition props ───────────────────────────────────────────────────
