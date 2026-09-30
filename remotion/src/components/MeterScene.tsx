@@ -1,20 +1,22 @@
 /**
- * MeterScene — Visual Director v3.1
+ * MeterScene — Visual Director v3.1 (illustrative mode)
  *
- * Risk comparison: qualitative HIGH RISK → LOWER RISK.
+ * Risk comparison: qualitative HIGHER RISK → MORE GROUNDED.
  * No invented percentages. Gauges show qualitative zones only.
  *
- * Layout: two large gauges stacked vertically, each R=260, using full canvas.
- * First gauge (Vanilla) fills to ~25% of range and shows "HIGH RISK" zone.
- * Second gauge (RAG) fills to ~75% of range and shows "LOWER RISK" zone.
- * Needle settles into zone; zone label appears large below the gauge.
+ * ILLUSTRATIVE MODE (sourced_numeric rule):
+ * - This storyboard scene has no sourced_numeric metadata.
+ * - Needle positions are locked to zone CENTERS — not arbitrary fractions
+ *   that would visually imply a specific measurement.
+ * - VANILLA_ZONE_CENTER = midpoint of red zone (fraction 0..0.33) = 0.165
+ * - RAG_ZONE_CENTER     = midpoint of green zone (fraction 0.66..1.0) = 0.83
+ * - These communicate "clearly in danger zone" / "clearly in safe zone"
+ *   without implying any specific percentage value.
+ * - Gauge titles are hardcoded: "WITHOUT RAG" / "WITH RAG" (not from
+ *   onScreenText, which may carry storyboard-fabricated labels).
+ * - Zone labels: "HIGHER RISK" / "MORE GROUNDED"
  *
- * v3.1 changes:
- * - Removed VANILLA_SCORE=0.28 and RAG_SCORE=0.91 — no invented numbers
- * - No percentages displayed — qualitative labels only
- * - Gauges R=260 (was 220) — more dominant
- * - Zone labels are 80px — readable on phone
- * - Delta shows "LOWER RISK" not "+63pts"
+ * Layout: two large gauges stacked vertically, each R=260, using full canvas.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -29,9 +31,13 @@ interface MeterSceneProps {
   accent2?: string;
 }
 
-// Qualitative targets — not real data, just proportional zone placement
-const VANILLA_TARGET = 0.22;   // lands in danger zone (left quarter)
-const RAG_TARGET     = 0.76;   // lands in safe zone (right three-quarters)
+// ILLUSTRATIVE MODE — zone-center positions, not arbitrary fractions.
+// Zone boundaries: red 0..0.33, amber 0.33..0.66, green 0.66..1.0
+// Centers: red midpoint = 0.165, green midpoint = 0.83
+// Using zone centers (not intermediate values) makes clear these are
+// qualitative "clearly in zone" indicators, not precision measurements.
+const VANILLA_ZONE_CENTER = 0.165;  // solidly in red/danger zone
+const RAG_ZONE_CENTER     = 0.83;   // solidly in green/safe zone
 
 export const MeterScene: React.FC<MeterSceneProps> = ({
   beats,
@@ -78,9 +84,9 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
     return {x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad)};
   }
 
-  // Needle angle: interpolated from start toward target * progress
-  const vanillaAngle = START_ANGLE + vanillaP * VANILLA_TARGET * RANGE;
-  const ragAngle     = START_ANGLE + ragP     * RAG_TARGET     * RANGE;
+  // Needle angle: sweep from arc start to zone-center position
+  const vanillaAngle = START_ANGLE + vanillaP * VANILLA_ZONE_CENTER * RANGE;
+  const ragAngle     = START_ANGLE + ragP     * RAG_ZONE_CENTER     * RANGE;
   const vNeedle = needleEnd(CX, CY_VANILLA, R - 40, vanillaAngle);
   const rNeedle = needleEnd(CX, CY_RAG,     R - 40, ragAngle);
 
@@ -92,10 +98,6 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
   // Zone boundaries (fraction of RANGE)
   const ZONE_1 = 0.33;  // red → amber
   const ZONE_2 = 0.66;  // amber → green
-
-  // Which zone is each needle in? (for zone labels)
-  const vanillaZone = vanillaP * VANILLA_TARGET < ZONE_1 ? 'danger' : 'warning';
-  const ragZone     = ragP * RAG_TARGET > ZONE_2 ? 'safe' : 'warning';
 
   return (
     <AbsoluteFill style={{backgroundColor: BG, overflow: 'hidden', opacity: sceneOpacity}}>
@@ -123,7 +125,7 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
 
           {/* Active fill arc */}
           <path d={arcPath(CX, CY_VANILLA, R, START_ANGLE,
-            START_ANGLE + vanillaP * VANILLA_TARGET * RANGE)}
+            START_ANGLE + vanillaP * VANILLA_ZONE_CENTER * RANGE)}
             fill="none" stroke={ZONE_RED} strokeWidth={32} strokeLinecap="round" opacity={0.9}/>
 
           {/* Zone separator ticks */}
@@ -141,17 +143,18 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
           <circle cx={CX} cy={CY_VANILLA} r={18}
             fill={ZONE_RED} stroke={BG} strokeWidth={4}/>
 
-          {/* Gauge title */}
+          {/* Gauge title — hardcoded qualitative label (illustrative mode:
+              storyboard onScreenText may carry fabricated values, ignored here) */}
           <text x={CX} y={CY_VANILLA - R - 30} textAnchor="middle"
             fill="#ffffff88" fontFamily={FONT} fontSize={34} fontWeight="700">
-            {onScreenText[0] ?? 'Vanilla LLM'}
+            WITHOUT RAG
           </text>
 
           {/* Zone label — large, inside the gauge arc */}
           <text x={CX} y={CY_VANILLA + 40} textAnchor="middle"
             fill={ZONE_RED} fontFamily={FONT} fontSize={80} fontWeight="900"
             opacity={smoothstep(vanillaP)}>
-            HIGH RISK
+            HIGHER RISK
           </text>
 
           {/* Qualitative descriptor below */}
@@ -179,7 +182,7 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
 
           {/* Active fill arc */}
           <path d={arcPath(CX, CY_RAG, R, START_ANGLE,
-            START_ANGLE + ragP * RAG_TARGET * RANGE)}
+            START_ANGLE + ragP * RAG_ZONE_CENTER * RANGE)}
             fill="none" stroke={ZONE_GREEN} strokeWidth={32} strokeLinecap="round" opacity={0.9}/>
 
           {/* Zone separator ticks */}
@@ -197,17 +200,17 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
           <circle cx={CX} cy={CY_RAG} r={18}
             fill={ZONE_GREEN} stroke={BG} strokeWidth={4}/>
 
-          {/* Gauge title */}
+          {/* Gauge title — hardcoded qualitative label (illustrative mode) */}
           <text x={CX} y={CY_RAG - R - 30} textAnchor="middle"
             fill="#ffffff88" fontFamily={FONT} fontSize={34} fontWeight="700">
-            {onScreenText[1] ?? 'With RAG'}
+            WITH RAG
           </text>
 
           {/* Zone label */}
           <text x={CX} y={CY_RAG + 40} textAnchor="middle"
             fill={ZONE_GREEN} fontFamily={FONT} fontSize={80} fontWeight="900"
             opacity={smoothstep(ragP)}>
-            LOWER RISK
+            MORE GROUNDED
           </text>
 
           {/* Qualitative descriptor */}

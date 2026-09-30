@@ -3,6 +3,13 @@ qa_validator.py — Extended QA Validation for AI Bytes Shorts (v3.2)
 
 7 checks, 4 hard fail conditions.
 
+sourced_numeric / illustrative rule (check 6):
+  Numeric visualization scenes (MeterScene, BarChartScene, DataScene) must
+  have source_type="sourced_numeric" + source_reference in the storyboard to
+  render any precise numeric claim. Without it, the scene is in "illustrative"
+  mode and any exact percentage, dollar value, or performance stat hard-fails QA.
+  Output includes: Scene | Value | Source type | Source reference | Allowed table.
+
 Usage:
     python qa_validator.py /path/to/video.mp4 [storyboard.json] [--draft]
 
@@ -38,8 +45,9 @@ DARK_FRAME_LUM = 4.0      # below this = empty canvas
 BRIGHT_FRAME_LUM = 6.0    # above this = meaningful content present
 # Unsupported stats: numeric patterns that are fabricated accuracy claims
 # Matches things like "27%", "91%", "+63pts", "2.4x improvement"
+# NOTE: non-capturing groups only — findall returns full match strings, not group contents.
 UNSUPPORTED_STAT_PATTERN = re.compile(
-    r'\b\d+\.?\d*\s*%|\+\d+\s*pts?\b|\d+\.?\d*x\s*(improvement|better|faster|lift)\b',
+    r'\b\d+\.?\d*\s*%|\+\d+\s*pts?\b|\d+\.?\d*x\s*(?:improvement|better|faster|lift)\b',
     re.IGNORECASE
 )
 # Internal identifiers that must never appear in video (from objects[] arrays)
@@ -242,41 +250,162 @@ def check_empty_transitions(video_path: Path) -> dict:
 
 def check_unsupported_stats(storyboard_path: Path) -> dict:
     """
-    Check 6 (FAIL CONDITION): No unsupported precise numeric claims in on_screen_text.
-    Reads the storyboard JSON and scans all on_screen_text[] arrays.
+    Check 6 (FAIL CONDITION): No unsupported precise numeric claims.
+
+    Applies the sourced_numeric / illustrative rule:
+      - sourced_numeric: explicit number supplied by storyboard with source_type="sourced_numeric"
+        and a source_reference field → numeric visualization ALLOWED
+      - illustrative: no verified source → qualitative labels only, no exact percentages,
+        dollar values, accuracy scores, or performance claims → FAIL if found
+
+    Inspects:
+      1. on_screen_text[] — explicit text rendered to screen
+      2. beats[].action  — storyboard intent text (may contain fabricated numbers
+         that inform scene components even without appearing as on_screen_text)
+      3. Component-level rendering rules — numeric visualization components
+         (MeterScene, BarChartScene, DataScene) are checked against source_type:
+         if source_type is not "sourced_numeric", any precise numeric claim hard-fails.
+      4. visual_goal      — scene narrative; flagged if it contains fabricated claims
+
+    Output includes a table: Scene | Value | Source type | Source reference | Allowed
     """
-    violations = []
+    # Numeric visualization components that must respect the sourced_numeric rule
+    NUMERIC_VIZ_COMPONENTS = {"MeterScene", "BarChartScene", "DataScene"}
+
+    rows: list[dict] = []      # all inspected numeric claims
+    violations: list[dict] = []
+
+    def classify_scene(scene: dict) -> tuple[str, str]:
+        """Return (source_type, source_reference) for a scene."""
+        src_type = scene.get("source_type", "illustrative")
+        src_ref  = scene.get("source_reference", "")
+        return (src_type, src_ref)
+
+    def check_text_for_stats(
+        text: str,
+        scene_id: str,
+        field: str,
+        source_type: str,
+        source_ref: str,
+    ) -> None:
+        """Scan one text string; append to rows/violations as appropriate."""
+        matches = UNSUPPORTED_STAT_PATTERN.findall(text)
+        for match in matches:
+            allowed = (source_type == "sourced_numeric" and bool(source_ref))
+            row = {
+                "scene": scene_id,
+                "field": field,
+                "value": match.strip(),
+                "source_type": source_type,
+                "source_reference": source_ref or "—",
+                "allowed": allowed,
+            }
+            rows.append(row)
+            if not allowed:
+                violations.append(row)
+
     try:
         if not storyboard_path.exists():
             return {
                 "check": "unsupported_stats",
-                "description": "No fabricated numeric claims in on_screen_text",
+                "description": "No fabricated numeric claims (sourced_numeric rule)",
                 "result": "STORYBOARD_NOT_FOUND — check skipped",
                 "pass": True,
                 "fail_condition": False,
+                "numeric_claims_table": [],
             }
+
         storyboard = json.loads(storyboard_path.read_text())
-        scenes = storyboard if isinstance(storyboard, list) else storyboard.get("scenes", [])
+        scenes = (
+            storyboard if isinstance(storyboard, list)
+            else storyboard.get("storyboard", storyboard.get("scenes", []))
+        )
+
         for scene in scenes:
-            scene_id = scene.get("scene_id", "?")
-            texts = scene.get("on_screen_text", [])
-            for text in texts:
-                if UNSUPPORTED_STAT_PATTERN.search(str(text)):
-                    violations.append({"scene": scene_id, "text": str(text)})
+            scene_id   = scene.get("scene_id", "?")
+            component  = scene.get("component", "")
+            source_type, source_ref = classify_scene(scene)
+
+            # 1. on_screen_text
+            for text in scene.get("on_screen_text", []):
+                check_text_for_stats(str(text), scene_id, "on_screen_text",
+                                     source_type, source_ref)
+
+            # 2. beats[].action — storyboard intent; may contain fabricated numbers
+            #    that the scene component renders (e.g. "needle swings to 28%")
+            for beat in scene.get("beats", []):
+                action = beat.get("action", "")
+                check_text_for_stats(str(action), scene_id, "beats.action",
+                                     source_type, source_ref)
+
+            # 3. visual_goal
+            visual_goal = scene.get("visual_goal", "")
+            check_text_for_stats(str(visual_goal), scene_id, "visual_goal",
+                                 source_type, source_ref)
+
+            # 4. Component-level: numeric viz components without sourced_numeric
+            #    Even with no on_screen_text number, a MeterScene needle position
+            #    can imply a specific measurement. Flag the component itself.
+            if component in NUMERIC_VIZ_COMPONENTS and source_type != "sourced_numeric":
+                # Check whether any numeric text already caught in on_screen_text/beats;
+                # if yes, those rows are already in violations.
+                # Additionally flag the component entry itself so the table is complete.
+                has_component_row = any(
+                    r["scene"] == scene_id and r["field"] == "component_type"
+                    for r in rows
+                )
+                if not has_component_row:
+                    # Informational row: component is in illustrative mode.
+                    # "allowed" is None here — whether rendering is OK depends on
+                    # whether numeric claims appear (checked above). This row is
+                    # INFO only; it escalates to a violation only if numeric
+                    # claims in this scene already produced violations.
+                    row = {
+                        "scene": scene_id,
+                        "field": "component_type",
+                        "value": f"{component} — illustrative mode (no sourced_numeric metadata)",
+                        "source_type": source_type,
+                        "source_reference": source_ref or "—",
+                        "allowed": "INFO",  # not a pass/fail itself
+                    }
+                    rows.append(row)
+                    # Escalate to violation only if numeric claims already failed this scene.
+                    if any(v["scene"] == scene_id for v in violations):
+                        violations.append({**row, "allowed": False})
+
     except Exception as e:
         return {
             "check": "unsupported_stats",
-            "description": "No fabricated numeric claims in on_screen_text",
+            "description": "No fabricated numeric claims (sourced_numeric rule)",
             "result": f"CHECK_ERROR: {e}",
             "pass": True,
             "fail_condition": False,
+            "numeric_claims_table": [],
         }
 
+    # Build display table
+    table_header = "Scene | Value | Source type | Source reference | Allowed"
+    def allowed_label(a: object) -> str:
+        if a == "INFO":
+            return "INFO (illustrative, no numeric claims)"
+        return "YES" if a else "NO — FAIL"
+
+    table_rows = [
+        f"{r['scene']} | {r['value']} | {r['source_type']} | {r['source_reference']} | {allowed_label(r['allowed'])}"
+        for r in rows
+    ]
+
     is_fail = len(violations) > 0
+    result_str = (
+        f"{len(violations)} violation(s) — unsourced numeric claims detected"
+        if violations else "CLEAN"
+    )
+
     return {
         "check": "unsupported_stats",
-        "description": "No fabricated numeric claims in on_screen_text",
-        "result": f"{len(violations)} violations" if violations else "CLEAN",
+        "description": "No fabricated numeric claims (sourced_numeric rule)",
+        "result": result_str,
+        "numeric_claims_table": [table_header] + table_rows,
         "violations": violations,
         "pass": not is_fail,
         "fail_condition": is_fail,
@@ -299,7 +428,10 @@ def check_internal_identifiers(storyboard_path: Path) -> dict:
                 "fail_condition": False,
             }
         storyboard = json.loads(storyboard_path.read_text())
-        scenes = storyboard if isinstance(storyboard, list) else storyboard.get("scenes", [])
+        scenes = (
+            storyboard if isinstance(storyboard, list)
+            else storyboard.get("storyboard", storyboard.get("scenes", []))
+        )
         for scene in scenes:
             scene_id = scene.get("scene_id", "?")
             objects = scene.get("objects", [])
@@ -406,6 +538,17 @@ def main() -> None:
 
     report = run_validation(video_path, storyboard_path, draft_mode=draft_mode)
     print(json.dumps(report, indent=2))
+
+    # Print numeric claims table to stderr for easy console reading
+    for check in report.get("checks", []):
+        if check.get("check") == "unsupported_stats":
+            table = check.get("numeric_claims_table", [])
+            if table:
+                logger.info("── Numeric claims audit ──────────────────────────────")
+                for row in table:
+                    logger.info(f"  {row}")
+                logger.info("──────────────────────────────────────────────────────")
+            break
 
     verdict = report.get("verdict", "FAIL")
     if verdict == "PASS":

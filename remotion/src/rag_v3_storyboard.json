@@ -21,11 +21,30 @@
         "Grounded answer ✓",
         "Source verified"
       ],
-      "objects": ["wrong_card", "correct_card", "source_badge"],
+      "objects": [
+        "wrong_card",
+        "correct_card",
+        "source_badge"
+      ],
       "beats": [
-        {"start": 0.0, "end": 0.8, "action": "Wrong answer card slams in from top — screen shake", "focus": "wrong_card"},
-        {"start": 0.8, "end": 1.6, "action": "Red X strike-through draws across card", "focus": "wrong_card"},
-        {"start": 1.6, "end": 3.0, "action": "Card flips — grounded answer rises — source badge pops in", "focus": "correct_card"}
+        {
+          "start": 0.0,
+          "end": 0.8,
+          "action": "Wrong answer card slams in from top — screen shake",
+          "focus": "wrong_card"
+        },
+        {
+          "start": 0.8,
+          "end": 1.6,
+          "action": "Red X strike-through draws across card",
+          "focus": "wrong_card"
+        },
+        {
+          "start": 1.6,
+          "end": 3.0,
+          "action": "Card flips — grounded answer rises — source badge pops in",
+          "focus": "correct_card"
+        }
       ]
     },
     {
@@ -41,12 +60,37 @@
         "Generate",
         "RAG"
       ],
-      "objects": ["letter_R", "letter_A", "letter_G", "connector_lines"],
+      "objects": [
+        "letter_R",
+        "letter_A",
+        "letter_G",
+        "connector_lines"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.0, "action": "R stamps in from above with magnifying-glass icon", "focus": "letter_R"},
-        {"start": 1.0, "end": 2.2, "action": "A stamps in with inject/plus icon", "focus": "letter_A"},
-        {"start": 2.2, "end": 3.4, "action": "G stamps in with spark/generate icon", "focus": "letter_G"},
-        {"start": 3.4, "end": 5.0, "action": "Connector lines draw L→R between letters — camera slow push-in", "focus": "connector_lines"}
+        {
+          "start": 0.0,
+          "end": 1.0,
+          "action": "R stamps in from above with magnifying-glass icon",
+          "focus": "letter_R"
+        },
+        {
+          "start": 1.0,
+          "end": 2.2,
+          "action": "A stamps in with inject/plus icon",
+          "focus": "letter_A"
+        },
+        {
+          "start": 2.2,
+          "end": 3.4,
+          "action": "G stamps in with spark/generate icon",
+          "focus": "letter_G"
+        },
+        {
+          "start": 3.4,
+          "end": 5.0,
+          "action": "Connector lines draw L→R between letters — camera slow push-in",
+          "focus": "connector_lines"
+        }
       ]
     },
     {
@@ -61,11 +105,30 @@
         "Retrieval node",
         "Knowledge base"
       ],
-      "objects": ["query_bubble", "retrieval_node", "knowledge_base"],
+      "objects": [
+        "query_bubble",
+        "retrieval_node",
+        "knowledge_base"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.5, "action": "Query bubble arc-travels from user to retrieval node", "focus": "query_bubble"},
-        {"start": 1.5, "end": 3.0, "action": "Bubble enters node — pulse ring expands and fades", "focus": "retrieval_node"},
-        {"start": 3.0, "end": 5.0, "action": "Search beams radiate from node — KB cylinder fills 3 colored segments", "focus": "knowledge_base"}
+        {
+          "start": 0.0,
+          "end": 1.5,
+          "action": "Query bubble arc-travels from user to retrieval node",
+          "focus": "query_bubble"
+        },
+        {
+          "start": 1.5,
+          "end": 3.0,
+          "action": "Bubble enters node — pulse ring expands and fades",
+          "focus": "retrieval_node"
+        },
+        {
+          "start": 3.0,
+          "end": 5.0,
+          "action": "Search beams radiate from node — KB cylinder fills 3 colored segments",
+          "focus": "knowledge_base"
+        }
       ]
     },
     {
@@ -81,12 +144,36 @@
         "Most relevant",
         "Top 3 selected"
       ],
-      "objects": ["doc_fan", "glow_top3", "staging_area"],
+      "objects": [
+        "doc_fan",
+        "glow_top3",
+        "staging_area"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.5, "action": "15 document cards fan out from KB cylinder in 120° arc", "focus": "doc_fan"},
-        {"start": 1.5, "end": 3.0, "action": "Top 3 cards glow teal — rank badges 1/2/3 pop onto each", "focus": "glow_top3"},
-        {"start": 3.0, "end": 4.5, "action": "Top 3 lift and arc-fly right — non-top cards fade to ghost", "focus": "glow_top3"},
-        {"start": 4.5, "end": 6.0, "action": "Cards stack in staging area — Most relevant label rises", "focus": "staging_area"}
+        {
+          "start": 0.0,
+          "end": 1.5,
+          "action": "15 document cards fan out from KB cylinder in 120° arc",
+          "focus": "doc_fan"
+        },
+        {
+          "start": 1.5,
+          "end": 3.0,
+          "action": "Top 3 cards glow teal — rank badges 1/2/3 pop onto each",
+          "focus": "glow_top3"
+        },
+        {
+          "start": 3.0,
+          "end": 4.5,
+          "action": "Top 3 lift and arc-fly right — non-top cards fade to ghost",
+          "focus": "glow_top3"
+        },
+        {
+          "start": 4.5,
+          "end": 6.0,
+          "action": "Cards stack in staging area — Most relevant label rises",
+          "focus": "staging_area"
+        }
       ]
     },
     {
@@ -102,12 +189,36 @@
         "Injecting context",
         "LLM ready"
       ],
-      "objects": ["context_rect", "doc_cards", "llm_circle"],
+      "objects": [
+        "context_rect",
+        "doc_cards",
+        "llm_circle"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.5, "action": "3 doc cards slide from staging area into context window rect", "focus": "doc_cards"},
-        {"start": 1.5, "end": 2.5, "action": "Window rim glows purple — Context window label pops in", "focus": "context_rect"},
-        {"start": 2.5, "end": 3.5, "action": "Window compresses 480→180px — token count badge appears", "focus": "context_rect"},
-        {"start": 3.5, "end": 5.0, "action": "Compressed window flies right into LLM circle — connection glow", "focus": "llm_circle"}
+        {
+          "start": 0.0,
+          "end": 1.5,
+          "action": "3 doc cards slide from staging area into context window rect",
+          "focus": "doc_cards"
+        },
+        {
+          "start": 1.5,
+          "end": 2.5,
+          "action": "Window rim glows purple — Context window label pops in",
+          "focus": "context_rect"
+        },
+        {
+          "start": 2.5,
+          "end": 3.5,
+          "action": "Window compresses 480→180px — token count badge appears",
+          "focus": "context_rect"
+        },
+        {
+          "start": 3.5,
+          "end": 5.0,
+          "action": "Compressed window flies right into LLM circle — connection glow",
+          "focus": "llm_circle"
+        }
       ]
     },
     {
@@ -120,11 +231,30 @@
       "on_screen_text": [
         "Answer grounded in your data"
       ],
-      "objects": ["token_chips", "llm_body", "answer_text"],
+      "objects": [
+        "token_chips",
+        "llm_body",
+        "answer_text"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.8, "action": "Token chips flow along pipe from context into LLM edge", "focus": "token_chips"},
-        {"start": 1.8, "end": 3.2, "action": "LLM glow fills body — rotating dashed ring — activation waves expand", "focus": "llm_body"},
-        {"start": 3.2, "end": 5.0, "action": "Answer text streams out character-by-character — cursor blinks", "focus": "answer_text"}
+        {
+          "start": 0.0,
+          "end": 1.8,
+          "action": "Token chips flow along pipe from context into LLM edge",
+          "focus": "token_chips"
+        },
+        {
+          "start": 1.8,
+          "end": 3.2,
+          "action": "LLM glow fills body — rotating dashed ring — activation waves expand",
+          "focus": "llm_body"
+        },
+        {
+          "start": 3.2,
+          "end": 5.0,
+          "action": "Answer text streams out character-by-character — cursor blinks",
+          "focus": "answer_text"
+        }
       ]
     },
     {
@@ -141,13 +271,44 @@
         "LLM",
         "Grounded Answer"
       ],
-      "objects": ["user_node", "retrieve_node", "kb_node", "llm_node", "answer_node"],
+      "objects": [
+        "user_node",
+        "retrieve_node",
+        "kb_node",
+        "llm_node",
+        "answer_node"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.0, "action": "User + retrieve + KB nodes appear", "focus": "user_node"},
-        {"start": 1.0, "end": 2.0, "action": "Arrows draw between user → retrieve → KB", "focus": "retrieve_node"},
-        {"start": 2.0, "end": 3.0, "action": "LLM node appears below", "focus": "llm_node"},
-        {"start": 3.0, "end": 4.0, "action": "Grounded answer text grows from LLM with source tag", "focus": "answer_node"},
-        {"start": 4.0, "end": 5.0, "action": "Global glow across entire pipeline graph", "focus": "answer_node"}
+        {
+          "start": 0.0,
+          "end": 1.0,
+          "action": "User + retrieve + KB nodes appear",
+          "focus": "user_node"
+        },
+        {
+          "start": 1.0,
+          "end": 2.0,
+          "action": "Arrows draw between user → retrieve → KB",
+          "focus": "retrieve_node"
+        },
+        {
+          "start": 2.0,
+          "end": 3.0,
+          "action": "LLM node appears below",
+          "focus": "llm_node"
+        },
+        {
+          "start": 3.0,
+          "end": 4.0,
+          "action": "Grounded answer text grows from LLM with source tag",
+          "focus": "answer_node"
+        },
+        {
+          "start": 4.0,
+          "end": 5.0,
+          "action": "Global glow across entire pipeline graph",
+          "focus": "answer_node"
+        }
       ]
     },
     {
@@ -165,31 +326,69 @@
         "Verified answer",
         "Cited sources"
       ],
-      "objects": ["without_rag_panel", "with_rag_panel"],
+      "objects": [
+        "without_rag_panel",
+        "with_rag_panel"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.8, "action": "Left panel slides in from left — Without RAG — red highlights", "focus": "without_rag_panel"},
-        {"start": 1.8, "end": 3.5, "action": "Right panel slides in from right — With RAG — teal highlights", "focus": "with_rag_panel"},
-        {"start": 3.5, "end": 5.0, "action": "Verdict banner rises: Without RAG = risk", "focus": "without_rag_panel"}
+        {
+          "start": 0.0,
+          "end": 1.8,
+          "action": "Left panel slides in from left — Without RAG — red highlights",
+          "focus": "without_rag_panel"
+        },
+        {
+          "start": 1.8,
+          "end": 3.5,
+          "action": "Right panel slides in from right — With RAG — teal highlights",
+          "focus": "with_rag_panel"
+        },
+        {
+          "start": 3.5,
+          "end": 5.0,
+          "action": "Verdict banner rises: Without RAG = risk",
+          "focus": "without_rag_panel"
+        }
       ]
     },
     {
       "scene_id": "s09_meter",
       "component": "MeterScene",
-      "visual_goal": "Two gauges: Vanilla LLM accuracy 28% vs RAG 91% — delta arrow",
+      "visual_goal": "Two gauges: WITHOUT RAG (higher risk zone) vs WITH RAG (more grounded zone) — illustrative qualitative comparison, no sourced numeric values",
       "duration_seconds": 4.5,
       "visual_beats": 3,
       "carry_object_from": null,
       "on_screen_text": [
-        "Vanilla LLM",
-        "RAG",
-        "+63pts accuracy lift"
+        "WITHOUT RAG",
+        "WITH RAG",
+        "SAFER with sources"
       ],
-      "objects": ["vanilla_gauge", "rag_gauge", "delta_arrow"],
+      "objects": [
+        "vanilla_gauge",
+        "rag_gauge",
+        "delta_arrow"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.5, "action": "Vanilla LLM gauge needle swings to 28% in red", "focus": "vanilla_gauge"},
-        {"start": 1.5, "end": 3.0, "action": "RAG gauge needle swings to 91% in teal", "focus": "rag_gauge"},
-        {"start": 3.0, "end": 4.5, "action": "Delta arrow appears with +63pts accuracy lift label", "focus": "delta_arrow"}
-      ]
+        {
+          "start": 0.0,
+          "end": 1.5,
+          "action": "WITHOUT RAG gauge needle sweeps to danger zone center (HIGHER RISK)",
+          "focus": "vanilla_gauge"
+        },
+        {
+          "start": 1.5,
+          "end": 3.0,
+          "action": "WITH RAG gauge needle sweeps to safe zone center (MORE GROUNDED)",
+          "focus": "rag_gauge"
+        },
+        {
+          "start": 3.0,
+          "end": 4.5,
+          "action": "Delta connector appears with SAFER qualitative label",
+          "focus": "delta_arrow"
+        }
+      ],
+      "source_type": "illustrative"
     },
     {
       "scene_id": "s10_takeaway",
@@ -204,11 +403,30 @@
         "Context",
         "Generate"
       ],
-      "objects": ["icon_retrieve", "icon_context", "icon_generate"],
+      "objects": [
+        "icon_retrieve",
+        "icon_context",
+        "icon_generate"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.5, "action": "3 icons slide up from below (staggered)", "focus": "icon_retrieve"},
-        {"start": 1.5, "end": 3.0, "action": "Connector lines draw between icons", "focus": "icon_context"},
-        {"start": 3.0, "end": 5.0, "action": "Takeaway text rises below icon row", "focus": "icon_generate"}
+        {
+          "start": 0.0,
+          "end": 1.5,
+          "action": "3 icons slide up from below (staggered)",
+          "focus": "icon_retrieve"
+        },
+        {
+          "start": 1.5,
+          "end": 3.0,
+          "action": "Connector lines draw between icons",
+          "focus": "icon_context"
+        },
+        {
+          "start": 3.0,
+          "end": 5.0,
+          "action": "Takeaway text rises below icon row",
+          "focus": "icon_generate"
+        }
       ]
     },
     {
@@ -221,10 +439,23 @@
       "on_screen_text": [
         "Follow for practical AI, daily"
       ],
-      "objects": ["cta_label", "cta_button"],
+      "objects": [
+        "cta_label",
+        "cta_button"
+      ],
       "beats": [
-        {"start": 0.0, "end": 1.0, "action": "Key Takeaway label and text reveal", "focus": "cta_label"},
-        {"start": 1.0, "end": 2.5, "action": "Follow pill button rises", "focus": "cta_button"}
+        {
+          "start": 0.0,
+          "end": 1.0,
+          "action": "Key Takeaway label and text reveal",
+          "focus": "cta_label"
+        },
+        {
+          "start": 1.0,
+          "end": 2.5,
+          "action": "Follow pill button rises",
+          "focus": "cta_button"
+        }
       ]
     }
   ]
