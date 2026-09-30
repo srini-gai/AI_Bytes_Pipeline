@@ -1,16 +1,16 @@
 /**
- * BeforeAfterScene — Visual Director v3.1
+ * BeforeAfterScene — Visual Director v3.2
  *
- * HOOK scene: hallucinated AI answer dominates the screen from frame 1.
- * Large confident wrong answer fills the centre, then gets struck through,
- * then flips to the grounded correct answer. Camera zooms in on the error.
+ * HOOK scene: hallucinated AI answer is visibly entering from frame 1.
+ * Large wrong answer slams in from near-top (spring overshoot), then struck through.
+ * Card flips to reveal grounded answer. Camera push-in during slam.
  *
- * v3.1 changes:
- * - Wrong answer text is 120px — fills 80%+ of usable width immediately
- * - No fade-in delay — content is present on frame 0
- * - Screen shake on slam is subtle (doesn't displace composition)
- * - "WRONG" stamps down in huge type — no X badge
- * - Flip reveals correct answer at same large scale
+ * v3.2 changes:
+ * - Card starts at y=-80 (partially visible entering frame) not -500 (off-screen)
+ * - Spring overshoot on slam: briefly dips past 0 then settles (physicality)
+ * - WRONG stamp has accelerate/decelerate (easeOut with slight bounce)
+ * - Strike-through accelerates from left (fast start, slow settle at right edge)
+ * - Source badge scales from 0.6 with spring (not just fade)
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -38,15 +38,19 @@ export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
   const b1 = beats[1] ?? {start: 0.8, end: 1.6};
   const b2 = beats[2] ?? {start: 1.6, end: 3.0};
 
-  // ── Beat 0: wrong answer card enters from top, settling in centre ────────
+  // ── Beat 0: wrong answer card enters from near-top — visibly entering at frame 1 ────
+  // v3.2: start at y=-80 (card top already visible), spring overshoot past 0 then settle
   const slamP  = easeOut(frame, fps, b0.start, b0.end);
-  const cardY  = interpolate(slamP, [0, 1], [-500, 0]);
-  // Screen shake on slam impact (frames around b0.end)
+  // Spring-like: overshoot below 0 at peak velocity, settle to 0
+  // slamP: 0→1; overshoot at ~0.75, settle at 1
+  const springY = interpolate(slamP, [0, 0.72, 0.88, 1.0], [-80, 28, -8, 0]);
+  const cardY = springY;
+  // Screen shake on slam impact — slightly stronger for physicality
   const impactF  = Math.round(b0.end * fps);
-  const shake    = interpolate(frame, [impactF, impactF + 6], [10, 0], {
+  const shake    = interpolate(frame, [impactF, impactF + 8], [14, 0], {
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   });
-  const shakeX = Math.sin(frame * 5.1) * shake;
+  const shakeX = Math.sin(frame * 4.8) * shake;
 
   // ── Beat 1: red diagonal strike-through across the answer ────────────────
   const strikeP  = linearProgress(frame, fps, b1.start, b1.end);
