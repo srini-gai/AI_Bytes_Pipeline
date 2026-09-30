@@ -35,6 +35,22 @@ import {KineticTypoScene} from './components/KineticTypoScene';
 import {NumberCounterScene} from './components/NumberCounterScene';
 import {TakeawayScene} from './components/TakeawayScene';
 
+// Visual Director v3 — beat-driven scene primitives
+import {BeforeAfterScene} from './components/BeforeAfterScene';
+import {TransformScene} from './components/TransformScene';
+import {DataFlowScene} from './components/DataFlowScene';
+import {DocumentRetrievalScene} from './components/DocumentRetrievalScene';
+import {ContextWindowScene} from './components/ContextWindowScene';
+import {TokenStreamScene} from './components/TokenStreamScene';
+import {PipelineScene} from './components/PipelineScene';
+import {MeterScene} from './components/MeterScene';
+import {NetworkBuildScene} from './components/NetworkBuildScene';
+import {LayerRevealScene} from './components/LayerRevealScene';
+import {TimelineScene} from './components/TimelineScene';
+import {GraphGrowthScene} from './components/GraphGrowthScene';
+import {CodeExecutionScene} from './components/CodeExecutionScene';
+import {CardStackScene} from './components/CardStackScene';
+
 import type {
   AIBytesReelProps,
   ClipsMap,
@@ -226,6 +242,8 @@ function renderStoryboardScene(
             verdict: scene.on_screen_text[4] ?? '',
           }}
           theme={t}
+          beats={scene.beats}
+          onScreenText={scene.on_screen_text}
         />
       );
     }
@@ -298,6 +316,162 @@ function renderStoryboardScene(
         />
       );
 
+    // ── v3 beat-driven primitives ────────────────────────────────────────────
+
+    case 'BeforeAfterScene':
+      return (
+        <BeforeAfterScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          accentColor={accent}
+          accent2={accent2}
+          carryFrom={scene.carry_object_from ?? undefined}
+        />
+      );
+
+    case 'TransformScene':
+      return (
+        <TransformScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'DataFlowScene':
+      return (
+        <DataFlowScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'DocumentRetrievalScene':
+      return (
+        <DocumentRetrievalScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'ContextWindowScene':
+      return (
+        <ContextWindowScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'TokenStreamScene':
+      return (
+        <TokenStreamScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'PipelineScene':
+      return (
+        <PipelineScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'MeterScene':
+      return (
+        <MeterScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'NetworkBuildScene':
+      return (
+        <NetworkBuildScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'LayerRevealScene':
+      return (
+        <LayerRevealScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'TimelineScene':
+      return (
+        <TimelineScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'GraphGrowthScene':
+      return (
+        <GraphGrowthScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'CodeExecutionScene':
+      return (
+        <CodeExecutionScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
+    case 'CardStackScene':
+      return (
+        <CardStackScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+        />
+      );
+
     // ── Key takeaway scene
     case 'TakeawayScene':
       return (
@@ -306,6 +480,8 @@ function renderStoryboardScene(
           accentColor={accent}
           accent2={accent2}
           durationInFrames={durationInFrames}
+          beats={scene.beats}
+          onScreenText={scene.on_screen_text}
         />
       );
 

@@ -1,6 +1,8 @@
 import React from 'react';
-import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
+import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {SplitCompareSpec, SideBySideSpec} from '../types';
+import type {SceneBeat} from '../types';
+import {easeOut, linearProgress, smoothstep} from './beatUtils';
 
 interface SceneTheme { accent: string; accent2: string; }
 
@@ -25,6 +27,9 @@ const VERDICT_IN     = [180, 210];
 interface SplitCompareSceneProps {
   spec: SplitCompareSpec | SideBySideSpec;
   theme?: SceneTheme;
+  // v3 beat-driven props (optional — falls back to legacy frame timing)
+  beats?: SceneBeat[];
+  onScreenText?: string[];
 }
 
 const Panel: React.FC<{
@@ -131,9 +136,108 @@ const Panel: React.FC<{
   );
 };
 
-export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme}) => {
+export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme, beats, onScreenText}) => {
   const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
   const t = theme ?? DEFAULT_THEME;
+
+  // ── v3 beat-driven mode ──────────────────────────────────────────────────
+  if (beats && beats.length >= 2) {
+    // B0: left panel slides in from the left
+    // B1: right panel slides in from the right + verdict
+    const leftP   = easeOut(frame, fps, beats[0].start, beats[0].end);
+    const rightP  = easeOut(frame, fps, beats[1].start, beats[1].end);
+    const verdP   = beats[2] ? easeOut(frame, fps, beats[2].start, beats[2].end) : rightP;
+    const sceneOp = interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'});
+
+    const isSplit = spec.type === 'split_compare';
+    const leftCol  = isSplit ? '#ff4444' : t.accent;
+    const rightCol = isSplit ? '#22c55e' : t.accent2;
+    const verdict  = spec.type === 'split_compare' ? spec.verdict : undefined;
+
+    return (
+      <AbsoluteFill style={{backgroundColor: '#050510', opacity: sceneOp}}>
+        {/* Left panel */}
+        <div style={{
+          position: 'absolute', top: 260, left: LEFT_X, width: COL_W,
+          opacity: leftP,
+          transform: `translateX(${interpolate(leftP, [0, 1], [-140, 0])}px)`,
+          zIndex: 2,
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: 24,
+            background: `${leftCol}12`, border: `2px solid ${leftCol}55`,
+          }}/>
+          <div style={{position: 'relative', padding: '40px 28px 28px'}}>
+            <div style={{fontFamily: FONT, fontSize: 34, fontWeight: 800, color: leftCol, textAlign: 'center', marginBottom: 20}}>
+              {spec.left.label}
+            </div>
+            <div style={{height: 1.5, background: `${leftCol}44`, marginBottom: 20}}/>
+            {spec.left.points.map((pt, pi) => (
+              <div key={pi} style={{
+                display: 'flex', gap: 10, marginBottom: 14,
+                opacity: smoothstep(interpolate(leftP, [0.4 + pi * 0.1, 0.7 + pi * 0.1], [0, 1], {extrapolateLeft:'clamp',extrapolateRight:'clamp'})),
+              }}>
+                <div style={{color: leftCol, fontSize: 20, marginTop: 2}}>▸</div>
+                <div style={{fontSize: 28, color: 'rgba(255,255,255,0.88)', fontFamily: FONT, lineHeight: 1.4}}>{pt}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* VS badge */}
+        <div style={{
+          position: 'absolute', left: LEFT_X + COL_W + Math.round(COL_GAP / 2) - 22, top: 420,
+          width: 44, height: 44, borderRadius: '50%', background: '#1a1a2e',
+          border: `1.5px solid ${t.accent}66`, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 5, fontSize: 16, fontWeight: 800,
+          color: 'rgba(255,255,255,0.6)', fontFamily: FONT,
+        }}>VS</div>
+
+        {/* Right panel */}
+        <div style={{
+          position: 'absolute', top: 260, left: RIGHT_X, width: COL_W,
+          opacity: rightP,
+          transform: `translateX(${interpolate(rightP, [0, 1], [140, 0])}px)`,
+          zIndex: 2,
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: 24,
+            background: `${rightCol}12`, border: `2px solid ${rightCol}55`,
+          }}/>
+          <div style={{position: 'relative', padding: '40px 28px 28px'}}>
+            <div style={{fontFamily: FONT, fontSize: 34, fontWeight: 800, color: rightCol, textAlign: 'center', marginBottom: 20}}>
+              {spec.right.label}
+            </div>
+            <div style={{height: 1.5, background: `${rightCol}44`, marginBottom: 20}}/>
+            {spec.right.points.map((pt, pi) => (
+              <div key={pi} style={{
+                display: 'flex', gap: 10, marginBottom: 14,
+                opacity: smoothstep(interpolate(rightP, [0.4 + pi * 0.1, 0.7 + pi * 0.1], [0, 1], {extrapolateLeft:'clamp',extrapolateRight:'clamp'})),
+              }}>
+                <div style={{color: rightCol, fontSize: 20, marginTop: 2}}>▸</div>
+                <div style={{fontSize: 28, color: 'rgba(255,255,255,0.88)', fontFamily: FONT, lineHeight: 1.4}}>{pt}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Verdict */}
+        {verdict && verdP > 0.1 && (
+          <div style={{
+            position: 'absolute', bottom: 220, left: 40, right: 40,
+            opacity: smoothstep(verdP), transform: `translateY(${interpolate(verdP, [0, 1], [20, 0])}px)`,
+            zIndex: 3, backgroundColor: 'rgba(255,68,68,0.15)', border: '1.5px solid rgba(255,68,68,0.4)',
+            borderRadius: 16, padding: '18px 28px', textAlign: 'center',
+          }}>
+            <div style={{fontSize: 34, fontWeight: 700, color: '#ff6666', fontFamily: FONT}}>{verdict}</div>
+          </div>
+        )}
+      </AbsoluteFill>
+    );
+  }
+
+  // ── Legacy frame-based mode (unchanged) ─────────────────────────────────
 
   const verdict: string | undefined = spec.type === 'split_compare' ? spec.verdict : undefined;
   const isSplitCompare = spec.type === 'split_compare';

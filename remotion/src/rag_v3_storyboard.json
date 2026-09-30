@@ -1,0 +1,231 @@
+{
+  "episode": "01",
+  "topic": "What is RAG?",
+  "title": "This Is How AI Reads YOUR Documents",
+  "hook": "Your AI is lying to you. Here is why.",
+  "concept": "Retrieval-Augmented Generation",
+  "voiceover": "Your AI is lying to you. Here is why. Most LLMs only know what they were trained on. Ask about your company docs, recent events, or private data — they hallucinate. RAG fixes this. Retrieval Augmented Generation. R is for Retrieve — pull the right documents. A is for Augment — inject them as context. G is for Generate — now your LLM answers from real data. When you ask a question, your query goes to a retrieval node. It searches a knowledge base — your actual documents. The top results get ranked by relevance. The most relevant docs are assembled into a context window. That context window is compressed and passed to the LLM. The LLM processes input tokens from your context, and streams out a grounded answer — one that cites real sources. Without RAG, you get generic answers. With RAG, you get sourced answers from your own data. The accuracy lift is dramatic. RAG grounds LLM answers in your real data. No fine-tuning. No hallucination. Just facts.",
+  "takeaway": "RAG = LLM + Your Real Data. No fine-tuning needed.",
+  "tags": "#SriniOnAI #RAG #LLM #GenerativeAI",
+  "slides": [],
+  "storyboard": [
+    {
+      "scene_id": "s01_hook",
+      "component": "BeforeAfterScene",
+      "visual_goal": "Wrong AI answer flips to grounded answer — the core problem/solution contrast",
+      "duration_seconds": 3.0,
+      "visual_beats": 3,
+      "carry_object_from": null,
+      "on_screen_text": [
+        "AI hallucinated",
+        "Grounded answer ✓",
+        "Source verified"
+      ],
+      "objects": ["wrong_card", "correct_card", "source_badge"],
+      "beats": [
+        {"start": 0.0, "end": 0.8, "action": "Wrong answer card slams in from top — screen shake", "focus": "wrong_card"},
+        {"start": 0.8, "end": 1.6, "action": "Red X strike-through draws across card", "focus": "wrong_card"},
+        {"start": 1.6, "end": 3.0, "action": "Card flips — grounded answer rises — source badge pops in", "focus": "correct_card"}
+      ]
+    },
+    {
+      "scene_id": "s02_rag_acronym",
+      "component": "TransformScene",
+      "visual_goal": "R-A-G letters stamp in with meaning icons",
+      "duration_seconds": 5.0,
+      "visual_beats": 4,
+      "carry_object_from": null,
+      "on_screen_text": [
+        "Retrieve",
+        "Augment",
+        "Generate",
+        "RAG"
+      ],
+      "objects": ["letter_R", "letter_A", "letter_G", "connector_lines"],
+      "beats": [
+        {"start": 0.0, "end": 1.0, "action": "R stamps in from above with magnifying-glass icon", "focus": "letter_R"},
+        {"start": 1.0, "end": 2.2, "action": "A stamps in with inject/plus icon", "focus": "letter_A"},
+        {"start": 2.2, "end": 3.4, "action": "G stamps in with spark/generate icon", "focus": "letter_G"},
+        {"start": 3.4, "end": 5.0, "action": "Connector lines draw L→R between letters — camera slow push-in", "focus": "connector_lines"}
+      ]
+    },
+    {
+      "scene_id": "s03_data_flow",
+      "component": "DataFlowScene",
+      "visual_goal": "Query bubble travels from user to retrieval node to knowledge base",
+      "duration_seconds": 5.0,
+      "visual_beats": 3,
+      "carry_object_from": null,
+      "on_screen_text": [
+        "Your query",
+        "Retrieval node",
+        "Knowledge base"
+      ],
+      "objects": ["query_bubble", "retrieval_node", "knowledge_base"],
+      "beats": [
+        {"start": 0.0, "end": 1.5, "action": "Query bubble arc-travels from user to retrieval node", "focus": "query_bubble"},
+        {"start": 1.5, "end": 3.0, "action": "Bubble enters node — pulse ring expands and fades", "focus": "retrieval_node"},
+        {"start": 3.0, "end": 5.0, "action": "Search beams radiate from node — KB cylinder fills 3 colored segments", "focus": "knowledge_base"}
+      ]
+    },
+    {
+      "scene_id": "s04_doc_retrieval",
+      "component": "DocumentRetrievalScene",
+      "visual_goal": "15 documents fan out — top 3 glow and fly to staging area",
+      "duration_seconds": 6.0,
+      "visual_beats": 4,
+      "carry_object_from": "knowledge_base",
+      "on_screen_text": [
+        "15 documents",
+        "Ranked by relevance",
+        "Most relevant",
+        "Top 3 selected"
+      ],
+      "objects": ["doc_fan", "glow_top3", "staging_area"],
+      "beats": [
+        {"start": 0.0, "end": 1.5, "action": "15 document cards fan out from KB cylinder in 120° arc", "focus": "doc_fan"},
+        {"start": 1.5, "end": 3.0, "action": "Top 3 cards glow teal — rank badges 1/2/3 pop onto each", "focus": "glow_top3"},
+        {"start": 3.0, "end": 4.5, "action": "Top 3 lift and arc-fly right — non-top cards fade to ghost", "focus": "glow_top3"},
+        {"start": 4.5, "end": 6.0, "action": "Cards stack in staging area — Most relevant label rises", "focus": "staging_area"}
+      ]
+    },
+    {
+      "scene_id": "s05_context_window",
+      "component": "ContextWindowScene",
+      "visual_goal": "Doc cards enter context window — window compresses — flies to LLM",
+      "duration_seconds": 5.0,
+      "visual_beats": 4,
+      "carry_object_from": "staging_area",
+      "on_screen_text": [
+        "Context window",
+        "Token count",
+        "Injecting context",
+        "LLM ready"
+      ],
+      "objects": ["context_rect", "doc_cards", "llm_circle"],
+      "beats": [
+        {"start": 0.0, "end": 1.5, "action": "3 doc cards slide from staging area into context window rect", "focus": "doc_cards"},
+        {"start": 1.5, "end": 2.5, "action": "Window rim glows purple — Context window label pops in", "focus": "context_rect"},
+        {"start": 2.5, "end": 3.5, "action": "Window compresses 480→180px — token count badge appears", "focus": "context_rect"},
+        {"start": 3.5, "end": 5.0, "action": "Compressed window flies right into LLM circle — connection glow", "focus": "llm_circle"}
+      ]
+    },
+    {
+      "scene_id": "s06_token_stream",
+      "component": "TokenStreamScene",
+      "visual_goal": "Token chips flow into LLM — LLM activates — answer streams out",
+      "duration_seconds": 5.0,
+      "visual_beats": 3,
+      "carry_object_from": "context_rect",
+      "on_screen_text": [
+        "Answer grounded in your data"
+      ],
+      "objects": ["token_chips", "llm_body", "answer_text"],
+      "beats": [
+        {"start": 0.0, "end": 1.8, "action": "Token chips flow along pipe from context into LLM edge", "focus": "token_chips"},
+        {"start": 1.8, "end": 3.2, "action": "LLM glow fills body — rotating dashed ring — activation waves expand", "focus": "llm_body"},
+        {"start": 3.2, "end": 5.0, "action": "Answer text streams out character-by-character — cursor blinks", "focus": "answer_text"}
+      ]
+    },
+    {
+      "scene_id": "s07_pipeline",
+      "component": "PipelineScene",
+      "visual_goal": "Full RAG pipeline graph with nodes and edges drawn — grounded answer as final node",
+      "duration_seconds": 5.0,
+      "visual_beats": 5,
+      "carry_object_from": "answer_text",
+      "on_screen_text": [
+        "Query",
+        "Retrieve",
+        "Knowledge Base",
+        "LLM",
+        "Grounded Answer"
+      ],
+      "objects": ["user_node", "retrieve_node", "kb_node", "llm_node", "answer_node"],
+      "beats": [
+        {"start": 0.0, "end": 1.0, "action": "User + retrieve + KB nodes appear", "focus": "user_node"},
+        {"start": 1.0, "end": 2.0, "action": "Arrows draw between user → retrieve → KB", "focus": "retrieve_node"},
+        {"start": 2.0, "end": 3.0, "action": "LLM node appears below", "focus": "llm_node"},
+        {"start": 3.0, "end": 4.0, "action": "Grounded answer text grows from LLM with source tag", "focus": "answer_node"},
+        {"start": 4.0, "end": 5.0, "action": "Global glow across entire pipeline graph", "focus": "answer_node"}
+      ]
+    },
+    {
+      "scene_id": "s08_split_compare",
+      "component": "SplitCompareScene",
+      "visual_goal": "Same query — two outcomes side by side: without RAG vs with RAG",
+      "duration_seconds": 5.0,
+      "visual_beats": 3,
+      "carry_object_from": null,
+      "on_screen_text": [
+        "Without RAG",
+        "Hallucinated answer",
+        "No sources",
+        "With RAG",
+        "Verified answer",
+        "Cited sources"
+      ],
+      "objects": ["without_rag_panel", "with_rag_panel"],
+      "beats": [
+        {"start": 0.0, "end": 1.8, "action": "Left panel slides in from left — Without RAG — red highlights", "focus": "without_rag_panel"},
+        {"start": 1.8, "end": 3.5, "action": "Right panel slides in from right — With RAG — teal highlights", "focus": "with_rag_panel"},
+        {"start": 3.5, "end": 5.0, "action": "Verdict banner rises: Without RAG = risk", "focus": "without_rag_panel"}
+      ]
+    },
+    {
+      "scene_id": "s09_meter",
+      "component": "MeterScene",
+      "visual_goal": "Two gauges: Vanilla LLM accuracy 28% vs RAG 91% — delta arrow",
+      "duration_seconds": 4.5,
+      "visual_beats": 3,
+      "carry_object_from": null,
+      "on_screen_text": [
+        "Vanilla LLM",
+        "RAG",
+        "+63pts accuracy lift"
+      ],
+      "objects": ["vanilla_gauge", "rag_gauge", "delta_arrow"],
+      "beats": [
+        {"start": 0.0, "end": 1.5, "action": "Vanilla LLM gauge needle swings to 28% in red", "focus": "vanilla_gauge"},
+        {"start": 1.5, "end": 3.0, "action": "RAG gauge needle swings to 91% in teal", "focus": "rag_gauge"},
+        {"start": 3.0, "end": 4.5, "action": "Delta arrow appears with +63pts accuracy lift label", "focus": "delta_arrow"}
+      ]
+    },
+    {
+      "scene_id": "s10_takeaway",
+      "component": "TakeawayScene",
+      "visual_goal": "3 icons (Retrieve/Context/Generate) with connectors — takeaway text rises",
+      "duration_seconds": 5.0,
+      "visual_beats": 3,
+      "carry_object_from": null,
+      "on_screen_text": [
+        "RAG = LLM + Your Real Data. No fine-tuning needed.",
+        "Retrieve",
+        "Context",
+        "Generate"
+      ],
+      "objects": ["icon_retrieve", "icon_context", "icon_generate"],
+      "beats": [
+        {"start": 0.0, "end": 1.5, "action": "3 icons slide up from below (staggered)", "focus": "icon_retrieve"},
+        {"start": 1.5, "end": 3.0, "action": "Connector lines draw between icons", "focus": "icon_context"},
+        {"start": 3.0, "end": 5.0, "action": "Takeaway text rises below icon row", "focus": "icon_generate"}
+      ]
+    },
+    {
+      "scene_id": "s11_cta",
+      "component": "CTAScene",
+      "visual_goal": "Follow CTA — compressed to ≤3s",
+      "duration_seconds": 3.0,
+      "visual_beats": 2,
+      "carry_object_from": null,
+      "on_screen_text": [
+        "Follow for practical AI, daily"
+      ],
+      "objects": ["cta_label", "cta_button"],
+      "beats": [
+        {"start": 0.0, "end": 1.0, "action": "Key Takeaway label and text reveal", "focus": "cta_label"},
+        {"start": 1.0, "end": 2.5, "action": "Follow pill button rises", "focus": "cta_button"}
+      ]
+    }
+  ]
+}

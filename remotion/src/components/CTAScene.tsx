@@ -23,14 +23,15 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
   const frame = useCurrentFrame();
   const t = theme ?? DEFAULT_THEME;
 
-  const labelOpacity = interpolate(frame, [5, 20], [0, 1], {extrapolateRight: 'clamp'});
-  const labelY = interpolate(frame, [5, 20], [14, 0], {extrapolateRight: 'clamp'});
+  // Compressed to fit ≤3s (≤90 frames): label→f20, text→f40, button→f70
+  const labelOpacity = interpolate(frame, [4, 20], [0, 1], {extrapolateRight: 'clamp'});
+  const labelY = interpolate(frame, [4, 20], [14, 0], {extrapolateRight: 'clamp'});
 
   const textOpacity = interpolate(frame, [18, 40], [0, 1], {extrapolateRight: 'clamp'});
   const textY = interpolate(frame, [18, 40], [28, 0], {extrapolateRight: 'clamp'});
 
-  const btnOpacity = interpolate(frame, [35, 55], [0, 1], {extrapolateRight: 'clamp'});
-  const btnY = interpolate(frame, [35, 55], [24, 0], {extrapolateRight: 'clamp'});
+  const btnOpacity = interpolate(frame, [48, 70], [0, 1], {extrapolateRight: 'clamp'});
+  const btnY = interpolate(frame, [48, 70], [24, 0], {extrapolateRight: 'clamp'});
 
   return (
     <AbsoluteFill style={{backgroundColor: '#050510'}}>
