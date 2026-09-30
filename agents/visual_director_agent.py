@@ -1,5 +1,5 @@
 """
-Visual Director Agent — Phase 2.5 / v3 Motion Storytelling
+Visual Director Agent — Phase 2.5 / v3.2 Motion Storytelling
 Reads a script JSON and produces a storyboard JSON array.
 
 v3 changes (Motion Storytelling Upgrade):
@@ -11,6 +11,13 @@ v3 changes (Motion Storytelling Upgrade):
   - Continuity field: carry_object_from
   - Typography runtime cap at 25%
   - Tighter Short structure (0–3 hook, 3–8 demo, 8–40 explain, 40–50 why, 50–55 takeaway, 55–58 CTA)
+
+v3.2 global-default promotion (from RAG reference episode, commit 45d1e20):
+  - Target duration lowered to 45–60 s (was 55–62 s) — approved range from known-good baseline
+  - CTA capped at exactly 3 s (was ≤4 s)
+  - Numeric integrity rule: sourced_numeric vs illustrative distinction enforced in quality gate
+  - Scene diversity rule: Visual Director must not copy RAG scene ordering or component selection
+  - Full rules in skills/VISUAL_DIRECTOR.md
 
 Pipeline position:  script_agent → visual_director_agent → visual_agent
 Output file:        ep{NN}_storyboard_{LANG}.json
@@ -71,18 +78,27 @@ VALID_COMPONENTS = {
     "DataFlowScene",
 }
 
-# ── Quality gate thresholds (v3) ──────────────────────────────────────────────
+# ── Quality gate thresholds (v3.2 global defaults) ───────────────────────────
+# Promoted from RAG reference episode (commit 45d1e20, tag v3.2-known-good).
+# These values apply to all future Shorts regardless of topic.
+# See skills/VISUAL_DIRECTOR.md for rationale and full rules.
 
 MIN_VISUAL_BEATS = 8
 MAX_TYPOGRAPHY_RATIO = 0.25          # ≤25% of total runtime as typography
 MAX_CONSECUTIVE_SAME_LAYOUT = 2      # no 3 in a row same composition
 MIN_VISUAL_DEMONSTRATIONS = 3
 MIN_VISUAL_FIRST_SCORE = 80          # 0–100 composite score
-TARGET_MIN_SECONDS = 55.0
-TARGET_MAX_SECONDS = 62.0
+TARGET_MIN_SECONDS = 45.0            # approved range floor (was 55.0; RAG ran 51.5s)
+TARGET_MAX_SECONDS = 60.0            # approved range ceiling (was 62.0)
 MAX_HOOK_SECONDS = 4.0
-MAX_CTA_SECONDS = 4.0
+MAX_CTA_SECONDS = 3.0                # CTA must be ≤3 s (was ≤4 s)
 MAX_SCENE_SECONDS_WITHOUT_BEATS = 6.0  # scenes >6s MUST have ≥2 beats; >8s ≥3 beats
+
+# Numeric visualization components that must declare source_type
+NUMERIC_VIZ_COMPONENTS = {
+    "MeterScene", "BarChartScene", "DataScene",
+    "GraphGrowthScene", "NumberCounterScene", "DialScene",
+}
 
 DEMONSTRATION_TYPES = {
     "DEMONSTRATION", "TRANSFORMATION", "FLOW",
@@ -252,6 +268,47 @@ Score formula (approximate):
 Storyboard FAILS if visual_first_score < 80.
 
 ══════════════════════════════════════════════════════
+NUMERIC INTEGRITY — permanent rule for all numeric components
+══════════════════════════════════════════════════════
+Any scene using MeterScene, BarChartScene, DataScene, GraphGrowthScene,
+NumberCounterScene, or DialScene MUST include "source_type" at the scene level:
+
+  "source_type": "sourced_numeric"   — real verifiable number; ALSO include
+  "source_reference": "<citation>"   — paper / benchmark / official doc
+
+  "source_type": "illustrative"      — no verified source; use qualitative labels
+
+With sourced_numeric: precise percentages, accuracy scores, dollar savings,
+and performance gains are ALLOWED.
+
+With illustrative: NO exact percentages, NO invented accuracy numbers, NO
+made-up performance gains. Communicate relationships qualitatively:
+  - Use zone-centre positions for gauges (midpoint of the intended zone).
+  - Use relative terms: HIGHER / LOWER / FASTER / MORE / LESS, not 27% or +63 pts.
+  - On-screen labels must be qualitative: e.g. HIGHER RISK / MORE GROUNDED.
+
+Inventing a number to populate a chart or gauge is FORBIDDEN regardless of
+how plausible it sounds. If you cannot cite a source, use illustrative mode.
+
+══════════════════════════════════════════════════════
+SCENE DIVERSITY — do NOT copy the RAG episode template
+══════════════════════════════════════════════════════
+The RAG reference episode used a specific 11-scene sequence:
+  BeforeAfterScene → TransformScene → DataFlowScene → DocumentRetrievalScene
+  → ContextWindowScene → TokenStreamScene → PipelineScene → SplitCompareScene
+  → MeterScene → TakeawayScene → CTAScene
+
+Do NOT reproduce this sequence for other topics. Choose scenes that fit
+the concept you are visualising. Every topic deserves its own scene selection.
+
+Specifically forbidden as RAG-carry-over defaults:
+  - Two-gauge MeterScene comparing "without X" vs "with X" (illustrative)
+  - DocumentRetrievalScene unless the concept actually involves document retrieval
+  - ContextWindowScene unless the concept involves context / token windows
+  - 11-scene count or ~51 s as a target
+  - Red/green zone positioning borrowed from the RAG gauge
+
+══════════════════════════════════════════════════════
 OUTPUT FORMAT — return ONLY this JSON object, no fences, no explanation
 ══════════════════════════════════════════════════════
 {
@@ -419,6 +476,22 @@ def _validate_storyboard(scenes: list, episode: int) -> list[str]:
             violations.append(
                 f"Scene {i+1} is {dur}s with only {n_beats} beat(s) — need ≥2 for scenes >6s"
             )
+
+    # ── Numeric integrity: source_type required on numeric viz components ────
+    for i, scene in enumerate(scenes):
+        comp = scene.get("component", "")
+        if comp in NUMERIC_VIZ_COMPONENTS:
+            src_type = scene.get("source_type", "")
+            if src_type not in {"sourced_numeric", "illustrative"}:
+                violations.append(
+                    f"Scene {i+1} ({comp}) is missing 'source_type' — "
+                    f"must be 'sourced_numeric' or 'illustrative'"
+                )
+            elif src_type == "sourced_numeric" and not scene.get("source_reference", "").strip():
+                violations.append(
+                    f"Scene {i+1} ({comp}) has source_type='sourced_numeric' "
+                    f"but 'source_reference' is empty — provide a citation"
+                )
 
     # ── Total visual beat count ───────────────────────────────────────────────
     total_beats = _count_beats(scenes)
@@ -602,13 +675,15 @@ def run(
         user_msg += f"Data spec (for DataScene/MeterScene/GraphGrowthScene): {json.dumps(script['data_spec'])}\n\n"
 
     user_msg += (
-        "Generate the v3 storyboard now. Remember:\n"
+        "Generate the v3.2 storyboard now. Remember:\n"
         "- Include beats[] for every scene > 4 seconds\n"
         "- Use motion-first primitives wherever possible\n"
         "- Compute and include visual_complexity score\n"
         "- Structure: 0–3s hook, 3–8s demo, 8–40s explain, 40–50s why, 50–55s takeaway, 55–58s CTA\n"
-        "- CTA must be exactly 3 seconds\n"
-        "- Total duration: 57–60 seconds\n"
+        "- CTA must be exactly 3 seconds (≤3 s)\n"
+        "- Total duration: 45–60 seconds\n"
+        "- Every numeric viz scene (MeterScene, BarChartScene, etc.) must include source_type\n"
+        "- Choose scenes that fit THIS topic — do not copy the RAG episode template\n"
     )
 
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
