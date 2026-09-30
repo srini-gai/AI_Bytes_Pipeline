@@ -1,14 +1,17 @@
 /**
- * TokenStreamScene — Visual Director v3
+ * TokenStreamScene — Visual Director v3.1
  *
- * The LLM processes tokens, building the answer character-by-character.
+ * LLM is large (r=280), centred vertically on the canvas.
+ * Context block is a tall rect on the LEFT side, from top of screen down.
+ * Answer streams OUT to the right, building bottom-to-top (large text).
  *
- * B0: token stream flows into LLM (context window → LLM input pipe)
- * B1: LLM "thinking" — gears spin, activation waves pulse through
- * B2: answer tokens stream OUT of LLM, letters materialize one by one
- *
- * Carry-in: context window rectangle (arrives compressed from previous scene)
- * Carry-out: grounded answer text (for PipelineScene)
+ * v3.1 changes:
+ * - LLM_R = 280 (was 120) — dominant and central
+ * - LLM centred at canvas mid-point (540, 960) — uses full canvas
+ * - Context block is 200×600 on the left, LLM right side → answer right side
+ * - Answer text is 62px typewriter, builds from top to bottom of output panel
+ * - Camera zooms in on LLM orb during processing beat (close-up)
+ * - Action spans full vertical canvas, not a 200px strip
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -21,10 +24,14 @@ interface TokenStreamSceneProps {
   objects: string[];
   accentColor?: string;
   accent2?: string;
-  carryFrom?: string; // 'context window rectangle'
+  carryFrom?: string;
 }
 
-const ANSWER_TEXT = 'Answer grounded in your data';
+const ANSWER_LINES = [
+  'Answer grounded',
+  'in your data',
+  '+ citations',
+];
 
 export const TokenStreamScene: React.FC<TokenStreamSceneProps> = ({
   beats,
@@ -35,171 +42,204 @@ export const TokenStreamScene: React.FC<TokenStreamSceneProps> = ({
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  const b0 = beats[0] ?? {start: 0,   end: 1.5};
-  const b1 = beats[1] ?? {start: 1.5, end: 3.0};
-  const b2 = beats[2] ?? {start: 3.0, end: 5.0};
+  const b0 = beats[0] ?? {start: 0,   end: 1.5}; // context flows in, LLM receives
+  const b1 = beats[1] ?? {start: 1.5, end: 3.2}; // LLM processing (camera zoom)
+  const b2 = beats[2] ?? {start: 3.2, end: 5.0}; // answer streams out
 
-  // ── Beat 0: input pipe from context window ───────────────────────────────
-  const pipeP  = easeOut(frame, fps, b0.start, b0.end);
-  const inputP = linearProgress(frame, fps, b0.start, b0.end);
+  // ── Animation ─────────────────────────────────────────────────────────────
+  const pipeP   = easeOut(frame, fps, b0.start, b0.end);
+  const thinkP  = linearProgress(frame, fps, b1.start, b1.end);
+  const outP    = linearProgress(frame, fps, b2.start, b2.end);
 
-  // ── Beat 1: LLM internal processing ─────────────────────────────────────
-  const thinkP = linearProgress(frame, fps, b1.start, b1.end);
+  // Camera: zoom into LLM during processing, pull back as answer streams out
+  const zoomIn  = easeOut(frame, fps, b1.start, b1.start + 0.8);
+  const zoomOut = easeOut(frame, fps, b2.start, b2.start + 0.8);
+  const camScale = interpolate(zoomIn, [0, 1], [1, 1.35])
+                 * interpolate(zoomOut, [0, 1], [1, 0.82]);
 
-  // ── Beat 2: output tokens stream out ────────────────────────────────────
-  const outP   = linearProgress(frame, fps, b2.start, b2.end);
+  // ── Layout ─────────────────────────────────────────────────────────────────
+  const LLM_CX = 540;
+  const LLM_CY = 960;   // dead centre of 1920px canvas
+  const LLM_R  = 280;
 
-  const sceneOpacity = interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'});
+  // Context block on left
+  const CTX_X = 30;
+  const CTX_Y = LLM_CY - 380;
+  const CTX_W = 180;
+  const CTX_H = 760;
 
-  // Layout
-  const LLM_X = 540;
-  const LLM_Y = 820;
-  const LLM_R = 120;
+  // Output panel on right
+  const OUT_X = LLM_CX + LLM_R + 40;
+  const OUT_W = 1080 - OUT_X - 30;
+  const OUT_Y = LLM_CY - 340;
 
-  const CTX_X = 100;  // context window (carry-in) centre x
-  const CTX_Y = LLM_Y;
+  // Token particle trail (beat 0: context→LLM)
+  const tokenCount = Math.floor(pipeP * 14);
+  const gearRot = thinkP * 360 * 3;
 
-  const OUT_X = LLM_X + LLM_R + 40;
-  const OUT_Y = LLM_Y;
+  // Answer text reveal (beat 2)
+  const totalAnswerChars = ANSWER_LINES.join('\n').length;
+  const revealedChars = Math.floor(smoothstep(outP) * totalAnswerChars);
 
-  // How many input tokens are visible (flows in during beat 0)
-  const tokenCountIn = Math.floor(inputP * 12);
-
-  // How many answer chars revealed (beat 2)
-  const answerLabel = onScreenText[0] ?? ANSWER_TEXT;
-  const revealLen   = Math.floor(smoothstep(outP) * answerLabel.length);
-  const revealedText = answerLabel.slice(0, revealLen);
-
-  // Gear rotation (beat 1)
-  const gearRot = thinkP * 360 * 2;
+  // Build revealed lines from char count
+  let charsLeft = revealedChars;
+  const revealedLines = ANSWER_LINES.map(line => {
+    if (charsLeft <= 0) return '';
+    const shown = line.slice(0, charsLeft);
+    charsLeft -= line.length;
+    return shown;
+  });
 
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: BG,
-        opacity: sceneOpacity,
-        overflow: 'hidden',
-      }}
-    >
-      <AbsoluteFill
+    <AbsoluteFill style={{backgroundColor: BG, overflow: 'hidden'}}>
+      {/* Radial glow centred on LLM */}
+      <AbsoluteFill style={{
+        background: `radial-gradient(ellipse 700px 700px at ${LLM_CX}px ${LLM_CY}px,
+          ${accentColor}18 0%, transparent 65%)`,
+      }}/>
+
+      <svg
+        viewBox="0 0 1080 1920"
+        width={1080}
+        height={1920}
         style={{
-          background: `radial-gradient(ellipse 900px 600px at 50% 43%, ${accentColor}0d 0%, transparent 65%)`,
+          position: 'absolute', inset: 0,
+          transform: `scale(${camScale})`,
+          transformOrigin: `${LLM_CX}px ${LLM_CY}px`,
         }}
-      />
-
-      <svg viewBox="0 0 1080 1920" width={1080} height={1920}
-        style={{position: 'absolute', inset: 0}}>
-
-        {/* ── Context window (carry-in, compressed form) ─────────────────── */}
-        <g opacity={interpolate(frame, [0, 8], [0, 1], {extrapolateRight: 'clamp'})}>
-          <rect x={CTX_X - 60} y={CTX_Y - 90} width={120} height={180}
-            rx={10} fill={`${accentColor}10`} stroke={`${accentColor}55`} strokeWidth={2}/>
-          <text x={CTX_X} y={CTX_Y - 110} textAnchor="middle"
-            fill={accentColor} fontFamily={FONT} fontSize={18} fontWeight="700">
+      >
+        {/* ── Context block (carry-in) — left side, tall ──────────────────── */}
+        <g opacity={smoothstep(pipeP)}>
+          {/* Tall rect */}
+          <rect x={CTX_X} y={CTX_Y} width={CTX_W} height={CTX_H}
+            rx={16}
+            fill={`${accentColor}10`} stroke={`${accentColor}66`} strokeWidth={2.5}/>
+          {/* Label */}
+          <text x={CTX_X + CTX_W / 2} y={CTX_Y - 18}
+            textAnchor="middle"
+            fill={accentColor} fontFamily={FONT} fontSize={26} fontWeight="700">
             Context
           </text>
+          {/* Lines */}
+          {Array.from({length: 8}, (_, l) => (
+            <rect key={l}
+              x={CTX_X + 14} y={CTX_Y + 28 + l * 80}
+              width={CTX_W - 28 - (l % 3 === 2 ? 40 : 0)}
+              height={12} rx={6}
+              fill={`${accentColor}40`}
+            />
+          ))}
         </g>
 
-        {/* ── Input pipe (beat 0): tokens flowing from context → LLM ─────── */}
-        {/* pipe track */}
-        <line x1={CTX_X + 60} y1={LLM_Y}
-              x2={LLM_X - LLM_R} y2={LLM_Y}
-          stroke={`${accentColor}33`} strokeWidth={3} strokeDasharray="6 5"
-          opacity={pipeP}/>
+        {/* ── Input pipe (beat 0): token chips flow right toward LLM ──────── */}
+        <line x1={CTX_X + CTX_W} y1={LLM_CY}
+              x2={LLM_CX - LLM_R} y2={LLM_CY}
+          stroke={`${accentColor}33`} strokeWidth={3} strokeDasharray="8 6"
+          opacity={smoothstep(pipeP)}/>
 
-        {/* moving token chips on the pipe */}
-        {Array.from({length: tokenCountIn}, (_, i) => {
-          const progress = ((inputP * 10) - i) / 10;
-          if (progress < 0 || progress > 1) return null;
-          const tx = CTX_X + 60 + progress * (LLM_X - LLM_R - CTX_X - 60);
+        {Array.from({length: tokenCount}, (_, i) => {
+          const t = ((pipeP * 12) - i) / 12;
+          if (t < 0 || t > 1) return null;
+          const tx = (CTX_X + CTX_W) + t * (LLM_CX - LLM_R - CTX_X - CTX_W);
           return (
-            <g key={i} opacity={0.9}>
-              <rect x={tx - 22} y={LLM_Y - 14} width={44} height={28}
-                rx={6} fill={`${accentColor}22`} stroke={accentColor} strokeWidth={1.5}/>
-              <text x={tx} y={LLM_Y + 6} textAnchor="middle"
-                fill={accentColor} fontFamily={MONO} fontSize={13} fontWeight="700">
+            <g key={i}>
+              <rect x={tx - 28} y={LLM_CY - 18} width={56} height={36}
+                rx={8} fill={`${accentColor}22`} stroke={accentColor} strokeWidth={1.5}/>
+              <text x={tx} y={LLM_CY + 6} textAnchor="middle"
+                fill={accentColor} fontFamily={MONO} fontSize={14} fontWeight="700">
                 tok
               </text>
             </g>
           );
         })}
 
-        {/* ── LLM circle ────────────────────────────────────────────────── */}
-        {/* outer ring animates with processing */}
-        <circle cx={LLM_X} cy={LLM_Y} r={LLM_R + 20}
-          fill="none" stroke={accentColor}
-          strokeWidth={2} strokeDasharray="12 8"
-          opacity={0.3 + thinkP * 0.4}
-          transform={`rotate(${gearRot}, ${LLM_X}, ${LLM_Y})`}/>
-
-        {/* body */}
-        <circle cx={LLM_X} cy={LLM_Y} r={LLM_R}
-          fill={`${accentColor}${Math.round((0.08 + thinkP * 0.12) * 255).toString(16).padStart(2, '0')}`}
-          stroke={accentColor} strokeWidth={3}/>
-
-        {/* internal activation waves (beat 1) */}
-        {thinkP > 0.05 && Array.from({length: 3}, (_, w) => {
-          const waveP = interpolate(thinkP, [w * 0.2, w * 0.2 + 0.6], [0, 1], {
+        {/* ── LLM orb — large, dominant ───────────────────────────────────── */}
+        {/* Processing rings (beat 1) */}
+        {thinkP > 0 && Array.from({length: 4}, (_, w) => {
+          const wp = interpolate(thinkP, [w * 0.15, w * 0.15 + 0.7], [0, 1], {
             extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
           });
-          const wR = LLM_R * 0.3 + waveP * LLM_R * 0.6;
+          const wR = LLM_R * 0.3 + wp * LLM_R * 0.8;
           return (
-            <circle key={w} cx={LLM_X} cy={LLM_Y} r={wR}
-              fill="none" stroke={accentColor} strokeWidth={1.5}
-              opacity={(1 - waveP) * 0.5}/>
+            <circle key={w} cx={LLM_CX} cy={LLM_CY} r={wR}
+              fill="none" stroke={accentColor} strokeWidth={2}
+              opacity={(1 - wp) * 0.5}/>
           );
         })}
 
-        {/* "LLM" text */}
-        <text x={LLM_X} y={LLM_Y + 10} textAnchor="middle"
-          fill="#fff" fontFamily={FONT} fontSize={28} fontWeight="700">
+        {/* Outer dashed ring */}
+        <circle cx={LLM_CX} cy={LLM_CY} r={LLM_R + 30}
+          fill="none" stroke={accentColor} strokeWidth={1.5}
+          strokeDasharray="20 10" opacity={0.2 + thinkP * 0.4}
+          transform={`rotate(${gearRot}, ${LLM_CX}, ${LLM_CY})`}/>
+
+        {/* Body */}
+        <circle cx={LLM_CX} cy={LLM_CY} r={LLM_R}
+          fill={`${accentColor}${Math.round((0.08 + thinkP * 0.14) * 255).toString(16).padStart(2, '0')}`}
+          stroke={accentColor} strokeWidth={4}/>
+
+        {/* "LLM" label */}
+        <text x={LLM_CX} y={LLM_CY + 20} textAnchor="middle"
+          fill="#fff" fontFamily={FONT} fontSize={68} fontWeight="900">
           LLM
         </text>
 
-        {/* ── Output pipe (beat 2): tokens stream out right ─────────────── */}
-        {outP > 0 && (
-          <>
-            <line x1={LLM_X + LLM_R} y1={LLM_Y}
-                  x2={LLM_X + LLM_R + 60} y2={LLM_Y}
-              stroke={`${accent2}88`} strokeWidth={3}
-              opacity={smoothstep(outP) * 0.8}/>
-
-            {/* Answer text streaming out */}
-            <rect x={LLM_X + LLM_R + 50} y={LLM_Y - 100} width={380} height={200}
-              rx={16} fill={`${accent2}0e`} stroke={`${accent2}44`} strokeWidth={2}
-              opacity={smoothstep(outP)}/>
-            <text
-              x={LLM_X + LLM_R + 65}
-              y={LLM_Y - 20}
-              fill={accent2}
-              fontFamily={MONO}
-              fontSize={24}
-              fontWeight="700"
-              opacity={smoothstep(outP)}
-            >
-              {revealedText}
-              {/* Cursor blink */}
-              <tspan
-                opacity={Math.floor(frame / 15) % 2 === 0 ? 1 : 0}
-                fill={accent2}
-              >▌</tspan>
-            </text>
-
-            <text x={LLM_X + LLM_R + 65 + 190} y={LLM_Y + 70} textAnchor="middle"
-              fill={accent2} fontFamily={FONT} fontSize={18} fontWeight="700"
-              opacity={smoothstep(interpolate(outP, [0.6, 1], [0, 1], {extrapolateRight: 'clamp'}))}>
-              {onScreenText[1] ?? '+ source citations'}
-            </text>
-          </>
+        {/* "Processing…" during b1 */}
+        {thinkP > 0.1 && outP < 0.2 && (
+          <text x={LLM_CX} y={LLM_CY + LLM_R + 50} textAnchor="middle"
+            fill={accentColor} fontFamily={FONT} fontSize={30} fontWeight="700"
+            opacity={smoothstep(thinkP) * (1 - smoothstep(outP * 5))}>
+            Processing context…
+          </text>
         )}
 
-        {/* ── Processing label (beat 1) ─────────────────────────────────── */}
-        {thinkP > 0 && outP < 0.3 && (
-          <text x={LLM_X} y={LLM_Y + LLM_R + 50} textAnchor="middle"
-            fill={accentColor} fontFamily={FONT} fontSize={22} fontWeight="700"
-            opacity={smoothstep(thinkP) * (1 - smoothstep(outP))}>
-            Processing…
-          </text>
+        {/* ── Output pipe (beat 2) ─────────────────────────────────────────── */}
+        {outP > 0 && (
+          <>
+            <line x1={LLM_CX + LLM_R} y1={LLM_CY}
+                  x2={OUT_X + 10} y2={LLM_CY}
+              stroke={`${accent2}88`} strokeWidth={3}
+              opacity={smoothstep(outP)}/>
+
+            {/* Output panel — full height on right side */}
+            <rect x={OUT_X} y={OUT_Y} width={OUT_W} height={680}
+              rx={18}
+              fill={`${accent2}0e`} stroke={`${accent2}55`} strokeWidth={2.5}
+              opacity={smoothstep(outP)}/>
+
+            {/* Answer text streams in line by line */}
+            {revealedLines.map((line, li) => (
+              <text key={li}
+                x={OUT_X + 22}
+                y={OUT_Y + 70 + li * 120}
+                fill={accent2}
+                fontFamily={MONO}
+                fontSize={52}
+                fontWeight="800"
+                opacity={smoothstep(outP)}
+              >
+                {line}
+                {/* Cursor blink on the last non-empty line */}
+                {li === revealedLines.filter(l => l.length > 0).length - 1 && (
+                  <tspan
+                    opacity={Math.floor(frame / 12) % 2 === 0 ? 1 : 0}
+                    fill={accent2}>▌</tspan>
+                )}
+              </text>
+            ))}
+
+            {/* Source citation badge (appears after text fully revealed) */}
+            {outP > 0.75 && (
+              <g opacity={smoothstep(interpolate(outP, [0.75, 1], [0, 1], {extrapolateRight: 'clamp'}))}>
+                <rect x={OUT_X + 10} y={OUT_Y + 480} width={OUT_W - 20} height={60}
+                  rx={12} fill={`${accent2}22`} stroke={`${accent2}66`} strokeWidth={1.5}/>
+                <text x={OUT_X + 32} y={OUT_Y + 520}
+                  fill={accent2} fontFamily={FONT} fontSize={26} fontWeight="700">
+                  ✓ {onScreenText[1] ?? '+ source citations'}
+                </text>
+              </g>
+            )}
+          </>
         )}
       </svg>
     </AbsoluteFill>

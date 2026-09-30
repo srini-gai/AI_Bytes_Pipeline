@@ -231,15 +231,18 @@ function renderStoryboardScene(
 
     // ── Side-by-side comparison
     case 'SplitCompareScene': {
-      // Build a minimal SplitCompareSpec from objects if no data provided
-      const [left, right] = scene.objects;
+      // Labels come from on_screen_text[0] and on_screen_text[3].
+      // NEVER use scene.objects[] as UI text — it contains internal identifiers
+      // (e.g. "without_rag_panel", "with_rag_panel") that must never appear on screen.
+      const leftLabel  = scene.on_screen_text[0] ?? 'Before';
+      const rightLabel = scene.on_screen_text[3] ?? 'After';
       return (
         <SplitCompareScene
           spec={{
             type: 'split_compare',
-            left:  {label: left  ?? 'Before', points: scene.on_screen_text.slice(0, 2)},
-            right: {label: right ?? 'After',  points: scene.on_screen_text.slice(2, 4)},
-            verdict: scene.on_screen_text[4] ?? '',
+            left:  {label: leftLabel,  points: scene.on_screen_text.slice(1, 3)},
+            right: {label: rightLabel, points: scene.on_screen_text.slice(4, 6)},
+            verdict: scene.on_screen_text[6] ?? '',
           }}
           theme={t}
           beats={scene.beats}

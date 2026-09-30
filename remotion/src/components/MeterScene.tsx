@@ -1,18 +1,24 @@
 /**
- * MeterScene — Visual Director v3
+ * MeterScene — Visual Director v3.1
  *
- * Animated gauge/meter comparing two approaches:
- * Vanilla LLM vs RAG — scores fill in on separate gauge tracks.
+ * Risk comparison: qualitative HIGH RISK → LOWER RISK.
+ * No invented percentages. Gauges show qualitative zones only.
  *
- * B0: "Vanilla LLM" gauge needle swings left (low score) — danger zone
- * B1: "With RAG" gauge needle swings right (high score) — success zone
- * B2: delta label appears + arrow highlights the gap
+ * Layout: two large gauges stacked vertically, each R=260, using full canvas.
+ * First gauge (Vanilla) fills to ~25% of range and shows "HIGH RISK" zone.
+ * Second gauge (RAG) fills to ~75% of range and shows "LOWER RISK" zone.
+ * Needle settles into zone; zone label appears large below the gauge.
  *
- * No carry-in / no carry-out — standalone comparison scene.
+ * v3.1 changes:
+ * - Removed VANILLA_SCORE=0.28 and RAG_SCORE=0.91 — no invented numbers
+ * - No percentages displayed — qualitative labels only
+ * - Gauges R=260 (was 220) — more dominant
+ * - Zone labels are 80px — readable on phone
+ * - Delta shows "LOWER RISK" not "+63pts"
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
-import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress, smoothstep} from './beatUtils';
+import {BG, ACCENT, ACCENT2, FONT, easeOut, smoothstep} from './beatUtils';
 import type {SceneBeat} from '../types';
 
 interface MeterSceneProps {
@@ -23,6 +29,10 @@ interface MeterSceneProps {
   accent2?: string;
 }
 
+// Qualitative targets — not real data, just proportional zone placement
+const VANILLA_TARGET = 0.22;   // lands in danger zone (left quarter)
+const RAG_TARGET     = 0.76;   // lands in safe zone (right three-quarters)
+
 export const MeterScene: React.FC<MeterSceneProps> = ({
   beats,
   onScreenText,
@@ -32,28 +42,25 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  const b0 = beats[0] ?? {start: 0,   end: 1.5};
-  const b1 = beats[1] ?? {start: 1.5, end: 3.0};
-  const b2 = beats[2] ?? {start: 3.0, end: 4.5};
+  const b0 = beats[0] ?? {start: 0,   end: 1.8};
+  const b1 = beats[1] ?? {start: 1.8, end: 3.4};
+  const b2 = beats[2] ?? {start: 3.4, end: 4.8};
 
   const vanillaP = easeOut(frame, fps, b0.start, b0.end);
   const ragP     = easeOut(frame, fps, b1.start, b1.end);
   const deltaP   = easeOut(frame, fps, b2.start, b2.end);
 
-  const sceneOpacity = interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'});
+  // No scene fade — content present from frame 0
+  const sceneOpacity = 1;
 
-  // Gauge arc params
+  // Gauge geometry — larger and using more canvas
   const CX = 540;
-  const CY_VANILLA = 620;
-  const CY_RAG     = 1200;
-  const R = 220;
-  const START_ANGLE = -210; // degrees (left of bottom)
-  const END_ANGLE   =  30;  // degrees (right of bottom)
+  const CY_VANILLA = 520;
+  const CY_RAG     = 1340;
+  const R = 260;
+  const START_ANGLE = -215; // degrees
+  const END_ANGLE   =  35;
   const RANGE = END_ANGLE - START_ANGLE;
-
-  // Scores
-  const VANILLA_SCORE = 0.28;
-  const RAG_SCORE     = 0.91;
 
   function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number): string {
     const s = (startDeg * Math.PI) / 180;
@@ -66,162 +73,172 @@ export const MeterScene: React.FC<MeterSceneProps> = ({
     return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
   }
 
-  function needleAngle(score: number): number {
-    return START_ANGLE + score * RANGE;
-  }
-
   function needleEnd(cx: number, cy: number, r: number, angle: number) {
     const rad = (angle * Math.PI) / 180;
     return {x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad)};
   }
 
-  const vanillaAngle = START_ANGLE + vanillaP * VANILLA_SCORE * RANGE;
-  const ragAngle     = START_ANGLE + ragP     * RAG_SCORE     * RANGE;
+  // Needle angle: interpolated from start toward target * progress
+  const vanillaAngle = START_ANGLE + vanillaP * VANILLA_TARGET * RANGE;
+  const ragAngle     = START_ANGLE + ragP     * RAG_TARGET     * RANGE;
+  const vNeedle = needleEnd(CX, CY_VANILLA, R - 40, vanillaAngle);
+  const rNeedle = needleEnd(CX, CY_RAG,     R - 40, ragAngle);
 
-  const vanillaNeedle = needleEnd(CX, CY_VANILLA, R - 30, vanillaAngle);
-  const ragNeedle     = needleEnd(CX, CY_RAG,     R - 30, ragAngle);
+  // Zone colours (3 zones on track)
+  const ZONE_RED    = '#ef4444';
+  const ZONE_AMBER  = '#f59e0b';
+  const ZONE_GREEN  = ACCENT2;
 
-  // Color zones on the track
-  function zoneColor(score: number): string {
-    if (score < 0.35) return '#ef4444';
-    if (score < 0.65) return '#f59e0b';
-    return accent2;
-  }
+  // Zone boundaries (fraction of RANGE)
+  const ZONE_1 = 0.33;  // red → amber
+  const ZONE_2 = 0.66;  // amber → green
+
+  // Which zone is each needle in? (for zone labels)
+  const vanillaZone = vanillaP * VANILLA_TARGET < ZONE_1 ? 'danger' : 'warning';
+  const ragZone     = ragP * RAG_TARGET > ZONE_2 ? 'safe' : 'warning';
 
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: BG,
-        opacity: sceneOpacity,
-        overflow: 'hidden',
-      }}
-    >
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse 900px 1200px at 50% 50%, ${accentColor}08 0%, transparent 70%)`,
-        }}
-      />
+    <AbsoluteFill style={{backgroundColor: BG, overflow: 'hidden', opacity: sceneOpacity}}>
+      <AbsoluteFill style={{
+        background: `radial-gradient(ellipse 900px 1400px at 50% 50%, ${accentColor}08 0%, transparent 70%)`,
+      }}/>
 
       <svg viewBox="0 0 1080 1920" width={1080} height={1920}
         style={{position: 'absolute', inset: 0}}>
 
-        {/* ════════ VANILLA LLM GAUGE ═══════════════════════════════════ */}
-        <g opacity={interpolate(frame, [0, 8], [0, 1], {extrapolateRight: 'clamp'})}>
-          {/* track bg */}
+        {/* ═══════════════ VANILLA LLM GAUGE ═══════════════════════════════ */}
+        <g opacity={interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'})}>
+
+          {/* Track background */}
           <path d={arcPath(CX, CY_VANILLA, R, START_ANGLE, END_ANGLE)}
-            fill="none" stroke="#ffffff14" strokeWidth={28} strokeLinecap="round"/>
+            fill="none" stroke="#ffffff10" strokeWidth={32} strokeLinecap="round"/>
 
-          {/* fill arc — animates from start to vanilla score */}
+          {/* Zone colour segments on track */}
+          <path d={arcPath(CX, CY_VANILLA, R, START_ANGLE, START_ANGLE + ZONE_1 * RANGE)}
+            fill="none" stroke={ZONE_RED} strokeWidth={32} strokeLinecap="round" opacity={0.35}/>
+          <path d={arcPath(CX, CY_VANILLA, R, START_ANGLE + ZONE_1 * RANGE, START_ANGLE + ZONE_2 * RANGE)}
+            fill="none" stroke={ZONE_AMBER} strokeWidth={32} strokeLinecap="round" opacity={0.25}/>
+          <path d={arcPath(CX, CY_VANILLA, R, START_ANGLE + ZONE_2 * RANGE, END_ANGLE)}
+            fill="none" stroke={ZONE_GREEN} strokeWidth={32} strokeLinecap="round" opacity={0.15}/>
+
+          {/* Active fill arc */}
           <path d={arcPath(CX, CY_VANILLA, R, START_ANGLE,
-            START_ANGLE + vanillaP * VANILLA_SCORE * RANGE)}
-            fill="none" stroke="#ef4444" strokeWidth={28} strokeLinecap="round"
-            opacity={0.9}/>
+            START_ANGLE + vanillaP * VANILLA_TARGET * RANGE)}
+            fill="none" stroke={ZONE_RED} strokeWidth={32} strokeLinecap="round" opacity={0.9}/>
 
-          {/* zone markers */}
-          {[0, 0.35, 0.65, 1].map((t) => {
-            const ang = START_ANGLE + t * RANGE;
-            const p1 = needleEnd(CX, CY_VANILLA, R - 45, ang);
-            const p2 = needleEnd(CX, CY_VANILLA, R + 5, ang);
-            return (
-              <line key={t} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                stroke="#ffffff44" strokeWidth={2}/>
-            );
+          {/* Zone separator ticks */}
+          {[ZONE_1, ZONE_2].map((z) => {
+            const ang = START_ANGLE + z * RANGE;
+            const p1 = needleEnd(CX, CY_VANILLA, R - 54, ang);
+            const p2 = needleEnd(CX, CY_VANILLA, R + 8, ang);
+            return <line key={z} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+              stroke="#ffffff55" strokeWidth={3}/>;
           })}
 
           {/* Needle */}
-          <line x1={CX} y1={CY_VANILLA}
-            x2={vanillaNeedle.x} y2={vanillaNeedle.y}
-            stroke="#ef4444" strokeWidth={6} strokeLinecap="round"/>
-          <circle cx={CX} cy={CY_VANILLA} r={14}
-            fill="#ef4444" stroke="#050510" strokeWidth={3}/>
+          <line x1={CX} y1={CY_VANILLA} x2={vNeedle.x} y2={vNeedle.y}
+            stroke={ZONE_RED} strokeWidth={8} strokeLinecap="round"/>
+          <circle cx={CX} cy={CY_VANILLA} r={18}
+            fill={ZONE_RED} stroke={BG} strokeWidth={4}/>
 
-          {/* Score percentage */}
-          <text x={CX} y={CY_VANILLA - 20} textAnchor="middle"
-            fill="#ef4444" fontFamily={FONT} fontSize={48} fontWeight="900">
-            {Math.round(vanillaP * VANILLA_SCORE * 100)}%
-          </text>
-
-          {/* Label */}
-          <text x={CX} y={CY_VANILLA + R - 20} textAnchor="middle"
-            fill="#ffffff88" fontFamily={FONT} fontSize={26} fontWeight="700">
+          {/* Gauge title */}
+          <text x={CX} y={CY_VANILLA - R - 30} textAnchor="middle"
+            fill="#ffffff88" fontFamily={FONT} fontSize={34} fontWeight="700">
             {onScreenText[0] ?? 'Vanilla LLM'}
           </text>
-          <text x={CX} y={CY_VANILLA + R + 20} textAnchor="middle"
-            fill="#ef4444" fontFamily={FONT} fontSize={20} fontWeight="700">
-            Hallucination risk
+
+          {/* Zone label — large, inside the gauge arc */}
+          <text x={CX} y={CY_VANILLA + 40} textAnchor="middle"
+            fill={ZONE_RED} fontFamily={FONT} fontSize={80} fontWeight="900"
+            opacity={smoothstep(vanillaP)}>
+            HIGH RISK
+          </text>
+
+          {/* Qualitative descriptor below */}
+          <text x={CX} y={CY_VANILLA + R - 10} textAnchor="middle"
+            fill={ZONE_RED} fontFamily={FONT} fontSize={28} fontWeight="700"
+            opacity={smoothstep(vanillaP)}>
+            Hallucination not checked
           </text>
         </g>
 
-        {/* ════════ RAG GAUGE ═══════════════════════════════════════════ */}
+        {/* ═══════════════ RAG GAUGE ═══════════════════════════════════════ */}
         <g opacity={ragP > 0.01 ? 1 : 0}>
-          {/* track bg */}
+
+          {/* Track background */}
           <path d={arcPath(CX, CY_RAG, R, START_ANGLE, END_ANGLE)}
-            fill="none" stroke="#ffffff14" strokeWidth={28} strokeLinecap="round"/>
+            fill="none" stroke="#ffffff10" strokeWidth={32} strokeLinecap="round"/>
 
-          {/* fill arc animates from start to RAG score */}
+          {/* Zone colour segments */}
+          <path d={arcPath(CX, CY_RAG, R, START_ANGLE, START_ANGLE + ZONE_1 * RANGE)}
+            fill="none" stroke={ZONE_RED} strokeWidth={32} strokeLinecap="round" opacity={0.15}/>
+          <path d={arcPath(CX, CY_RAG, R, START_ANGLE + ZONE_1 * RANGE, START_ANGLE + ZONE_2 * RANGE)}
+            fill="none" stroke={ZONE_AMBER} strokeWidth={32} strokeLinecap="round" opacity={0.25}/>
+          <path d={arcPath(CX, CY_RAG, R, START_ANGLE + ZONE_2 * RANGE, END_ANGLE)}
+            fill="none" stroke={ZONE_GREEN} strokeWidth={32} strokeLinecap="round" opacity={0.4}/>
+
+          {/* Active fill arc */}
           <path d={arcPath(CX, CY_RAG, R, START_ANGLE,
-            START_ANGLE + ragP * RAG_SCORE * RANGE)}
-            fill="none" stroke={accent2} strokeWidth={28} strokeLinecap="round"
-            opacity={0.9}/>
+            START_ANGLE + ragP * RAG_TARGET * RANGE)}
+            fill="none" stroke={ZONE_GREEN} strokeWidth={32} strokeLinecap="round" opacity={0.9}/>
 
-          {/* zone markers */}
-          {[0, 0.35, 0.65, 1].map((t) => {
-            const ang = START_ANGLE + t * RANGE;
-            const p1 = needleEnd(CX, CY_RAG, R - 45, ang);
-            const p2 = needleEnd(CX, CY_RAG, R + 5, ang);
-            return (
-              <line key={t} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                stroke="#ffffff44" strokeWidth={2}/>
-            );
+          {/* Zone separator ticks */}
+          {[ZONE_1, ZONE_2].map((z) => {
+            const ang = START_ANGLE + z * RANGE;
+            const p1 = needleEnd(CX, CY_RAG, R - 54, ang);
+            const p2 = needleEnd(CX, CY_RAG, R + 8, ang);
+            return <line key={z} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+              stroke="#ffffff55" strokeWidth={3}/>;
           })}
 
           {/* Needle */}
-          <line x1={CX} y1={CY_RAG}
-            x2={ragNeedle.x} y2={ragNeedle.y}
-            stroke={accent2} strokeWidth={6} strokeLinecap="round"/>
-          <circle cx={CX} cy={CY_RAG} r={14}
-            fill={accent2} stroke="#050510" strokeWidth={3}/>
+          <line x1={CX} y1={CY_RAG} x2={rNeedle.x} y2={rNeedle.y}
+            stroke={ZONE_GREEN} strokeWidth={8} strokeLinecap="round"/>
+          <circle cx={CX} cy={CY_RAG} r={18}
+            fill={ZONE_GREEN} stroke={BG} strokeWidth={4}/>
 
-          {/* Score percentage */}
-          <text x={CX} y={CY_RAG - 20} textAnchor="middle"
-            fill={accent2} fontFamily={FONT} fontSize={48} fontWeight="900">
-            {Math.round(ragP * RAG_SCORE * 100)}%
-          </text>
-
-          {/* Label */}
-          <text x={CX} y={CY_RAG + R - 20} textAnchor="middle"
-            fill="#ffffff88" fontFamily={FONT} fontSize={26} fontWeight="700">
+          {/* Gauge title */}
+          <text x={CX} y={CY_RAG - R - 30} textAnchor="middle"
+            fill="#ffffff88" fontFamily={FONT} fontSize={34} fontWeight="700">
             {onScreenText[1] ?? 'With RAG'}
           </text>
-          <text x={CX} y={CY_RAG + R + 20} textAnchor="middle"
-            fill={accent2} fontFamily={FONT} fontSize={20} fontWeight="700">
-            Grounded answers
+
+          {/* Zone label */}
+          <text x={CX} y={CY_RAG + 40} textAnchor="middle"
+            fill={ZONE_GREEN} fontFamily={FONT} fontSize={80} fontWeight="900"
+            opacity={smoothstep(ragP)}>
+            LOWER RISK
+          </text>
+
+          {/* Qualitative descriptor */}
+          <text x={CX} y={CY_RAG + R - 10} textAnchor="middle"
+            fill={ZONE_GREEN} fontFamily={FONT} fontSize={28} fontWeight="700"
+            opacity={smoothstep(ragP)}>
+            Sources grounding every answer
           </text>
         </g>
 
-        {/* ── Delta arrow and label (beat 2) ─────────────────────────── */}
+        {/* ── "vs" connector + qualitative result (beat 2) ─────────────────── */}
         {deltaP > 0.01 && (
           <g opacity={smoothstep(deltaP)}>
-            {/* vertical arrow between gauges */}
-            <line x1={920} y1={CY_VANILLA + 60} x2={920} y2={CY_RAG - 60}
-              stroke={accentColor} strokeWidth={3} strokeDasharray="6 4"
-              markerEnd="url(#arrowhead)"/>
-            <defs>
-              <marker id="arrowhead" markerWidth="10" markerHeight="7"
-                refX="10" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" fill={accentColor}/>
-              </marker>
-            </defs>
-            {/* Delta label */}
-            <rect x={860} y={CY_VANILLA + (CY_RAG - CY_VANILLA) / 2 - 35} width={160} height={70}
-              rx={14} fill={`${accentColor}18`} stroke={`${accentColor}55`} strokeWidth={2}/>
-            <text x={940} y={CY_VANILLA + (CY_RAG - CY_VANILLA) / 2 - 5} textAnchor="middle"
-              fill={accentColor} fontFamily={FONT} fontSize={20} fontWeight="900">
-              +{Math.round((RAG_SCORE - VANILLA_SCORE) * 100)}pts
+            {/* Vertical dashed connector between gauges */}
+            <line x1={900} y1={CY_VANILLA + 80} x2={900} y2={CY_RAG - 80}
+              stroke={accentColor} strokeWidth={3} strokeDasharray="8 5" opacity={0.5}/>
+            {/* Arrow tip */}
+            <polygon
+              points={`900,${CY_RAG - 70} 892,${CY_RAG - 90} 908,${CY_RAG - 90}`}
+              fill={accentColor} opacity={0.5}/>
+
+            {/* Delta chip: qualitative, never a made-up number */}
+            <rect x={830} y={(CY_VANILLA + CY_RAG) / 2 - 50} width={140} height={100}
+              rx={18} fill={`${accentColor}18`} stroke={`${accentColor}66`} strokeWidth={2}/>
+            <text x={900} y={(CY_VANILLA + CY_RAG) / 2 - 10} textAnchor="middle"
+              fill={accentColor} fontFamily={FONT} fontSize={28} fontWeight="900">
+              SAFER
             </text>
-            <text x={940} y={CY_VANILLA + (CY_RAG - CY_VANILLA) / 2 + 22} textAnchor="middle"
-              fill={accentColor} fontFamily={FONT} fontSize={16} fontWeight="700">
-              {onScreenText[2] ?? 'accuracy lift'}
+            <text x={900} y={(CY_VANILLA + CY_RAG) / 2 + 26} textAnchor="middle"
+              fill={accentColor} fontFamily={FONT} fontSize={20} fontWeight="700">
+              {onScreenText[2] ?? 'with sources'}
             </text>
           </g>
         )}
