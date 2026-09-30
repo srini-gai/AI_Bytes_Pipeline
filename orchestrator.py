@@ -211,6 +211,7 @@ def _run_episode(
             # Non-fatal: pipeline continues without storyboard (legacy mode)
 
     # ── Phase 3: Voice (per lang) ──────────────────────────────────────────────
+    voice_durations: dict[str, float] = {}   # lang -> seconds; used in timing report
     for lang in langs:
         if lang not in scripts:
             continue
@@ -222,6 +223,7 @@ def _run_episode(
             else:
                 dur = out.get("duration", 0)
                 print(f"  OK   Voice -> {out['output_path']} ({dur:.1f}s)")
+            voice_durations[lang] = out.get("duration", 0.0)
             logger.info(f"EP{episode:02d} [{lang.upper()}] voice done -> {out.get('output_path', '')}")
         except Exception as e:
             msg = f"voice_agent [{lang.upper()}]: {e}"
@@ -256,18 +258,29 @@ def _run_episode(
     # ── Phase 5: Visual render (language-agnostic, run once) ───────────────────
     reference_lang = "en" if "en" in scripts else next(iter(scripts), None)
     visual_ok = False
+    visual_rendered_duration: float | None = None
+    visual_storyboard_planned: float | None = None
 
     if reference_lang:
         print(f"\n[EP{episode:02d}] Rendering visuals...")
         try:
             out = visual_agent.run(scripts[reference_lang], episode, week, lang=reference_lang)
             visual_ok = True
+            visual_rendered_duration = out.get("duration")
+            visual_storyboard_planned = out.get("storyboard_planned_duration")
             if out.get("skipped"):
                 print(f"  SKIP {out.get('message', 'Visuals already rendered')}")
             else:
                 mb = out.get("size_mb", "?")
-                dur = out.get("duration", 0)
-                print(f"  OK   Visuals -> {out['output_path']} ({mb} MB, {dur:.1f}s)")
+                dur = visual_rendered_duration or 0
+                planned = visual_storyboard_planned
+                timing_note = (
+                    f"storyboard planned={planned:.1f}s  rendered={dur:.1f}s"
+                    if planned is not None
+                    else f"rendered={dur:.1f}s"
+                )
+                print(f"  OK   Visuals -> {out['output_path']} ({mb} MB)")
+                print(f"       Timing  : {timing_note}")
             logger.info(f"EP{episode:02d} visuals done -> {out.get('output_path', '')}")
         except Exception as e:
             msg = f"visual_agent: {e}"
@@ -290,8 +303,25 @@ def _run_episode(
                     print(f"  SKIP {out.get('message', 'Already assembled')}")
                 else:
                     mb = out.get("size_mb", "?")
-                    dur = out.get("duration", 0)
-                    print(f"  OK   Final -> {out['output_path']} ({mb} MB, {dur:.1f}s)")
+                    final_dur = out.get("duration", 0)
+                    voice_dur = voice_durations.get(lang)
+                    # ── Four-stage timing report ──────────────────────────────
+                    print(f"  OK   Final -> {out['output_path']} ({mb} MB)")
+                    print(f"       ── Timing report ──────────────────────────")
+                    if visual_storyboard_planned is not None:
+                        print(f"       Storyboard planned duration : {visual_storyboard_planned:.2f}s")
+                    else:
+                        print(f"       Storyboard planned duration : n/a (legacy mode)")
+                    if voice_dur is not None:
+                        print(f"       Voice duration              : {voice_dur:.2f}s")
+                    else:
+                        print(f"       Voice duration              : n/a")
+                    if visual_rendered_duration is not None:
+                        print(f"       Effective rendered duration : {visual_rendered_duration:.2f}s")
+                    else:
+                        print(f"       Effective rendered duration : n/a")
+                    print(f"       Final assembled duration    : {final_dur:.2f}s")
+                    print(f"       ─────────────────────────────────────────")
                 logger.info(f"EP{episode:02d} [{lang.upper()}] assembly done -> {out.get('output_path', '')}")
                 result["langs"].setdefault(lang, {})["final_path"] = out["output_path"]
             except Exception as e:

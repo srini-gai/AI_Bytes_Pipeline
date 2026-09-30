@@ -531,11 +531,19 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
 
     props = _build_props(script, clips=staged_clips, storyboard=storyboard)
 
-    # When storyboard is present, compute expected total duration for validation
+    # When storyboard is present, compute expected total duration for validation.
+    # Note: Remotion's Composition.durationInFrames is hardcoded in Root.tsx to the
+    # RAG v3 baseline (51.5 s / 1545 frames).  --props overrides scene content but
+    # NOT durationInFrames, so the effective rendered length is always the Root.tsx
+    # value regardless of the storyboard's own sum.  The delta shows up in the
+    # timing report below so it is visible at validation time.
     expected_duration: float | None = None
     if storyboard:
         expected_duration = sum(scene.get("duration_seconds", 0) for scene in storyboard)
-        logger.info(f"EP{episode:02d} storyboard total duration: {expected_duration:.1f}s")
+        logger.info(
+            f"EP{episode:02d} timing — storyboard planned: {expected_duration:.1f}s "
+            f"({len(storyboard)} scenes)"
+        )
 
     last_error: Exception | None = None
 
@@ -547,15 +555,30 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             duration = _validate_output(output_path, episode, expected_duration=expected_duration)
             render_time = time.monotonic() - t0
 
-            logger.info(
-                f"EP{episode:02d} render complete in {render_time:.1f}s — "
-                f"duration={duration:.1f}s size={output_path.stat().st_size/1_048_576:.1f}MB"
-            )
+            # ── Timing report (always logged; storyboard-mode adds planned duration) ──
+            if expected_duration is not None:
+                delta = duration - expected_duration
+                logger.info(
+                    f"EP{episode:02d} ── Timing report ──────────────────────────────\n"
+                    f"  Storyboard planned duration : {expected_duration:.2f}s\n"
+                    f"  Voice duration              : (not yet synthesised — assembly stage)\n"
+                    f"  Effective rendered duration : {duration:.2f}s\n"
+                    f"  Final assembled duration    : (not yet assembled — assembly stage)\n"
+                    f"  Render delta vs storyboard  : {delta:+.2f}s  "
+                    f"[Root.tsx durationInFrames is static; --props does not override it]\n"
+                    f"────────────────────────────────────────────────────────────"
+                )
+            else:
+                logger.info(
+                    f"EP{episode:02d} render complete in {render_time:.1f}s — "
+                    f"duration={duration:.1f}s size={output_path.stat().st_size/1_048_576:.1f}MB"
+                )
             return {
                 "success": True,
                 "output_path": str(output_path),
                 "skipped": False,
                 "duration": duration,
+                "storyboard_planned_duration": expected_duration,
                 "render_time": round(render_time, 1),
                 "size_mb": round(output_path.stat().st_size / 1_048_576, 1),
             }
