@@ -42,16 +42,20 @@ logger = logging.getLogger(__name__)
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 _API_BASE = "https://api.higgsfield.ai"
-_T2V_ENDPOINT = f"{_API_BASE}/kling-video/v3.0/standard/text-to-video"
-_STATUS_ENDPOINT_TPL = f"{_API_BASE}/kling-video/v3.0/standard/text-to-video/{{task_id}}"
+# Confirmed endpoint from OpenAPI spec (docs.higgsfield.ai/docs/openapi.json).
+# Kling 3.0 is not yet in the published spec; v2.5-turbo/standard is the
+# latest documented T2V endpoint and is confirmed working.
+_T2V_ENDPOINT = f"{_API_BASE}/kling-video/v2.5-turbo/standard/text-to-video"
+# Universal status endpoint — same for all models (confirmed from OpenAPI spec).
+_STATUS_ENDPOINT_TPL = f"{_API_BASE}/requests/{{request_id}}/status"
 
 # Fallback cost rate (USD/second) used when live estimate is unavailable.
-# Normal Kling 3.0 Standard rate ~$0.084/s; promo ~$0.042/s.
-# We budget conservatively at normal rate.
+# Kling 2.5-turbo Standard rate ~$0.084/s (same as 3.0 Standard on the explore page).
 _FALLBACK_COST_PER_SECOND_USD = 0.084
 
-# Default model name — override via HIGGSFIELD_MODEL env var.
-_DEFAULT_MODEL = "kling-3.0-standard"
+# Default model name — display/logging label only; NOT sent in the POST body.
+# Higgsfield encodes model in the endpoint path, not the request body.
+_DEFAULT_MODEL = "kling-v2.5-turbo-standard"
 
 # No-text instruction appended to every prompt.
 _NO_TEXT_SUFFIX = (
@@ -252,14 +256,14 @@ class HiggsfieldAdapter(VideoGenerationProvider):
 
         # ── 4. POST generation request ─────────────────────────────────────────
         generation_start = time.monotonic()
-        task_id = self._post_generation(full_prompt, duration, aspect_ratio, model)
+        request_id = self._post_generation(full_prompt, duration, aspect_ratio, model)
         logger.info(
-            "EP%02d s%s — Higgsfield task created: %s",
-            request.episode, request.scene_id, task_id
+            "EP%02d s%s — Higgsfield request created: %s",
+            request.episode, request.scene_id, request_id
         )
 
         # ── 5. Poll for completion ─────────────────────────────────────────────
-        video_url = self._poll_until_done(task_id, request.episode, request.scene_id)
+        video_url = self._poll_until_done(request_id, request.episode, request.scene_id)
         generation_latency = time.monotonic() - generation_start
         logger.info(
             "EP%02d s%s — Higgsfield generation complete in %.1fs",
@@ -281,7 +285,7 @@ class HiggsfieldAdapter(VideoGenerationProvider):
             provider=self.name,
             model=model,
             asset_id=cache_key,
-            task_id=task_id,
+            task_id=request_id,
             scene_id=request.scene_id,
             prompt_hash=self._prompt_hash(request.prompt_intent),
             requested_duration=duration,
@@ -318,25 +322,36 @@ class HiggsfieldAdapter(VideoGenerationProvider):
         self,
         prompt: str,
         duration: float,
-        aspect_ratio: str,
-        model: str,
+        aspect_ratio: str,   # kept in signature for caller compat; not sent in body
+        model: str,          # kept in signature for caller compat; encoded in endpoint path
     ) -> str:
-        """POST to T2V endpoint; return task_id string."""
+        """POST to T2V endpoint; return request_id string.
+
+        Confirmed request schema (OpenAPI spec):
+            prompt          str        required
+            duration        int enum   [5, 10]  seconds
+            cfg_scale       float      0..1     default 0.5
+            negative_prompt str        optional
+
+        Model and aspect_ratio are NOT accepted in the request body.
+        Aspect ratio is set implicitly by the prompt for Kling 2.5-turbo Standard.
+        """
+        # Kling 2.5-turbo Standard accepts 5 or 10 seconds; clamp to nearest valid value.
+        duration_int = 5 if int(round(duration)) <= 7 else 10
         payload = {
-            "model": model,
             "prompt": prompt,
-            "duration": int(round(duration)),
-            "aspect_ratio": aspect_ratio,
+            "duration": duration_int,
+            "cfg_scale": 0.5,
             "negative_prompt": (
                 "text, letters, numbers, words, captions, subtitles, "
                 "watermark, logo, branding, UI, interface, typography, "
                 "signage, labels"
             ),
         }
-        body = json.dumps(payload).encode()
+        body_bytes = json.dumps(payload).encode()
         req = urllib.request.Request(
             _T2V_ENDPOINT,
-            data=body,
+            data=body_bytes,
             headers={
                 "Authorization": self._auth_header(),
                 "Content-Type": "application/json",
@@ -355,21 +370,25 @@ class HiggsfieldAdapter(VideoGenerationProvider):
         except urllib.error.URLError as exc:
             raise RuntimeError(f"Higgsfield T2V POST network error: {exc.reason}") from exc
 
-        # Response shape: {"code": 0, "message": "success", "data": {"task_id": "..."}}
-        task_id = (
-            data.get("data", {}).get("task_id")
-            or data.get("task_id")
-            or data.get("id")
-        )
-        if not task_id:
+        # Confirmed response shape (OpenAPI spec RequestStatus):
+        # {"status": "queued", "request_id": "<uuid>", "status_url": "...", ...}
+        request_id = data.get("request_id") or data.get("id")
+        if not request_id:
             raise RuntimeError(
-                f"Higgsfield T2V response missing task_id: {json.dumps(data)[:400]}"
+                f"Higgsfield T2V response missing request_id: {json.dumps(data)[:400]}"
             )
-        return str(task_id)
+        return str(request_id)
 
-    def _poll_until_done(self, task_id: str, episode: int, scene_id: str) -> str:
-        """Poll status endpoint until task completes; return video download URL."""
-        status_url = _STATUS_ENDPOINT_TPL.format(task_id=task_id)
+    def _poll_until_done(self, request_id: str, episode: int, scene_id: str) -> str:
+        """Poll universal status endpoint until request completes; return video URL.
+
+        Confirmed status values (OpenAPI spec RequestStatus.status enum):
+            queued | in_progress | nsfw | failed | completed | canceled
+
+        Confirmed response shape on completion:
+            {"status": "completed", "request_id": "...", "video": {"url": "..."}}
+        """
+        status_url = _STATUS_ENDPOINT_TPL.format(request_id=request_id)
         deadline = time.monotonic() + self._poll_timeout
         attempt = 0
 
@@ -394,50 +413,36 @@ class HiggsfieldAdapter(VideoGenerationProvider):
                 time.sleep(self._poll_interval)
                 continue
 
-            # Response shape may vary; try common patterns
-            task_data = data.get("data", data)
-            status = (
-                task_data.get("task_status")
-                or task_data.get("status")
-                or ""
-            ).upper()
+            # Confirmed: status is at the root of the response object.
+            status = (data.get("status") or "").lower()
 
             logger.info(
                 "EP%02d s%s — Higgsfield poll %d: status=%s",
                 episode, scene_id, attempt, status
             )
 
-            if status in ("SUCCEEDED", "COMPLETED", "DONE", "SUCCESS"):
-                # Try common response shapes for video URL
-                video_url = (
-                    task_data.get("task_result", {}).get("videos", [{}])[0].get("url")
-                    or task_data.get("video_url")
-                    or task_data.get("output_url")
-                    or task_data.get("url")
-                )
+            if status == "completed":
+                # Confirmed shape: {"video": {"url": "..."}}
+                video_obj = data.get("video") or {}
+                video_url = video_obj.get("url")
                 if not video_url:
                     raise RuntimeError(
-                        f"Higgsfield task {task_id} succeeded but no video URL found: "
+                        f"Higgsfield request {request_id} completed but no video URL: "
                         f"{json.dumps(data)[:400]}"
                     )
                 return str(video_url)
 
-            if status in ("FAILED", "ERROR", "CANCELLED"):
-                error_msg = (
-                    task_data.get("error")
-                    or task_data.get("task_status_msg")
-                    or task_data.get("message")
-                    or status
-                )
+            if status in ("failed", "nsfw", "canceled"):
+                error_msg = data.get("error") or status
                 raise RuntimeError(
-                    f"Higgsfield task {task_id} failed: {error_msg}"
+                    f"Higgsfield request {request_id} ended with status={status}: {error_msg}"
                 )
 
-            # Still processing — wait and retry
+            # Still queued or in_progress — wait and retry
             time.sleep(self._poll_interval)
 
         raise RuntimeError(
-            f"Higgsfield task {task_id} timed out after {self._poll_timeout:.0f}s "
+            f"Higgsfield request {request_id} timed out after {self._poll_timeout:.0f}s "
             f"({attempt} polls)"
         )
 
