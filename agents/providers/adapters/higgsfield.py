@@ -41,21 +41,24 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-_API_BASE = "https://api.higgsfield.ai"
-# Confirmed endpoint from OpenAPI spec (docs.higgsfield.ai/docs/openapi.json).
-# Kling 3.0 is not yet in the published spec; v2.5-turbo/standard is the
-# latest documented T2V endpoint and is confirmed working.
-_T2V_ENDPOINT = f"{_API_BASE}/kling-video/v2.5-turbo/standard/text-to-video"
-# Universal status endpoint — same for all models (confirmed from OpenAPI spec).
-_STATUS_ENDPOINT_TPL = f"{_API_BASE}/requests/{{request_id}}/status"
+_API_BASE  = "https://api.higgsfield.ai"
+# Confirmed live from probe: POST returns 200 + queued request_id.
+# Kling 3.0 std (NOT "standard") is the correct path segment.
+_T2V_ENDPOINT = f"{_API_BASE}/kling-video/v3.0/std/text-to-video"
 
-# Fallback cost rate (USD/second) used when live estimate is unavailable.
-# Kling 2.5-turbo Standard rate ~$0.084/s (same as 3.0 Standard on the explore page).
+# Status/cancel base confirmed from probe response body:
+# status_url = "https://platform.higgsfield.ai/requests/<id>/status"
+# Note: PLATFORM subdomain, not API subdomain.
+_PLATFORM_BASE = "https://platform.higgsfield.ai"
+_STATUS_ENDPOINT_TPL = f"{_PLATFORM_BASE}/requests/{{request_id}}/status"
+_CANCEL_ENDPOINT_TPL = f"{_PLATFORM_BASE}/requests/{{request_id}}/cancel"
+
+# Fallback cost rate (USD/second) — Kling 3.0 std rate $0.084/s.
 _FALLBACK_COST_PER_SECOND_USD = 0.084
 
 # Default model name — display/logging label only; NOT sent in the POST body.
 # Higgsfield encodes model in the endpoint path, not the request body.
-_DEFAULT_MODEL = "kling-v2.5-turbo-standard"
+_DEFAULT_MODEL = "kling-v3.0-std"
 
 # No-text instruction appended to every prompt.
 _NO_TEXT_SUFFIX = (
