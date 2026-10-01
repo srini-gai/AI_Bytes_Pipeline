@@ -322,11 +322,13 @@ class HiggsfieldAdapter(VideoGenerationProvider):
             except (ValueError, IndexError):
                 pass
 
-        if probed_w != 1080 or probed_h != 1920:
+        if probed_h is None or probed_w is None or probed_h <= probed_w:
             logger.warning(
-                "EP%02d s%s — Higgsfield returned %s (expected 1080x1920). "
+                "EP%02d s%s — Higgsfield returned %s (%s) — expected portrait (height > width). "
                 "Remotion will letterbox/pillarbox this clip.",
-                request.episode, request.scene_id, resolution or "unknown resolution",
+                request.episode, request.scene_id,
+                resolution or "unknown",
+                "LANDSCAPE" if (probed_w and probed_h and probed_w > probed_h) else "unknown orientation",
             )
 
         return GenerationResult(
@@ -351,26 +353,31 @@ class HiggsfieldAdapter(VideoGenerationProvider):
         self,
         prompt: str,
         duration: float,
-        aspect_ratio: str,   # kept in signature for caller compat; not sent in body
+        aspect_ratio: str,
         model: str,          # kept in signature for caller compat; encoded in endpoint path
     ) -> str:
         """POST to T2V endpoint; return request_id string.
 
-        Confirmed request schema (OpenAPI spec):
+        Confirmed request schema (OpenAPI spec) for Kling 3.0 Standard:
             prompt          str        required
             duration        int enum   [5, 10]  seconds
             cfg_scale       float      0..1     default 0.5
+            aspect_ratio    str        "9:16" | "16:9" | "1:1"  — confirmed accepted
+            multi_shots     bool       false = single continuous shot
+            sound           str        "off" = no audio generated
             negative_prompt str        optional
 
-        Model and aspect_ratio are NOT accepted in the request body.
-        Aspect ratio is set implicitly by the prompt for Kling 2.5-turbo Standard.
+        Model is NOT sent in the request body — it is encoded in the endpoint path.
         """
-        # Kling 2.5-turbo Standard accepts 5 or 10 seconds; clamp to nearest valid value.
+        # Kling 3.0 Standard accepts 5 or 10 seconds; clamp to nearest valid value.
         duration_int = 5 if int(round(duration)) <= 7 else 10
         payload = {
             "prompt": prompt,
             "duration": duration_int,
             "cfg_scale": 0.5,
+            "aspect_ratio": aspect_ratio,   # confirmed field — "9:16" for portrait
+            "multi_shots": False,            # single continuous shot
+            "sound": "off",                  # no audio track from API
             "negative_prompt": (
                 "text, letters, numbers, words, captions, subtitles, "
                 "watermark, logo, branding, UI, interface, typography, "
