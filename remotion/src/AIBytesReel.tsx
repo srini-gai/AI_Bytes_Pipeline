@@ -51,11 +51,14 @@ import {GraphGrowthScene} from './components/GraphGrowthScene';
 import {CodeExecutionScene} from './components/CodeExecutionScene';
 import {CardStackScene} from './components/CardStackScene';
 
+import {GeneratedVideoBackground} from './components/GeneratedVideoBackground';
+
 import type {
   AIBytesReelProps,
   ClipsMap,
   DataSpec,
   DiagramSpec,
+  GeneratedVideoClipsMap,
   NumberCounterData,
   SketchSpec,
   StoryboardScene,
@@ -151,9 +154,40 @@ function renderStoryboardScene(
   takeaway: string,
   clips: ClipsMap | undefined,
   episode: string,
+  generatedVideoClips?: GeneratedVideoClipsMap,
 ): React.ReactNode {
   const accent  = t.accent;
   const accent2 = t.accent2;
+
+  // ── Phase 3B: for GENERATIVE_VIDEO scenes, use GeneratedVideoBackground ───
+  // Resolve the scene_id key — storyboard may use numeric id (e.g. 1) or string (e.g. "s01").
+  const sceneKey = String(scene.scene_id);
+  const genVideoSrc =
+    generatedVideoClips
+      ? (generatedVideoClips[sceneKey] ??
+         generatedVideoClips[`s${sceneKey.padStart(2, '0')}`] ??
+         generatedVideoClips[sceneKey.replace(/^s0*/, '')])
+      : undefined;
+
+  // When a generated video clip is available for this scene, wrap the component
+  // in a GeneratedVideoBackground layer. The component itself sits above it via zIndex.
+  const withGeneratedBackground = (children: React.ReactNode): React.ReactNode => {
+    if (!genVideoSrc) return <>{children}</>;
+    return (
+      <AbsoluteFill>
+        {/* Background: Higgsfield-generated cinematic clip */}
+        <GeneratedVideoBackground
+          src={genVideoSrc}
+          overlayOpacity={0.50}
+          accentOverlay={`${accent}12`}
+        />
+        {/* Foreground: deterministic Remotion component (text / branding) */}
+        <AbsoluteFill style={{zIndex: 2}}>
+          {children}
+        </AbsoluteFill>
+      </AbsoluteFill>
+    );
+  };
 
   switch (scene.component) {
     // ── Kinetic typography (HOOK / key statements)
@@ -499,11 +533,15 @@ function renderStoryboardScene(
       );
 
     // ── Hook scene (can appear in storyboard too)
+    // Phase 3B: when a generated video clip is available for this scene,
+    // GeneratedVideoBackground provides the cinematic background and HookScene
+    // receives no videoSrc (its own video layer stays disabled — the generated
+    // clip already provides the full-canvas background via withGeneratedBackground).
     case 'HookScene':
-      return (
+      return withGeneratedBackground(
         <HookScene
           hook={hook}
-          videoSrc={clips?.hook}
+          videoSrc={genVideoSrc ? undefined : clips?.hook}
           theme={t}
           emoji={scene.objects[0] ?? '🧠'}
           episode={episode}
@@ -534,6 +572,8 @@ interface StoryboardProps {
   takeaway: string;
   episode: string;
   clips?: ClipsMap;
+  /** Phase 3B: Higgsfield-generated clips keyed by scene_id. */
+  generatedVideoClips?: GeneratedVideoClipsMap;
 }
 
 const StoryboardReel: React.FC<StoryboardProps> = ({
@@ -544,6 +584,7 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
   takeaway,
   episode,
   clips,
+  generatedVideoClips,
 }) => {
   // Pre-compute cumulative start frames
   let cursor = 0;
@@ -559,7 +600,10 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
       {scenes.map(({scene, startFrame, durationFrames}, i) => (
         <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames}>
           <Fade duration={durationFrames} noFadeIn={i === 0}>
-            {renderStoryboardScene(scene, theme, durationFrames, topic, hook, takeaway, clips, episode)}
+            {renderStoryboardScene(
+              scene, theme, durationFrames, topic, hook, takeaway,
+              clips, episode, generatedVideoClips,
+            )}
           </Fade>
         </Sequence>
       ))}
@@ -584,6 +628,7 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
     data_spec,
     token_spec,
     storyboard,
+    generatedVideoClips,
   } = props;
 
   const t = theme ?? DEFAULT_THEME;
@@ -599,6 +644,7 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
         takeaway={takeaway}
         episode={episode}
         clips={clips}
+        generatedVideoClips={generatedVideoClips}
       />
     );
   }

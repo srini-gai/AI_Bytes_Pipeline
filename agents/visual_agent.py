@@ -6,6 +6,11 @@ Output: ep{NN}_visuals.mp4  (1080x1920, 60s, 30fps, no audio — shared across a
 If PEXELS_API_KEY is configured, downloads one background clip per scene from Pexels,
 stages them into remotion/public/clips/ (so staticFile() can serve them), and passes
 clip paths as props to Remotion. Falls back to dark gradient when key is absent.
+
+Phase 3B: GENERATIVE_VIDEO scenes (e.g. s01) are fulfilled by the Higgsfield adapter.
+The generated MP4 is staged to remotion/public/clips/ and passed as
+generatedVideoClips[scene_id] so the GeneratedVideoBackground Remotion component
+can use it. Falls back to Remotion-only rendering if Higgsfield fails.
 """
 import json
 import logging
@@ -20,6 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 import av
 
@@ -307,16 +313,149 @@ def _load_storyboard(episode: int, week: int, lang: str) -> list | None:
     return None
 
 
+def _generate_video_scenes(
+    storyboard: list,
+    episode: int,
+    week: int,
+    asset_planner_plan: Optional[dict] = None,
+) -> tuple[dict[str, str], Optional[object]]:
+    """
+    For each GENERATIVE_VIDEO scene in the storyboard, call HiggsfieldAdapter.
+
+    Returns:
+        generated_clips: {scene_id: absolute_path} for all successfully generated clips
+        last_manifest: the last AssetManifestEntry produced (or None)
+
+    Falls back gracefully — a failure on any scene is logged and that scene
+    falls back to Remotion-only. Episode production never fails here.
+    """
+    from agents.providers.base import GenerationRequest, GenerationType, AssetSource
+    from agents.providers.adapters.higgsfield import HiggsfieldAdapter
+
+    generated_clips: dict[str, str] = {}
+    last_manifest = None
+
+    # Identify GENERATIVE_VIDEO scenes from the storyboard or asset planner plan
+    gen_video_scenes = []
+    for scene in storyboard:
+        scene_id = scene.get("scene_id", "")
+        asset_source = scene.get("asset_source", "REMOTION_ONLY")
+        # Check both storyboard field and asset planner plan
+        if asset_source == AssetSource.GENERATIVE_VIDEO.value or asset_source == "GENERATIVE_VIDEO":
+            gen_video_scenes.append(scene)
+
+    if not gen_video_scenes:
+        logger.info("EP%02d — no GENERATIVE_VIDEO scenes in storyboard", episode)
+        return generated_clips, last_manifest
+
+    logger.info(
+        "EP%02d — %d GENERATIVE_VIDEO scene(s): %s",
+        episode, len(gen_video_scenes),
+        ", ".join(s.get("scene_id", "?") for s in gen_video_scenes)
+    )
+
+    adapter = HiggsfieldAdapter()
+    if not adapter.is_available():
+        logger.warning(
+            "EP%02d — HiggsfieldAdapter not available (credentials missing). "
+            "All GENERATIVE_VIDEO scenes fall back to Remotion.",
+            episode
+        )
+        return generated_clips, last_manifest
+
+    for scene in gen_video_scenes:
+        scene_id = scene.get("scene_id", "unknown")
+        prompt_intent = (
+            scene.get("prompt_intent")
+            or scene.get("visual_intent")
+            or scene.get("description", "")
+        )
+        if not prompt_intent:
+            logger.warning(
+                "EP%02d s%s — no prompt_intent in storyboard; skipping generation",
+                episode, scene_id
+            )
+            continue
+
+        duration = float(scene.get("duration_seconds", 5.0))
+        # Cap to 5s per cost guard defaults
+        duration = min(duration, 5.0)
+
+        request = GenerationRequest(
+            scene_id=scene_id,
+            episode=episode,
+            week=week,
+            generation_type=GenerationType.VIDEO,
+            prompt_intent=prompt_intent,
+            language_neutral=True,
+            embedded_text_required=False,
+            aspect_ratio="9:16",
+            duration_seconds=duration,
+            dominant_color_family=scene.get("dominant_color_family"),
+            motion_direction=scene.get("motion_direction"),
+            transition_intent=scene.get("transition_intent"),
+        )
+
+        try:
+            logger.info(
+                "EP%02d s%s — calling Higgsfield (model=%s, %.0fs, 9:16)",
+                episode, scene_id, adapter.default_model, duration
+            )
+            result = adapter.generate(request)
+            generated_clips[scene_id] = result.asset_path
+            last_manifest = adapter.last_manifest_entry
+            logger.info(
+                "EP%02d s%s — Higgsfield OK: %s (cache=%s, latency=%.1fs)",
+                episode, scene_id, Path(result.asset_path).name,
+                adapter.last_manifest_entry.cache_status if adapter.last_manifest_entry else "?",
+                adapter.last_manifest_entry.generation_latency_seconds if adapter.last_manifest_entry else 0
+            )
+        except Exception as exc:
+            logger.error(
+                "EP%02d s%s — Higgsfield failed (%s); falling back to Remotion",
+                episode, scene_id, exc
+            )
+            # Fallback: scene_id absent from generated_clips → Remotion renders it normally
+
+    return generated_clips, last_manifest
+
+
+def _stage_generated_clips(
+    generated_clips: dict[str, str],
+    public_clips_dir: Path,
+) -> dict[str, str]:
+    """
+    Copy Higgsfield-generated MP4s into remotion/public/clips/ with a gen_video_ prefix.
+
+    Returns {scene_id: "clips/gen_video_{scene_id}.mp4"} (public-relative paths).
+    """
+    public_clips_dir.mkdir(parents=True, exist_ok=True)
+    staged: dict[str, str] = {}
+    for scene_id, abs_path in generated_clips.items():
+        dst_name = f"gen_video_{scene_id}.mp4"
+        dst = public_clips_dir / dst_name
+        shutil.copy2(abs_path, dst)
+        staged[scene_id] = f"clips/{dst_name}"
+        logger.info("EP — staged generated clip %s -> remotion/public/%s", scene_id, f"clips/{dst_name}")
+    return staged
+
+
 def _build_props(
     script: dict,
     clips: dict[str, str] | None = None,
     storyboard: list | None = None,
+    generated_video_clips: Optional[dict[str, str]] = None,
 ) -> dict:
     """Map script JSON fields to AIBytesReel composition props.
 
     When a storyboard is provided it is injected as the `storyboard` prop,
     which causes AIBytesReel to render in Visual Director mode (dynamic scenes)
     instead of the legacy fixed-section layout.
+
+    When generated_video_clips is provided (Phase 3B), it is injected as
+    `generatedVideoClips` — a map from scene_id to public-relative path.
+    Remotion's GeneratedVideoBackground component reads this to use the
+    Higgsfield MP4 as the background layer for that scene.
     """
     slides = [
         {
@@ -353,6 +492,12 @@ def _build_props(
             props["token_spec"] = script["token_spec"]
     if clips:
         props["clips"] = clips
+    if generated_video_clips:
+        props["generatedVideoClips"] = generated_video_clips
+        logger.info(
+            "Props include generatedVideoClips for scenes: %s",
+            ", ".join(generated_video_clips.keys())
+        )
     return props
 
 
@@ -542,7 +687,40 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
     # Load storyboard from disk (written by visual_director_agent, if it ran)
     storyboard = _load_storyboard(episode, week, lang)
 
-    props = _build_props(script, clips=staged_clips, storyboard=storyboard)
+    # Phase 3B: generate video backgrounds for GENERATIVE_VIDEO scenes.
+    # Only runs for the first (canonical) language render to avoid duplicate
+    # API calls — Tamil reuses the same clips via cache.
+    generated_video_clips_raw: dict[str, str] = {}
+    last_manifest = None
+    if storyboard and lang == "en":
+        generated_video_clips_raw, last_manifest = _generate_video_scenes(
+            storyboard=storyboard,
+            episode=episode,
+            week=week,
+        )
+    elif storyboard and lang != "en":
+        # Non-English pass: check if cache already holds the generated clips
+        # by re-running _generate_video_scenes (cache hit will be instant, no API call)
+        generated_video_clips_raw, last_manifest = _generate_video_scenes(
+            storyboard=storyboard,
+            episode=episode,
+            week=week,
+        )
+
+    # Stage generated clips to remotion/public so staticFile() can serve them
+    generated_video_clips_staged: Optional[dict[str, str]] = None
+    if generated_video_clips_raw:
+        generated_video_clips_staged = _stage_generated_clips(
+            generated_video_clips_raw,
+            REMOTION_DIR / "public" / "clips",
+        )
+
+    props = _build_props(
+        script,
+        clips=staged_clips,
+        storyboard=storyboard,
+        generated_video_clips=generated_video_clips_staged,
+    )
 
     # When storyboard is present, compute expected total duration for validation.
     # Note: Remotion's Composition.durationInFrames is hardcoded in Root.tsx to the
@@ -586,7 +764,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
                     f"EP{episode:02d} render complete in {render_time:.1f}s — "
                     f"duration={duration:.1f}s size={output_path.stat().st_size/1_048_576:.1f}MB"
                 )
-            return {
+            result_dict: dict = {
                 "success": True,
                 "output_path": str(output_path),
                 "skipped": False,
@@ -595,6 +773,9 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
                 "render_time": round(render_time, 1),
                 "size_mb": round(output_path.stat().st_size / 1_048_576, 1),
             }
+            if last_manifest is not None:
+                result_dict["generative_video_manifest"] = last_manifest.to_dict()
+            return result_dict
 
         except RuntimeError as e:
             last_error = e

@@ -291,6 +291,18 @@ export interface StoryboardScene {
    * that carries into this scene to create a flowing narrative.
    */
   carry_object_from?: string;
+  /**
+   * Asset Planner decision (Phase 3B).
+   * 'GENERATIVE_VIDEO' → this scene has a Higgsfield-generated background clip.
+   * 'REMOTION_ONLY'    → fully deterministic Remotion rendering (default).
+   * 'AI_IMAGE'         → AI still image background (future).
+   */
+  asset_source?: 'REMOTION_ONLY' | 'AI_IMAGE' | 'GENERATIVE_VIDEO';
+  /**
+   * Visual intent for Higgsfield generation (Phase 3B).
+   * Written in English, language-neutral, no embedded text.
+   */
+  prompt_intent?: string;
 }
 
 /** Full storyboard output from visual_director_agent */
@@ -300,6 +312,17 @@ export interface Storyboard {
   visual_summary: string;
   visual_complexity: VisualComplexityScore;
   violations: string[];
+}
+
+// ─── Generated video clips map (Phase 3B) ────────────────────────────────────
+
+/**
+ * Map from scene_id (as string) to public-relative MP4 path.
+ * e.g. { "s01": "clips/gen_video_s01.mp4" }
+ * Populated by visual_agent after Higgsfield generation.
+ */
+export interface GeneratedVideoClipsMap {
+  [sceneId: string]: string;
 }
 
 // ─── Main composition props ───────────────────────────────────────────────────
@@ -322,4 +345,10 @@ export interface AIBytesReelProps {
   token_spec?: TokenSpec;
   /** Storyboard from visual_director_agent — when present, renders instead of legacy slides */
   storyboard?: StoryboardScene[];
+  /**
+   * Phase 3B: Higgsfield-generated video clips keyed by scene_id.
+   * When present for a GENERATIVE_VIDEO scene, GeneratedVideoBackground
+   * uses the clip as the background layer; Remotion overlays branding/text on top.
+   */
+  generatedVideoClips?: GeneratedVideoClipsMap;
 }
