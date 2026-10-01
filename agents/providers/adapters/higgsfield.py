@@ -229,6 +229,15 @@ class HiggsfieldAdapter(VideoGenerationProvider):
                 fallback_status="not_used",
             )
             self.last_manifest_entry = entry
+            hit_res = self._probe_resolution(cache_path)
+            hit_w: Optional[int] = None
+            hit_h: Optional[int] = None
+            if hit_res:
+                try:
+                    parts = hit_res.split("x")
+                    hit_w, hit_h = int(parts[0]), int(parts[1])
+                except (ValueError, IndexError):
+                    pass
             return GenerationResult(
                 asset_path=str(cache_path),
                 provider=self.name,
@@ -236,8 +245,8 @@ class HiggsfieldAdapter(VideoGenerationProvider):
                 actual_cost_usd=0.0,
                 asset_id=cache_key,
                 generation_type=request.generation_type,
-                width=1080,
-                height=1920,
+                width=hit_w,
+                height=hit_h,
                 duration_seconds=actual_duration,
             )
 
@@ -303,6 +312,23 @@ class HiggsfieldAdapter(VideoGenerationProvider):
         )
         self.last_manifest_entry = entry
 
+        # Parse actual width/height from probed resolution string ("WxH").
+        probed_w: Optional[int] = None
+        probed_h: Optional[int] = None
+        if resolution:
+            try:
+                parts = resolution.split("x")
+                probed_w, probed_h = int(parts[0]), int(parts[1])
+            except (ValueError, IndexError):
+                pass
+
+        if probed_w != 1080 or probed_h != 1920:
+            logger.warning(
+                "EP%02d s%s — Higgsfield returned %s (expected 1080x1920). "
+                "Remotion will letterbox/pillarbox this clip.",
+                request.episode, request.scene_id, resolution or "unknown resolution",
+            )
+
         return GenerationResult(
             asset_path=str(cache_path),
             provider=self.name,
@@ -310,8 +336,8 @@ class HiggsfieldAdapter(VideoGenerationProvider):
             actual_cost_usd=0.0,
             asset_id=cache_key,
             generation_type=request.generation_type,
-            width=1080,
-            height=1920,
+            width=probed_w,
+            height=probed_h,
             duration_seconds=actual_duration,
         )
 
