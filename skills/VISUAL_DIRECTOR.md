@@ -1,13 +1,139 @@
 # Visual Director — Global Rules
 # Srini on AI — YouTube Shorts
 
-> Version: v3.2 — Known-Good Baseline  
-> Promoted from: RAG reference episode (rag_v32_recovery_draft.mp4, commit 45d1e20)  
-> Tag: `v3.2-known-good`
+> Version: v4.0 — Creative Visual Reasoning  
+> Evolved from: v3.2 Known-Good Baseline  
+> Reference episodes: RAG (ep00), Tokens (ep01)
 
 These rules apply to **every future Short** produced by the Visual Director.
-They are principles, not RAG-specific implementations.
-The Visual Director must dynamically choose scenes appropriate to the concept.
+They are principles, not episode-specific implementations.
+
+---
+
+## v4 Core Principle — Creative Visual Reasoning
+
+The Visual Director must NOT start by selecting Remotion components.
+
+Before choosing any implementation primitive, the system must answer:
+
+**"What visual story would make this concept understandable even with the audio muted?"**
+
+Voice EXPLAINS. Visuals DEMONSTRATE.
+
+---
+
+## v4 Planning Pipeline (mandatory order)
+
+Every episode follows this 11-stage sequence:
+
+```
+ 1. Canonical Narration        — input from script_agent (unchanged)
+ 2. Claim Classification       — FACTUAL_EXACT / ILLUSTRATIVE / VISUAL_METAPHOR per claim
+ 3. Visual Thesis              — core concept, metaphor, continuity, transformation, grammar
+ 4. Conceptual Beat Decomposition — intellectual beats, NOT narration sentences
+ 5. Physical Visual Actions    — map to visual action primitives
+ 6. Continuity Object          — carry one object through scenes as chapters
+ 7. Visual Grammar             — what to use AND what to deliberately avoid
+ 8. Novelty Comparison         — compare against visual_fingerprints.json
+ 9. Scene Plan                 — duration, pacing, structure
+10. Primitive / Component Mapping — ONLY NOW choose implementation components
+11. Renderability Validation   — can current components render each beat?
+```
+
+The system prompt in `visual_director_agent.py` enforces this order.
+
+---
+
+## Claim Classification (v4 — required per beat)
+
+Every visual concept or claim must be classified:
+
+### FACTUAL_EXACT
+
+A factual value or mechanism that must be represented accurately.
+
+- Examples: sourced model limits, documented API behaviour, exact technical sequences
+- Requires `source_reference` when externally factual
+
+### ILLUSTRATIVE
+
+A simplified representation used to communicate relative behaviour.
+
+- Examples: score badges, relative token lengths, fictional task progress, qualitative scales
+- Must NOT look like measured research data
+
+### VISUAL_METAPHOR
+
+A deliberately non-literal visual explanation.
+
+- Examples: judge paddle for preference, compass for model objective, travelling objects for information flow
+- Must NOT imply the metaphor is the literal implementation
+
+Add `claim_type` to each beat in the storyboard JSON.
+
+---
+
+## Visual Action Primitives (v4 — action vocabulary)
+
+Describe what happens visually using these action verbs:
+
+```
+split | merge | transform | flip | travel | track | rank | sort |
+connect | fill | drain | collapse | expand | loop | traverse |
+compare | reveal | zoom | check-off | accelerate | explode | reorganize
+```
+
+A fade, pulse, glow, or text entrance ALONE does not qualify as a meaningful visual beat.
+
+Scenes should be **compositions** of these primitives.
+Existing named components remain implementation tools, not creative templates.
+
+---
+
+## Novelty Memory (v4 — anti-template guard)
+
+### Fingerprint storage
+
+After every approved episode, persist a fingerprint to `output/visual_fingerprints.json`.
+
+Fingerprint fields:
+
+- `visual_thesis` — one-line thesis
+- `continuity_object_type` — what it is and how it transforms
+- `dominant_motion_grammar` — primary motion pattern
+- `scene_layout_sequence` — layout per scene
+- `camera_choreography` — camera per scene
+- `comparison_structure` — how comparisons are structured
+- `dominant_primitives` — primary visual action verbs used
+- `visual_world` — overall visual environment/style
+
+### Novelty guard
+
+Before approving a new plan, compare it against recent approved episode fingerprints.
+
+If similarity to any recent episode is HIGH:
+- The planner must explain similarities
+- The planner must intentionally alter the plan
+
+Do NOT require arbitrary novelty when reuse is logically appropriate.
+Do NOT penalise legitimate reuse of generic primitives.
+The objective is to avoid repeated visual grammar, not prohibit reuse of good components.
+
+---
+
+## Renderability Validation (v4 — required before implementation)
+
+Before implementing any episode, check each planned beat:
+
+1. Can current components/primitives render this?
+2. Can an existing component be parameterised safely?
+3. Does it genuinely require a new reusable component?
+4. Is the requested animation too complex/brittle for Remotion?
+5. Will the focal object remain readable on a phone?
+6. Is there meaningful state change within ≤ 3 seconds?
+
+**Do NOT quietly simplify a creative plan into a static diagram.**
+Explicitly report implementation gaps.
 
 ---
 
@@ -43,7 +169,7 @@ behaviour for the purpose of fixing another episode.
 | CTA | ≤ 3 seconds, always last |
 | Hook | ≤ 4 seconds |
 | Visual change cadence | One meaningful visual event every 2–4 seconds |
-| Minimum visual beats per Short | ≥ 10 |
+| Minimum visual beats per Short | ≥ 8 |
 | Typography-only runtime cap | ≤ 25 % of total |
 
 ---
@@ -66,7 +192,7 @@ behaviour for the purpose of fixing another episode.
 ## Visual variety — scene selection
 
 The Visual Director must choose the scene type that best fits the **concept being explained**.
-It must **not** default to the same scene ordering or component mix as the RAG reference.
+It must **not** default to the same scene ordering or component mix as any reference episode.
 
 Available scene types (choose dynamically):
 
@@ -77,7 +203,7 @@ Available scene types (choose dynamically):
 | Data | `DATA`, `DIAGRAM`, `ZOOM` |
 | Concept | `SIMULATION`, `METAPHOR` |
 
-Available components — choose by what the scene **does**, not by what worked in RAG:
+Available components — choose by what the scene **does**, AFTER creative planning:
 
 | Component | Use when |
 |---|---|
@@ -110,7 +236,6 @@ Available components — choose by what the scene **does**, not by what worked i
 | `CTAScene` | Follow CTA (CTA zone only, ≤ 3 s) |
 
 **No more than 2 scenes in a row may share the same component.**
-**Do not re-use the RAG scene sequence or component selection as a default template.**
 
 ---
 
@@ -146,8 +271,6 @@ No verified external source exists for the number. Communicate the relationship 
 
 - Needle / bar / counter **must** represent a qualitative zone or relative position —
   not an arbitrary intermediate value that implies a specific measurement.
-- Use zone-centre positions: midpoint of the intended zone (e.g. red zone centre = 0.165
-  of arc, green zone centre = 0.83 of arc) rather than any made-up fraction.
 - Labels must be qualitative: HIGHER RISK / MORE GROUNDED / FASTER / SLOWER,
   never `27%` or `+63 pts`.
 
@@ -214,8 +337,10 @@ QA reports; the human (or a future automated gate) decides whether to proceed.
 
 The following are per-episode concerns chosen by the Visual Director at generation time:
 
+- Visual thesis and claim classifications (v4)
+- Visual fingerprint and novelty assessment (v4)
 - Scene count and scene ordering
-- Component selection (chosen for the concept, not copied from RAG)
+- Component selection (chosen for the concept, not copied from any reference)
 - Object names and carry-over selections
 - On-screen labels and narration alignment
 - Camera moves per beat
@@ -226,13 +351,11 @@ The following are per-episode concerns chosen by the Visual Director at generati
 
 ---
 
-## Do not apply RAG-specific defaults globally
+## Do not apply episode-specific defaults globally
 
-The following are RAG implementation details. They must NOT become global defaults:
+Implementation details from any reference episode must NOT become global defaults.
+This includes scene counts, specific durations, specific component orderings,
+or domain-specific scene sequences from RAG, Tokens, or any other episode.
 
-- Two-gauge MeterScene layout (WITHOUT RAG / WITH RAG)
-- Red/green zone positioning (VANILLA_ZONE_CENTER / RAG_ZONE_CENTER)
-- 11-scene count or 51.5 s duration
-- Document retrieval + context window scene ordering
-- RAG acronym decomposition scene
-- Any scene component unique to document-retrieval workflows
+Each new episode must be planned through the v4 Creative Visual Reasoning pipeline,
+starting from the concept, not from a template.
