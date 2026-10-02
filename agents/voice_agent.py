@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import time
@@ -167,7 +168,17 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             logger.info(
                 f"EP{episode:02d} [{lang.upper()}] — voice already on disk ({duration:.1f}s) — skipping TTS"
             )
-            return {"success": True, "output_path": str(output_path), "duration": duration, "lang": lang}
+            # Ensure voice hash file exists even on cache hit
+            voice_hash = hashlib.sha256(voiceover.encode("utf-8")).hexdigest()[:16]
+            hash_path = _episode_dir(episode, week) / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+            hash_path.write_text(voice_hash, encoding="utf-8")
+            return {
+                "success": True,
+                "output_path": str(output_path),
+                "duration": duration,
+                "lang": lang,
+                "voice_source_hash": voice_hash,
+            }
         except ValueError:
             logger.warning(
                 f"EP{episode:02d} [{lang.upper()}] — existing MP3 failed validation, re-generating"
@@ -213,7 +224,24 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             duration = _validate_duration(output_path, lang)
             logger.info(f"EP{episode:02d} [{lang.upper()}] — duration {duration:.1f}s — PASS")
 
-            return {"success": True, "output_path": str(output_path), "duration": duration, "lang": lang}
+            # ── Save voice source hash ───────────────────────────────────
+            # SHA-256 of the exact voiceover text that produced this MP3.
+            # Assembly agent checks this against canonical script hash to
+            # prevent stale voice files from pairing with newer scripts.
+            voice_hash = hashlib.sha256(voiceover.encode("utf-8")).hexdigest()[:16]
+            hash_path = _episode_dir(episode, week) / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+            hash_path.write_text(voice_hash, encoding="utf-8")
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] — voice source hash saved: {voice_hash} -> {hash_path.name}"
+            )
+
+            return {
+                "success": True,
+                "output_path": str(output_path),
+                "duration": duration,
+                "lang": lang,
+                "voice_source_hash": voice_hash,
+            }
 
         except ValueError as e:
             # Duration out of range — no point retrying with same settings

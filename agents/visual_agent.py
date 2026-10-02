@@ -12,6 +12,7 @@ The generated MP4 is staged to remotion/public/clips/ and passed as
 generatedVideoClips[scene_id] so the GeneratedVideoBackground Remotion component
 can use it. Falls back to Remotion-only rendering if Higgsfield fails.
 """
+import hashlib
 import json
 import logging
 import os
@@ -768,6 +769,42 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
                 f"The following storyboard scenes use legacy slide/concept components "
                 f"instead of v3 Visual Director components: {bad_components}. "
                 f"Do not auto-convert narration into slide bodies."
+            )
+
+        # ── SCRIPT-HASH CONSISTENCY GUARD ────────────────────────────────────
+        # Canonical narration = script.voiceover.  The Visual Director segments
+        # that exact text into storyboard[].narration.  Concatenation must match.
+        canonical_voiceover = props.get("voiceover", "").strip()
+        storyboard_narration = " ".join(
+            s.get("narration", "").strip() for s in storyboard
+        ).strip()
+
+        if canonical_voiceover and storyboard_narration:
+            canon_hash = hashlib.sha256(canonical_voiceover.encode("utf-8")).hexdigest()[:16]
+            sb_hash = hashlib.sha256(storyboard_narration.encode("utf-8")).hexdigest()[:16]
+
+            if canon_hash != sb_hash:
+                raise RuntimeError(
+                    f"EP{episode:02d} SCRIPT_HASH_MATCH=FAIL: "
+                    f"canonical voiceover hash ({canon_hash}) != "
+                    f"concatenated storyboard narration hash ({sb_hash}). "
+                    f"The Visual Director must segment the exact canonical narration. "
+                    f"voiceover words={len(canonical_voiceover.split())} "
+                    f"storyboard words={len(storyboard_narration.split())}"
+                )
+            logger.info(
+                f"SCRIPT_HASH_MATCH=PASS  hash={canon_hash}  "
+                f"voiceover_words={len(canonical_voiceover.split())}  "
+                f"storyboard_words={len(storyboard_narration.split())}"
+            )
+            print(f"SCRIPT_HASH_MATCH=PASS  hash={canon_hash}")
+        elif not canonical_voiceover:
+            logger.warning(
+                f"EP{episode:02d} SCRIPT_HASH_MATCH=SKIP — no voiceover in props"
+            )
+        elif not storyboard_narration:
+            logger.warning(
+                f"EP{episode:02d} SCRIPT_HASH_MATCH=SKIP — no narration in storyboard scenes"
             )
 
         # ── PRE-RENDER TABLE (Step 8) ─────────────────────────────────────────

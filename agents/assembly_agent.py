@@ -5,6 +5,8 @@ Runs once per language per episode.
 Output: ep{NN}_final_{LANG}.mp4  (1080x1920, 45-65s — target 45-60s)
 Also saves: ep{NN}_captions_{LANG}.srt  (for archive / review)
 """
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -289,7 +291,110 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
     _write_srt(words, srt_path)
     logger.info(f"EP{episode:02d} [{lang.upper()}] SRT saved -> {srt_path}")
 
+    # ── VOICE-VISUAL SYNC GUARD ──────────────────────────────────────────
+    # Measure both durations; FAIL assembly if they differ by more than 2s.
+    # Never silently truncate voice or visuals.
+    voice_container = av.open(str(voice_path))
+    try:
+        if voice_container.duration and voice_container.duration > 0:
+            voice_duration = float(voice_container.duration) / 1_000_000
+        else:
+            voice_duration = float(
+                next(iter(voice_container.streams.audio)).duration
+                * next(iter(voice_container.streams.audio)).time_base
+            )
+    finally:
+        voice_container.close()
+
+    visual_container = av.open(str(visuals_path))
+    try:
+        if visual_container.duration and visual_container.duration > 0:
+            visual_duration = float(visual_container.duration) / 1_000_000
+        else:
+            vs = next(iter(visual_container.streams.video))
+            visual_duration = float(vs.duration * vs.time_base)
+    finally:
+        visual_container.close()
+
+    sync_delta = abs(voice_duration - visual_duration)
+    SYNC_TOLERANCE = 2.0
+
+    logger.info(
+        f"EP{episode:02d} [{lang.upper()}] VOICE_VISUAL_SYNC check: "
+        f"voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  "
+        f"delta={sync_delta:.2f}s  tolerance={SYNC_TOLERANCE:.1f}s"
+    )
+
+    if sync_delta > SYNC_TOLERANCE:
+        raise RuntimeError(
+            f"EP{episode:02d} [{lang.upper()}] VOICE_VISUAL_SYNC=FAIL: "
+            f"voice_duration={voice_duration:.2f}s  visual_duration={visual_duration:.2f}s  "
+            f"delta={sync_delta:.2f}s exceeds {SYNC_TOLERANCE:.1f}s tolerance. "
+            f"Never silently truncate. Fix the source durations."
+        )
+    logger.info(f"EP{episode:02d} [{lang.upper()}] VOICE_VISUAL_SYNC=PASS")
+    print(f"VOICE_VISUAL_SYNC=PASS  voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  delta={sync_delta:.2f}s")
+
+    # ── THREE-HASH CONSISTENCY GUARD ─────────────────────────────────────
+    # canonical_script_hash == storyboard_narration_hash == voice_source_hash
+    # Prevents stale voice files pairing with newer scripts.
+    render_props_path = ep_dir / f"ep{episode:02d}_render_props.json"
+    voice_hash_path = ep_dir / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+
+    if render_props_path.exists() and voice_hash_path.exists():
+        try:
+            render_props = json.loads(render_props_path.read_text(encoding="utf-8"))
+            canonical_voiceover = render_props.get("voiceover", "").strip()
+            storyboard_scenes = render_props.get("storyboard", [])
+            storyboard_narration = " ".join(
+                s.get("narration", "").strip() for s in storyboard_scenes
+            ).strip()
+
+            canon_hash = hashlib.sha256(canonical_voiceover.encode("utf-8")).hexdigest()[:16]
+            sb_hash = hashlib.sha256(storyboard_narration.encode("utf-8")).hexdigest()[:16]
+            voice_hash = voice_hash_path.read_text(encoding="utf-8").strip()
+
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] THREE-HASH CHECK: "
+                f"canonical={canon_hash}  storyboard={sb_hash}  voice={voice_hash}"
+            )
+            print(f"THREE_HASH_CHECK: canonical={canon_hash}  storyboard={sb_hash}  voice={voice_hash}")
+
+            if not (canon_hash == sb_hash == voice_hash):
+                mismatches = []
+                if canon_hash != sb_hash:
+                    mismatches.append(f"canonical({canon_hash}) != storyboard({sb_hash})")
+                if canon_hash != voice_hash:
+                    mismatches.append(f"canonical({canon_hash}) != voice({voice_hash})")
+                if sb_hash != voice_hash:
+                    mismatches.append(f"storyboard({sb_hash}) != voice({voice_hash})")
+                raise RuntimeError(
+                    f"EP{episode:02d} [{lang.upper()}] THREE_HASH_CHECK=FAIL: "
+                    f"{'; '.join(mismatches)}. "
+                    f"All three narration sources must match. "
+                    f"Regenerate the stale artifact."
+                )
+            logger.info(f"EP{episode:02d} [{lang.upper()}] THREE_HASH_CHECK=PASS")
+            print(f"THREE_HASH_CHECK=PASS")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(
+                f"EP{episode:02d} [{lang.upper()}] THREE_HASH_CHECK=SKIP — "
+                f"could not read props or hash file: {e}"
+            )
+    else:
+        missing = []
+        if not render_props_path.exists():
+            missing.append(render_props_path.name)
+        if not voice_hash_path.exists():
+            missing.append(voice_hash_path.name)
+        logger.warning(
+            f"EP{episode:02d} [{lang.upper()}] THREE_HASH_CHECK=SKIP — "
+            f"missing: {', '.join(missing)}"
+        )
+
     # Step 3: Merge video + voice (+ optional lo-fi music bed at 8% volume)
+    # NOTE: -shortest REMOVED — never silently truncate voice or visuals.
+    # The VOICE_VISUAL_SYNC guard above ensures they are within tolerance.
     music_str = os.getenv("BACKGROUND_MUSIC_PATH", "")
     music_path = Path(music_str) if music_str else None
 
@@ -306,7 +411,6 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-shortest",
             str(output_path),
         )
     else:
@@ -319,7 +423,6 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-shortest",
             str(output_path),
         )
 
