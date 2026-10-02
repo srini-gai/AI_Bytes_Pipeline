@@ -2,7 +2,7 @@
 Phase 6 - Assembly Agent
 Merges voice audio + visuals video. Remotion handles word-by-word captions.
 Runs once per language per episode.
-Output: ep{NN}_final_{LANG}.mp4  (1080x1920, 58-62s)
+Output: ep{NN}_final_{LANG}.mp4  (1080x1920, 45-65s — target 45-60s)
 Also saves: ep{NN}_captions_{LANG}.srt  (for archive / review)
 """
 import logging
@@ -23,7 +23,7 @@ OUTPUT_BASE = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
 # Use 'base' by default — 'tiny' is faster but weaker on Tamil
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 
-MIN_DURATION = 55.0
+MIN_DURATION = 40.0   # Updated: approved episode range is 45–60s visual; voice runs 40–62s
 MAX_DURATION = 65.0
 
 TA_MIN_DURATION = 35.0

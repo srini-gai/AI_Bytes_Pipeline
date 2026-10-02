@@ -191,8 +191,11 @@ function renderStoryboardScene(
 
   switch (scene.component) {
     // ── Kinetic typography (HOOK / key statements)
+    // withGeneratedBackground composites the Higgsfield portrait clip behind the
+    // kinetic type when a generatedVideoClips entry exists for this scene (s01).
+    // Falls back to dark fill when no clip is present — no scene redesign needed.
     case 'KineticTypoScene':
-      return (
+      return withGeneratedBackground(
         <KineticTypoScene
           text={scene.on_screen_text[0] ?? hook}
           accentColor={accent}
