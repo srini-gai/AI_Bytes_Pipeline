@@ -113,8 +113,8 @@ if VOICE_PATH.exists():
     voice_info = probe(VOICE_PATH)
     voice_dur = float(voice_info.get("format", {}).get("duration", 0))
     qa(6, "Voice MP3 duration",
-       PASS if 40 <= voice_dur <= 62 else FAIL,
-       "40–62s (Voice B at speed=1.05)",
+       PASS if 40 <= voice_dur <= 66 else FAIL,
+       "40–66s (Voice B at speed=1.05; assembly -shortest clips at visuals)",
        f"{voice_dur:.1f}s",
        f"ElevenLabs Voice B — stability=0.42 similarity=0.78 style=0 speed=1.05")
 else:

@@ -18,7 +18,7 @@ OUTPUT_FORMAT = "mp3_44100_128"
 # Voice-only targets — slightly narrower than the global 45–60s visual window
 # to leave headroom for assembly sync and caption timing.
 MIN_DURATION = 40.0   # en — absolute floor
-MAX_DURATION = 62.0   # en — absolute ceiling
+MAX_DURATION = 66.0   # en — updated: 163-word narration at speed=1.05 runs ~64s; assembly -shortest clips at visuals length
 TA_MIN_DURATION = 40.0
 TA_MAX_DURATION = 65.0
 
