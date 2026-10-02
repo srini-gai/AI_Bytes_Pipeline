@@ -25,18 +25,89 @@ echo "============================================================"
 
 # ── 1. Pull latest code ─────────────────────────────────────────────────────
 echo ""
-echo "[1/3] Pulling latest code..."
+echo "[1/5] Pulling latest code..."
 cd "$PROJ" && git pull
 echo "      Git HEAD: $(git rev-parse --short HEAD)"
 
 # ── 2. Load environment ─────────────────────────────────────────────────────
 echo ""
-echo "[2/3] Loading .env from /opt/aibytes/.env"
+echo "[2/5] Loading .env from /opt/aibytes/.env"
 set -a; source /opt/aibytes/.env; set +a
 
-# ── 3. Generate voice + Whisper timing ───────────────────────────────────────
+# ── 3. Install Whisper if missing ────────────────────────────────────────────
 echo ""
-echo "[3/3] Running voice generation + Whisper word timing..."
+echo "[3/5] Checking Whisper installation..."
+if python3 -c "import whisper" 2>/dev/null; then
+  echo "      Whisper already installed"
+else
+  echo "      Installing openai-whisper..."
+  pip install openai-whisper --break-system-packages -q 2>&1 | tail -3
+  echo "      Whisper installed"
+fi
+
+# ── 4. Write canonical script JSON (output/ is gitignored) ──────────────────
+echo ""
+echo "[4/5] Writing canonical script JSON to $EP_DIR"
+mkdir -p "$EP_DIR"
+cat > "$EP_DIR/ep01_script_EN.json" << 'SCRIPTJSON'
+{
+  "episode": "01",
+  "topic": "How AI Actually Reads Your Text",
+  "title": "AI Has Never Read a Single Word",
+  "hook": "AI has never read a single word. Not one.",
+  "concept": "Tokenization — how LLMs convert text to token IDs before processing",
+  "slides": [
+    {
+      "type": "transform",
+      "title": "Text → Tokens → Numbers",
+      "from": "unbelievable",
+      "to": "[1726, 42891, 481]",
+      "label": "Tokenizer"
+    },
+    {
+      "type": "token",
+      "sentence": "unbelievable",
+      "tokens": [
+        {"text": "un", "highlight": true},
+        {"text": "believ", "highlight": true},
+        {"text": "able", "highlight": true}
+      ],
+      "title": "Tokens ≠ Words",
+      "showIds": true
+    },
+    {
+      "type": "bars",
+      "title": "Relative Token Cost",
+      "bars": [
+        {"label": "English word", "value": 35, "maxValue": 100},
+        {"label": "Code snippet", "value": 65, "maxValue": 100},
+        {"label": "Rare / foreign word", "value": 85, "maxValue": 100}
+      ]
+    },
+    {
+      "type": "counter",
+      "title": "Context Window",
+      "counterValue": 100,
+      "counterLabel": "Context consumed",
+      "counterSuffix": "%"
+    }
+  ],
+  "voiceover": "AI has never read a single word. Not one. Before an LLM sees your text, a tokenizer splits it into chunks called tokens. A token isn't always a word. Unbelievable becomes three tokens: un, believ, able. Every token gets mapped to an integer ID. The model processes numbers, not letters. These IDs feed into an embedding layer, converting each into a vector. The transformer attends to these vectors, predicting the next token one at a time. Tokens drive cost and context. You pay per token. Context windows are measured in tokens, not words. The longer your input, the more context you consume. Code and rare words cost more tokens. Write short, precise prompts — you're spending tokens. AI processes tokens, not words directly. Follow Srini on AI for practical AI, daily.",
+  "takeaway": "AI processes tokens, not words directly.",
+  "tags": "#SriniOnAI #Tokenization #LLM #GenerativeAI #AIShorts",
+  "youtube_title": "AI Has Never Read a Single Word #Shorts",
+  "youtube_description": "AI doesn't read words — it reads tokens. Every LLM converts your text into integer IDs before processing. Understanding tokens helps you write better prompts and cut API costs.\n\nTopic: Tokenization and how LLMs actually process text\n\n#SriniOnAI #Tokenization #LLM #GenerativeAI #AIShorts",
+  "scheduled_publish": null,
+  "theme": {
+    "accent": "#a78bfa"
+  }
+}
+SCRIPTJSON
+echo "      Script JSON written: $(wc -c < "$EP_DIR/ep01_script_EN.json") bytes"
+
+# ── 5. Generate voice + Whisper timing ───────────────────────────────────────
+echo ""
+echo "[5/5] Running voice generation + Whisper word timing..."
 cd "$PROJ"
 python3 << 'PYEOF'
 import sys
@@ -66,6 +137,14 @@ with open(script_path) as f:
 canonical_voiceover = script["voiceover"].strip()
 canon_hash = hashlib.sha256(canonical_voiceover.encode("utf-8")).hexdigest()[:16]
 word_count = len(canonical_voiceover.split())
+
+# ── Sanity check: must be the 131-word canonical ─────────────────────────────
+EXPECTED_HASH = "d7e8ea157c2dc045"
+if canon_hash != EXPECTED_HASH:
+    print(f"FATAL: Script JSON voiceover hash {canon_hash} != expected {EXPECTED_HASH}")
+    print(f"       Words: {word_count}, first 80 chars: {canonical_voiceover[:80]}")
+    print(f"       The script JSON was NOT updated correctly.")
+    sys.exit(1)
 
 print(f"\n{'='*60}")
 print(f"CANONICAL SCRIPT")
