@@ -243,7 +243,10 @@ export type SceneComponent =
   | 'GraphGrowthScene'     // Line or bar graph growing over time
   | 'CodeExecutionScene'   // Code executes line by line with output
   | 'CardStackScene'       // Stack of cards splaying out or sorting
-  | 'DataFlowScene';       // Data packets moving through a system diagram
+  | 'DataFlowScene'        // Data packets moving through a system diagram
+  // ── Visual Director v4 — creative visual reasoning ──────────────────────
+  | 'AgentTraversalScene'  // Agent character traverses labeled zones with tools
+  | 'CircularFlowScene';   // Four-quadrant spinning wheel (cyclical process)
 
 /** Data payload for NumberCounterScene */
 export interface NumberCounterData {

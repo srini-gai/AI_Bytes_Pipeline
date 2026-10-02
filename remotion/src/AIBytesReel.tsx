@@ -51,6 +51,10 @@ import {GraphGrowthScene} from './components/GraphGrowthScene';
 import {CodeExecutionScene} from './components/CodeExecutionScene';
 import {CardStackScene} from './components/CardStackScene';
 
+// Visual Director v4 — creative visual reasoning components
+import {AgentTraversalScene} from './components/AgentTraversalScene';
+import {CircularFlowScene} from './components/CircularFlowScene';
+
 import {GeneratedVideoBackground} from './components/GeneratedVideoBackground';
 
 import type {
@@ -502,6 +506,32 @@ function renderStoryboardScene(
           objects={scene.objects}
           accentColor={accent}
           accent2={accent2}
+        />
+      );
+
+    // ── v4 creative visual reasoning components ─────────────────────────────
+
+    case 'AgentTraversalScene':
+      return (
+        <AgentTraversalScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+          data={scene.data as { task_steps?: string[] } | undefined}
+        />
+      );
+
+    case 'CircularFlowScene':
+      return (
+        <CircularFlowScene
+          beats={scene.beats ?? []}
+          onScreenText={scene.on_screen_text}
+          objects={scene.objects}
+          accentColor={accent}
+          accent2={accent2}
+          data={scene.data as { center_label?: string; detail_labels?: string[] } | undefined}
         />
       );
 
