@@ -33,6 +33,8 @@ interface KineticTypoSceneProps {
   glitchColor?: string;
   subtitle?: string;
   durationInFrames: number;
+  /** When true, background is transparent so a video layer behind is visible. */
+  transparentBg?: boolean;
 }
 
 const ASSEMBLE_START = 0;
@@ -50,6 +52,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   glitchColor,
   subtitle,
   durationInFrames,
+  transparentBg = false,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -92,7 +95,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   );
 
   return (
-    <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity}}>
+    <AbsoluteFill style={{backgroundColor: transparentBg ? 'transparent' : BG, opacity: sceneOpacity}}>
       {/* Background accent glow */}
       <AbsoluteFill
         style={{

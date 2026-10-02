@@ -1,16 +1,16 @@
 /**
- * BeforeAfterScene — Visual Director v3.1
+ * BeforeAfterScene — Visual Director v3.1 (data-driven)
  *
- * HOOK scene: hallucinated AI answer dominates the screen from frame 1.
- * Large confident wrong answer fills the centre, then gets struck through,
- * then flips to the grounded correct answer. Camera zooms in on the error.
+ * Shows a before/after comparison. The "before" state dominates the screen,
+ * gets struck through, then flips to the "after" state.
  *
- * v3.1 changes:
- * - Wrong answer text is 120px — fills 80%+ of usable width immediately
- * - No fade-in delay — content is present on frame 0
- * - Screen shake on slam is subtle (doesn't displace composition)
- * - "WRONG" stamps down in huge type — no X badge
- * - Flip reveals correct answer at same large scale
+ * All display content comes from onScreenText props:
+ *   [0] = before label (e.g. "VERBOSE PROMPT")
+ *   [1] = after label  (e.g. "TERSE PROMPT")
+ *   [2] = before detail (e.g. "MORE TOKENS")
+ *   [3] = after detail  (e.g. "FEWER TOKENS")
+ *
+ * Production guard: throws if onScreenText has fewer than 4 entries.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -33,6 +33,20 @@ export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+
+  // Production guard: require at least 4 onScreenText entries
+  if (onScreenText.length < 4) {
+    throw new Error(
+      `[PRODUCTION GUARD] BeforeAfterScene: onScreenText must have ≥4 entries ` +
+      `[beforeLabel, afterLabel, beforeDetail, afterDetail], got ${onScreenText.length}. ` +
+      `Populate the storyboard on_screen_text.`
+    );
+  }
+
+  const beforeLabel  = onScreenText[0];
+  const afterLabel   = onScreenText[1];
+  const beforeDetail = onScreenText[2];
+  const afterDetail  = onScreenText[3];
 
   const b0 = beats[0] ?? {start: 0, end: 0.8};
   const b1 = beats[1] ?? {start: 0.8, end: 1.6};
@@ -107,19 +121,19 @@ export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
             transform: `scaleX(${wrongAlpha > 0 ? flipX : 1})`,
             transformOrigin: '50% 50%',
           }}>
-            {/* AI chip at top */}
+            {/* Before label chip */}
             <div style={{
               fontFamily: FONT, fontSize: 22, fontWeight: 700, color: 'rgba(255,255,255,0.4)',
               letterSpacing: 4, textTransform: 'uppercase', marginBottom: 32, textAlign: 'center',
-            }}>AI Answer</div>
+            }}>{beforeLabel}</div>
 
-            {/* Big wrong text */}
+            {/* Before detail */}
             <div style={{
               fontFamily: FONT, fontSize: 72, fontWeight: 900,
               color: 'rgba(255,255,255,0.88)', lineHeight: 1.25, textAlign: 'center',
               letterSpacing: -1,
             }}>
-              "The Eiffel Tower was built in 1756."
+              {beforeDetail}
             </div>
 
             {/* Strike-through line (draws L→R across full card) */}
@@ -144,14 +158,14 @@ export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
               top: '28%',
               transform: `translateY(${wrongY}px)`,
               opacity: smoothstep(wrongP),
-              fontFamily: FONT, fontSize: 220, fontWeight: 900,
+              fontFamily: FONT, fontSize: 180, fontWeight: 900,
               color: '#ef4444',
               letterSpacing: -8,
               textShadow: '0 0 80px rgba(239,68,68,0.5)',
               lineHeight: 1,
               userSelect: 'none',
             }}>
-              WRONG
+              ✗
             </div>
           )}
         </AbsoluteFill>
@@ -175,21 +189,21 @@ export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
             transform: `scaleX(${rightAlpha > 0 ? flipX : 1})`,
             transformOrigin: '50% 50%',
           }}>
-            {/* AI chip */}
+            {/* After label chip */}
             <div style={{
               fontFamily: FONT, fontSize: 22, fontWeight: 700, color: accent2,
               letterSpacing: 4, textTransform: 'uppercase', marginBottom: 32, textAlign: 'center',
-            }}>RAG Answer</div>
+            }}>{afterLabel}</div>
 
-            {/* Big correct text */}
+            {/* After detail */}
             <div style={{
               fontFamily: FONT, fontSize: 72, fontWeight: 900,
               color: '#ffffff', lineHeight: 1.25, textAlign: 'center', letterSpacing: -1,
             }}>
-              "The Eiffel Tower was built in 1889."
+              {afterDetail}
             </div>
 
-            {/* Source badge below text */}
+            {/* Checkmark badge */}
             <div style={{
               marginTop: 40, display: 'flex', justifyContent: 'center',
               opacity: smoothstep(sourceP),
@@ -201,19 +215,19 @@ export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
                 fontFamily: FONT, fontSize: 28, fontWeight: 700, color: accent2,
                 boxShadow: `0 0 30px ${accent2}44`,
               }}>
-                ✓ Source: Wikipedia — Eiffel Tower
+                ✓ {afterLabel}
               </div>
             </div>
           </div>
 
-          {/* "Grounded answer" label below card */}
+          {/* Bottom label */}
           <div style={{
             marginTop: 36,
             opacity: smoothstep(sourceP),
             fontFamily: FONT, fontSize: 36, fontWeight: 700,
             color: accentColor, letterSpacing: 3, textTransform: 'uppercase',
           }}>
-            {onScreenText[2] ?? 'Source verified'}
+            {afterDetail}
           </div>
         </AbsoluteFill>
       </AbsoluteFill>

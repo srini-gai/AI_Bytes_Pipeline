@@ -38,9 +38,11 @@ interface DataSceneProps {
   dataSpec: DataSpec;
   accentColor: string;
   durationInFrames: number;
+  /** When true, suppress precise numeric values — show relative bars/gauges only. */
+  qualitative?: boolean;
 }
 
-export const DataScene: React.FC<DataSceneProps> = ({dataSpec, accentColor}) => {
+export const DataScene: React.FC<DataSceneProps> = ({dataSpec, accentColor, qualitative = false}) => {
   const frame = useCurrentFrame();
   const titleOpacity = interpolate(
     frame,
@@ -67,9 +69,9 @@ export const DataScene: React.FC<DataSceneProps> = ({dataSpec, accentColor}) => 
         {dataSpec.title}
       </div>
 
-      {dataSpec.type === 'bars' && <BarsBody spec={dataSpec} accentColor={accentColor} frame={frame} />}
-      {dataSpec.type === 'counter' && <CounterBody spec={dataSpec} accentColor={accentColor} frame={frame} />}
-      {dataSpec.type === 'comparison' && <ComparisonBody spec={dataSpec} frame={frame} />}
+      {dataSpec.type === 'bars' && <BarsBody spec={dataSpec} accentColor={accentColor} frame={frame} qualitative={qualitative} />}
+      {dataSpec.type === 'counter' && <CounterBody spec={dataSpec} accentColor={accentColor} frame={frame} qualitative={qualitative} />}
+      {dataSpec.type === 'comparison' && <ComparisonBody spec={dataSpec} frame={frame} qualitative={qualitative} />}
     </AbsoluteFill>
   );
 };
@@ -80,9 +82,10 @@ interface BarsBodyProps {
   spec: DataSpec;
   accentColor: string;
   frame: number;
+  qualitative?: boolean;
 }
 
-const BarsBody: React.FC<BarsBodyProps> = ({spec, accentColor, frame}) => {
+const BarsBody: React.FC<BarsBodyProps> = ({spec, accentColor, frame, qualitative = false}) => {
   const bars = spec.bars ?? [];
   const n = bars.length || 1;
   const rowH = Math.min(260, Math.max(120, (ROWS_BOTTOM - ROWS_TOP - (n - 1) * ROW_GAP) / n));
@@ -141,16 +144,18 @@ const BarsBody: React.FC<BarsBodyProps> = ({spec, accentColor, frame}) => {
               }}
             />
 
-            <div
-              style={{
-                position: 'absolute', left: BAR_LEFT + fillW + 16, top: rowY + 36,
-                opacity: growProgress, zIndex: 3,
-                fontSize: 26, fontWeight: 800, color,
-                fontFamily: FONT, whiteSpace: 'nowrap',
-              }}
-            >
-              {currentValue}{spec.unit ?? ''}
-            </div>
+            {!qualitative && (
+              <div
+                style={{
+                  position: 'absolute', left: BAR_LEFT + fillW + 16, top: rowY + 36,
+                  opacity: growProgress, zIndex: 3,
+                  fontSize: 26, fontWeight: 800, color,
+                  fontFamily: FONT, whiteSpace: 'nowrap',
+                }}
+              >
+                {currentValue}{spec.unit ?? ''}
+              </div>
+            )}
           </React.Fragment>
         );
       })}
@@ -164,9 +169,10 @@ interface CounterBodyProps {
   spec: DataSpec;
   accentColor: string;
   frame: number;
+  qualitative?: boolean;
 }
 
-const CounterBody: React.FC<CounterBodyProps> = ({spec, accentColor, frame}) => {
+const CounterBody: React.FC<CounterBodyProps> = ({spec, accentColor, frame, qualitative = false}) => {
   const target = spec.counterValue ?? 0;
   const progress = interpolate(
     frame,
@@ -197,7 +203,7 @@ const CounterBody: React.FC<CounterBodyProps> = ({spec, accentColor, frame}) => 
             fontFamily: FONT, textShadow: `0 0 60px ${accentColor}88`,
           }}
         >
-          {current.toLocaleString()}
+          {qualitative ? '▰'.repeat(Math.max(1, Math.round(progress * 5))) : current.toLocaleString()}
         </span>
         {spec.counterSuffix && (
           <span
@@ -232,9 +238,10 @@ const CounterBody: React.FC<CounterBodyProps> = ({spec, accentColor, frame}) => 
 interface ComparisonBodyProps {
   spec: DataSpec;
   frame: number;
+  qualitative?: boolean;
 }
 
-const ComparisonBody: React.FC<ComparisonBodyProps> = ({spec, frame}) => {
+const ComparisonBody: React.FC<ComparisonBodyProps> = ({spec, frame, qualitative = false}) => {
   const bars = spec.bars ?? [];
   const oldBar = bars[0];
   const newBar = bars[1];
@@ -255,10 +262,10 @@ const ComparisonBody: React.FC<ComparisonBodyProps> = ({spec, frame}) => {
         }}
       />
       {oldBar && (
-        <ComparisonColumn bar={oldBar} centerX={280} color={oldBar.color ?? OLD_COLOR} growProgress={growProgress} unit={spec.unit} />
+        <ComparisonColumn bar={oldBar} centerX={280} color={oldBar.color ?? OLD_COLOR} growProgress={growProgress} unit={spec.unit} qualitative={qualitative} />
       )}
       {newBar && (
-        <ComparisonColumn bar={newBar} centerX={800} color={newBar.color ?? NEW_COLOR} growProgress={growProgress} unit={spec.unit} />
+        <ComparisonColumn bar={newBar} centerX={800} color={newBar.color ?? NEW_COLOR} growProgress={growProgress} unit={spec.unit} qualitative={qualitative} />
       )}
     </>
   );
@@ -270,9 +277,10 @@ interface ComparisonColumnProps {
   color: string;
   growProgress: number;
   unit?: string;
+  qualitative?: boolean;
 }
 
-const ComparisonColumn: React.FC<ComparisonColumnProps> = ({bar, centerX, color, growProgress, unit}) => {
+const ComparisonColumn: React.FC<ComparisonColumnProps> = ({bar, centerX, color, growProgress, unit, qualitative = false}) => {
   const maxValue = bar.maxValue || 1;
   const heightRatio = Math.min(bar.value / maxValue, 1);
   const barH = Math.round(COMPARISON_MAX_BAR_H * heightRatio * growProgress);
@@ -302,17 +310,19 @@ const ComparisonColumn: React.FC<ComparisonColumnProps> = ({bar, centerX, color,
         }}
       />
 
-      <div
-        style={{
-          position: 'absolute', left: centerX - COMPARISON_COL_W / 2, top: COMPARISON_BASE_Y - barH - 70,
-          width: COMPARISON_COL_W, textAlign: 'center', zIndex: 3,
-          fontSize: 44, fontWeight: 900, color,
-          fontFamily: FONT, textShadow: `0 0 20px ${color}88`,
-          opacity: growProgress,
-        }}
-      >
-        {currentValue}{unit ?? ''}
-      </div>
+      {!qualitative && (
+        <div
+          style={{
+            position: 'absolute', left: centerX - COMPARISON_COL_W / 2, top: COMPARISON_BASE_Y - barH - 70,
+            width: COMPARISON_COL_W, textAlign: 'center', zIndex: 3,
+            fontSize: 44, fontWeight: 900, color,
+            fontFamily: FONT, textShadow: `0 0 20px ${color}88`,
+            opacity: growProgress,
+          }}
+        >
+          {currentValue}{unit ?? ''}
+        </div>
+      )}
     </>
   );
 };

@@ -1,12 +1,12 @@
 /**
- * TransformScene — Visual Director v3
+ * TransformScene — Visual Director v3 (data-driven)
  *
- * Shows an A→B transformation: objects appear, change, combine or rearrange.
- * Used here for the RAG acronym assembly: letters stamp in one by one
- * with icons snapping below, then connector lines draw between stages.
+ * Shows an A→B transformation: items appear, change, combine or rearrange.
+ * Beat-driven: each item stamps in on its own beat; final beat
+ * reveals the assembled summary label.
  *
- * Beat-driven: each letter/item stamps in on its own beat; final beat
- * reveals the full assembled object.
+ * All display content comes from props — no topic-specific defaults.
+ * Production guard: throws if onScreenText has fewer than 3 entries.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -14,25 +14,42 @@ import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress, smoothstep} from './
 import type {SceneBeat} from '../types';
 
 interface TransformItem {
-  letter: string;
+  /** Primary display text (the main visual — a token, a letter, a label) */
+  primary: string;
+  /** Secondary label below the primary */
   label: string;
+  /** Icon/emoji between primary and label */
   icon: string;
   color: string;
 }
 
 interface TransformSceneProps {
   beats: SceneBeat[];
-  onScreenText: string[];   // ["Retrieval","Augmented","Generation"] or similar
+  onScreenText: string[];
   objects: string[];
   accentColor?: string;
   accent2?: string;
 }
 
-const DEFAULT_ITEMS: TransformItem[] = [
-  {letter: 'R', label: 'Retrieval',   icon: '🔍', color: '#6366f1'},
-  {letter: 'A', label: 'Augmented',   icon: '🧩', color: '#a78bfa'},
-  {letter: 'G', label: 'Generation',  icon: '✨', color: '#34d399'},
-];
+/**
+ * Parse onScreenText entries like "un → 1726" into primary/label pairs.
+ * Falls back to using the entry as-is for both primary and label.
+ */
+function parseTransformEntry(entry: string, color: string, icon: string): TransformItem {
+  const arrowIdx = entry.indexOf('→');
+  if (arrowIdx >= 0) {
+    return {
+      primary: entry.substring(0, arrowIdx).trim(),
+      label: entry.substring(arrowIdx + 1).trim(),
+      icon,
+      color,
+    };
+  }
+  return {primary: entry, label: '', icon, color};
+}
+
+const ITEM_ICONS = ['🔤', '🔢', '⚡'];
+const ITEM_COLORS = ['#6366f1', '#a78bfa', '#34d399'];
 
 export const TransformScene: React.FC<TransformSceneProps> = ({
   beats,
@@ -43,23 +60,35 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  // Build items from onScreenText or use defaults
-  const items: TransformItem[] = onScreenText.length >= 3
-    ? [
-        {letter: 'R', label: onScreenText[0] ?? 'Retrieval',  icon: '🔍', color: '#6366f1'},
-        {letter: 'A', label: onScreenText[1] ?? 'Augmented',  icon: '🧩', color: accentColor},
-        {letter: 'G', label: onScreenText[2] ?? 'Generation', icon: '✨', color: accent2},
-      ]
-    : DEFAULT_ITEMS;
+  // Production guard: require at least 3 onScreenText entries for transform items
+  if (onScreenText.length < 3) {
+    throw new Error(
+      `[PRODUCTION GUARD] TransformScene: onScreenText must have ≥3 entries, got ${onScreenText.length}. ` +
+      `Populate the storyboard on_screen_text with transform data.`
+    );
+  }
 
-  // Each of the first 3 beats: one letter stamps in
+  // Build items from onScreenText — first N-1 entries are transform items, last is summary label
+  const summaryLabel = onScreenText[onScreenText.length - 1];
+  const itemEntries = onScreenText.slice(0, -1);
+
+  const items: TransformItem[] = itemEntries.map((entry, i) =>
+    parseTransformEntry(
+      entry,
+      ITEM_COLORS[i % ITEM_COLORS.length],
+      ITEM_ICONS[i % ITEM_ICONS.length],
+    )
+  );
+
+  // Each of the first N beats: one item stamps in
   const letterProgress = items.map((_, i) => {
     const beat = beats[i] ?? {start: i * 1.0, end: i * 1.0 + 1.0};
     return easeOut(frame, fps, beat.start, beat.end);
   });
 
   // Final beat: connector lines draw
-  const b3 = beats[3] ?? {start: 3.0, end: 5.0};
+  const finalBeatIdx = items.length;
+  const b3 = beats[finalBeatIdx] ?? {start: finalBeatIdx * 1.0, end: finalBeatIdx * 1.0 + 2.0};
   const lineProgress = linearProgress(frame, fps, b3.start, b3.start + (b3.end - b3.start) * 0.6);
   const lineSmooth   = smoothstep(lineProgress);
 
@@ -75,7 +104,6 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
   const CARD_W = 240;
   const CARD_GAP = 48;
   const TOTAL_W  = items.length * CARD_W + (items.length - 1) * CARD_GAP;
-  const START_X  = (1080 - TOTAL_W) / 2;
 
   return (
     <AbsoluteFill
@@ -103,7 +131,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
         }}
       >
         <div style={{position: 'relative', width: TOTAL_W, paddingTop: 100}}>
-          {/* Letter cards */}
+          {/* Transform item cards */}
           {items.map((item, i) => {
             const p = letterProgress[i];
             const x = i * (CARD_W + CARD_GAP);
@@ -113,7 +141,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
 
             return (
               <div
-                key={item.letter}
+                key={`item-${i}`}
                 style={{
                   position: 'absolute',
                   left: x,
@@ -127,25 +155,26 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                   gap: 16,
                 }}
               >
-                {/* Big letter */}
+                {/* Primary text */}
                 <div
                   style={{
                     fontFamily: FONT,
-                    fontSize: 160,
+                    fontSize: 72,
                     fontWeight: 900,
                     color: item.color,
                     lineHeight: 1,
                     textShadow: `0 0 80px ${item.color}66`,
-                    letterSpacing: -4,
+                    letterSpacing: -2,
+                    textAlign: 'center',
                   }}
                 >
-                  {item.letter}
+                  {item.primary}
                 </div>
 
-                {/* Icon below letter */}
+                {/* Icon below primary */}
                 <div
                   style={{
-                    fontSize: 52,
+                    fontSize: 42,
                     transform: `scale(${interpolate(p, [0.5, 1], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'})})`,
                     filter: `drop-shadow(0 0 16px ${item.color}88)`,
                   }}
@@ -154,35 +183,35 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                 </div>
 
                 {/* Label */}
-                <div
-                  style={{
-                    fontFamily: FONT,
-                    fontSize: 26,
-                    fontWeight: 700,
-                    color: item.color,
-                    letterSpacing: 2,
-                    textTransform: 'uppercase',
-                    opacity: interpolate(p, [0.6, 1], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}),
-                  }}
-                >
-                  {item.label}
-                </div>
+                {item.label && (
+                  <div
+                    style={{
+                      fontFamily: FONT,
+                      fontSize: 30,
+                      fontWeight: 700,
+                      color: item.color,
+                      letterSpacing: 2,
+                      opacity: interpolate(p, [0.6, 1], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}),
+                      textAlign: 'center',
+                    }}
+                  >
+                    {item.label}
+                  </div>
+                )}
               </div>
             );
           })}
 
-          {/* Connector lines (draw on beat 3) */}
+          {/* Connector arrows (draw on final beat) */}
           {items.slice(0, -1).map((_, i) => {
             const lineStart = i / (items.length - 1);
             const lineEnd   = (i + 1) / (items.length - 1);
-            // Each line draws in sequence: stagger within the overall lineSmooth
             const segP = smoothstep(
               interpolate(lineSmooth, [lineStart * 0.8, lineEnd * 0.8], [0, 1], {
                 extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
               }),
             );
             const x1 = i * (CARD_W + CARD_GAP) + CARD_W;
-            const x2 = x1 + CARD_GAP;
 
             return (
               <div
@@ -190,7 +219,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                 style={{
                   position: 'absolute',
                   left: x1,
-                  top: 72, // aligns with letter midpoint
+                  top: 72,
                   width: segP * CARD_GAP,
                   height: 3,
                   background: `linear-gradient(90deg, ${items[i].color}, ${items[i + 1].color})`,
@@ -204,7 +233,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
         </div>
       </AbsoluteFill>
 
-      {/* "RAG" label that appears on final beat */}
+      {/* Summary label that appears on final beat */}
       <AbsoluteFill
         style={{
           display: 'flex',
@@ -225,7 +254,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
             color: accentColor,
           }}
         >
-          Retrieval-Augmented Generation
+          {summaryLabel}
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

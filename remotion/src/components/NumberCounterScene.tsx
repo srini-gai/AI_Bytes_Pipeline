@@ -36,6 +36,8 @@ interface NumberCounterSceneProps {
   data: NumberCounterData;
   accentColor: string;
   durationInFrames: number;
+  /** When true, show qualitative gauge instead of precise numeric counter. */
+  qualitative?: boolean;
 }
 
 function formatNumber(n: number, target: number): string {
@@ -59,6 +61,7 @@ export const NumberCounterScene: React.FC<NumberCounterSceneProps> = ({
   data,
   accentColor,
   durationInFrames,
+  qualitative = false,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -119,7 +122,11 @@ export const NumberCounterScene: React.FC<NumberCounterSceneProps> = ({
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  const displayNumber = formatNumber(currentValue, targetValue);
+  // Qualitative mode: show a growing bar gauge instead of a precise number
+  const gaugeBarCount = Math.max(1, Math.round(rawProgress * 8));
+  const displayNumber = qualitative
+    ? '▰'.repeat(gaugeBarCount) + '▱'.repeat(8 - gaugeBarCount)
+    : formatNumber(currentValue, targetValue);
 
   return (
     <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity}}>
@@ -178,7 +185,7 @@ export const NumberCounterScene: React.FC<NumberCounterSceneProps> = ({
           <span
             style={{
               fontFamily: FONT,
-              fontSize: 120,
+              fontSize: qualitative ? 72 : 120,
               fontWeight: 900,
               color: '#ffffff',
               letterSpacing: -4,

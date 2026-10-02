@@ -202,28 +202,20 @@ function renderStoryboardScene(
           glitchColor={accent2}
           subtitle={scene.on_screen_text[1]}
           durationInFrames={durationInFrames}
+          transparentBg={!!genVideoSrc}
         />
       );
 
     // ── Token transformation animation
     case 'TokenScene': {
       const tokenSpec = scene.data as TokenSpec | undefined;
-      if (tokenSpec?.tokens) {
-        return <TokenScene tokenSpec={tokenSpec} accentColor={accent} durationInFrames={durationInFrames} />;
+      if (!tokenSpec?.tokens) {
+        throw new Error(
+          `[PRODUCTION GUARD] TokenScene (${scene.scene_id}): scene.data.tokens is missing. ` +
+          `Cannot render — populate scene.data with a valid TokenSpec.`
+        );
       }
-      // Fall back: synthesise a basic TokenSpec from objects list
-      return (
-        <TokenScene
-          tokenSpec={{
-            sentence: scene.objects.join(' '),
-            tokens: scene.objects.map((o) => ({text: o})),
-            title: scene.on_screen_text[0],
-            showIds: true,
-          }}
-          accentColor={accent}
-          durationInFrames={durationInFrames}
-        />
-      );
+      return <TokenScene tokenSpec={tokenSpec} accentColor={accent} durationInFrames={durationInFrames} />;
     }
 
     // ── Sketch / diagram
@@ -246,7 +238,7 @@ function renderStoryboardScene(
     case 'DataScene': {
       const dataSpec = scene.data as DataSpec | undefined;
       if (dataSpec) {
-        return <DataScene dataSpec={dataSpec} accentColor={accent} durationInFrames={durationInFrames} />;
+        return <DataScene dataSpec={dataSpec} accentColor={accent} durationInFrames={durationInFrames} qualitative={scene.source_type === 'illustrative'} />;
       }
       return <ConceptScene concept={scene.visual_goal} theme={t} />;
     }
@@ -260,6 +252,7 @@ function renderStoryboardScene(
             data={counterData}
             accentColor={accent}
             durationInFrames={durationInFrames}
+            qualitative={scene.source_type === 'illustrative'}
           />
         );
       }

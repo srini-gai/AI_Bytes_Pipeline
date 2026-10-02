@@ -303,6 +303,11 @@ export interface StoryboardScene {
    * Written in English, language-neutral, no embedded text.
    */
   prompt_intent?: string;
+  /**
+   * Data provenance tag (Visual Director v3.1).
+   * 'illustrative' → suppress precise numeric values, show relative bars/gauges only.
+   */
+  source_type?: string;
 }
 
 /** Full storyboard output from visual_director_agent */
