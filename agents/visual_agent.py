@@ -540,12 +540,11 @@ def _validate_output(path: Path, episode: int, expected_duration: float | None =
     if expected_duration is not None:
         # Storyboard mode: validate against the global 45–60s target window.
         #
-        # The storyboard's own duration sum (expected_duration) is the PLANNED
-        # value — it intentionally differs from the rendered length because
-        # Root.tsx hardcodes Composition.durationInFrames to the RAG v3 baseline
-        # (51.5 s / 1545 frames), and Remotion's --props flag does not override
-        # that value.  Both numbers are surfaced in the timing report; validation
-        # here only enforces the approved global target range.
+        # Root.tsx::calculateMetadata derives durationInFrames from props.storyboard
+        # at render time (sum of duration_seconds × 30 fps).  When --props carries
+        # the storyboard, the rendered duration will match expected_duration closely
+        # (within one frame's rounding).  Both values are surfaced in the timing
+        # report; validation here enforces the approved global target range.
         GLOBAL_LO = 45.0
         GLOBAL_HI = 60.0
         if not (GLOBAL_LO <= duration <= GLOBAL_HI):
@@ -722,12 +721,86 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         generated_video_clips=generated_video_clips_staged,
     )
 
+    # ── RENDER-MODE GUARD (Step 4) ────────────────────────────────────────────
+    # When a v3 storyboard exists it MUST be present in props.
+    # Legacy slide mode must never silently activate for storyboard episodes.
+    if storyboard and storyboard:
+        props_storyboard = props.get("storyboard")
+        if not props_storyboard or len(props_storyboard) == 0:
+            raise RuntimeError(
+                f"EP{episode:02d} RENDER-MODE GUARD FAIL: "
+                f"v3 storyboard ({len(storyboard)} scenes) exists but was NOT injected "
+                f"into render props. Legacy slide mode must NOT activate. "
+                f"Fix _build_props() storyboard injection."
+            )
+        component_seq = [s.get("component", "MISSING") for s in storyboard]
+        logger.info(
+            f"VISUAL_RENDER_MODE=STORYBOARD_V3\n"
+            f"SCENES={len(storyboard)}\n"
+            f"COMPONENT_SEQUENCE={' -> '.join(component_seq)}"
+        )
+        print(f"VISUAL_RENDER_MODE=STORYBOARD_V3")
+        print(f"SCENES={len(storyboard)}")
+        print(f"COMPONENT_SEQUENCE: {' -> '.join(component_seq)}")
+
+        # ── PARAGRAPH-CARD REGRESSION CHECK (Step 5) ─────────────────────────
+        # Fail before render if the v3 storyboard scenes have been replaced by
+        # generic heading+paragraph cards (slides) or if narration was auto-
+        # converted into slide bodies.
+        props_slides = props.get("slides", [])
+        if props_slides:
+            raise RuntimeError(
+                f"EP{episode:02d} PARAGRAPH-CARD REGRESSION DETECTED: "
+                f"v3 storyboard is present but props also contain {len(props_slides)} "
+                f"legacy slides (paragraph cards). Visual Director storyboard must be "
+                f"the sole visual source of truth. Remove slides[] from props."
+            )
+
+        # Verify no storyboard scene has been replaced by a ConceptScene/SlideScene
+        bad_components = [
+            f"s{s.get('scene_id', '?')}:{s.get('component', 'MISSING')}"
+            for s in storyboard
+            if s.get("component") in ("SlideScene", "ConceptScene", "MISSING", None, "")
+        ]
+        if bad_components:
+            raise RuntimeError(
+                f"EP{episode:02d} PARAGRAPH-CARD REGRESSION DETECTED: "
+                f"The following storyboard scenes use legacy slide/concept components "
+                f"instead of v3 Visual Director components: {bad_components}. "
+                f"Do not auto-convert narration into slide bodies."
+            )
+
+        # ── PRE-RENDER TABLE (Step 8) ─────────────────────────────────────────
+        print(f"\n{'─'*72}")
+        print(f"  EP{episode:02d} PRE-RENDER TABLE — STORYBOARD_V3")
+        print(f"{'─'*72}")
+        print(f"  {'Scene':<8} {'Component':<24} {'Duration':>10}  Asset source")
+        print(f"  {'─'*68}")
+        gen_clips_staged = generated_video_clips_staged or {}
+        for s in storyboard:
+            sid = s.get("scene_id", "?")
+            comp = s.get("component", "MISSING")
+            dur = s.get("duration_seconds", 0)
+            scene_key = f"s{sid:02d}" if isinstance(sid, int) else f"s{sid}"
+            if scene_key in gen_clips_staged:
+                asset_src = f"HIGGSFIELD cached → {gen_clips_staged[scene_key]}"
+            elif staged_clips:
+                asset_src = "Pexels clip" if scene_key in staged_clips else "Remotion dark bg"
+            else:
+                asset_src = "Remotion dark bg"
+            print(f"  s{sid:<7} {comp:<24} {dur:>8.1f}s  {asset_src}")
+        total_planned = sum(s.get("duration_seconds", 0) for s in storyboard)
+        print(f"{'─'*72}")
+        print(f"  {'TOTAL':<8} {'':<24} {total_planned:>8.1f}s")
+        print(f"{'─'*72}\n")
+    else:
+        logger.info("VISUAL_RENDER_MODE=LEGACY (no storyboard)")
+        print("VISUAL_RENDER_MODE=LEGACY")
+
     # When storyboard is present, compute expected total duration for validation.
-    # Note: Remotion's Composition.durationInFrames is hardcoded in Root.tsx to the
-    # RAG v3 baseline (51.5 s / 1545 frames).  --props overrides scene content but
-    # NOT durationInFrames, so the effective rendered length is always the Root.tsx
-    # value regardless of the storyboard's own sum.  The delta shows up in the
-    # timing report below so it is visible at validation time.
+    # Note: Remotion's calculateMetadata in Root.tsx derives durationInFrames from
+    # props.storyboard at render time (since the --props flag carries the storyboard
+    # array, calculateMetadata correctly computes 45s → 1350 frames for this episode).
     expected_duration: float | None = None
     if storyboard:
         expected_duration = sum(scene.get("duration_seconds", 0) for scene in storyboard)

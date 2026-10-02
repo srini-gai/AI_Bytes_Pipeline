@@ -252,14 +252,32 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
         )
 
     if output_path.exists() and output_path.stat().st_size > 500_000:
-        logger.info(f"EP{episode:02d} [{lang.upper()}] already assembled - skipping")
-        return {
-            "success": True,
-            "output_path": str(output_path),
-            "lang": lang,
-            "skipped": True,
-            "message": "Final video already assembled - skipping.",
-        }
+        # Skip only if final is NEWER than both source inputs (visuals + voice).
+        # If visuals were re-rendered after the final was assembled, the final is
+        # stale and must be re-assembled — otherwise the old (possibly legacy-mode)
+        # final will be served instead of the corrected visuals.
+        final_mtime   = output_path.stat().st_mtime
+        visuals_mtime = visuals_path.stat().st_mtime
+        voice_mtime   = voice_path.stat().st_mtime
+        if final_mtime > visuals_mtime and final_mtime > voice_mtime:
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] already assembled and up-to-date - skipping"
+            )
+            return {
+                "success": True,
+                "output_path": str(output_path),
+                "lang": lang,
+                "skipped": True,
+                "message": "Final video already assembled - skipping.",
+            }
+        else:
+            logger.warning(
+                f"EP{episode:02d} [{lang.upper()}] stale final detected "
+                f"(final_mtime={final_mtime:.0f} visuals_mtime={visuals_mtime:.0f} "
+                f"voice_mtime={voice_mtime:.0f}) — re-assembling from updated inputs"
+            )
+            output_path.unlink()
+            logger.info(f"EP{episode:02d} [{lang.upper()}] stale final removed, re-assembling")
 
     t0 = time.monotonic()
     logger.info(f"EP{episode:02d} [{lang.upper()}] starting assembly")
