@@ -11,6 +11,7 @@ from pathlib import Path
 PROJ = Path("/root/ai_bytes_pipeline")
 EP_DIR = PROJ / "output/week_01/ep01"
 STORYBOARD_PATH = EP_DIR / "ep01_storyboard_en.json"
+RENDER_PROPS_PATH = EP_DIR / "ep01_render_props.json"
 SCRIPT_PATH = EP_DIR / "ep01_script_EN.json"
 VOICE_PATH = EP_DIR / "ep01_voice_EN.mp3"
 VISUALS_PATH = EP_DIR / "ep01_visuals.mp4"
@@ -46,9 +47,27 @@ def probe(path: Path) -> dict:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Load storyboard & script
+# Storyboard: try ep01_storyboard_en.json first; fall back to render_props.json
+# (output/ is gitignored — the storyboard file only exists if explicitly written)
 # ─────────────────────────────────────────────────────────────────────────────
-storyboard = json.loads(STORYBOARD_PATH.read_text()) if STORYBOARD_PATH.exists() else []
+if STORYBOARD_PATH.exists():
+    storyboard = json.loads(STORYBOARD_PATH.read_text())
+elif RENDER_PROPS_PATH.exists():
+    render_props = json.loads(RENDER_PROPS_PATH.read_text())
+    storyboard = render_props.get("storyboard", [])
+    # Also derive script fields from render props if script JSON is missing
+    if not SCRIPT_PATH.exists():
+        _rp = render_props
+        _script_fallback = {
+            "voiceover": _rp.get("voiceover", ""),
+            "takeaway": _rp.get("takeaway", ""),
+        }
+else:
+    storyboard = []
 script = json.loads(SCRIPT_PATH.read_text()) if SCRIPT_PATH.exists() else {}
+if not script and RENDER_PROPS_PATH.exists():
+    _rp = json.loads(RENDER_PROPS_PATH.read_text())
+    script = {"voiceover": _rp.get("voiceover", ""), "takeaway": _rp.get("takeaway", "")}
 manifest = json.loads(MANIFEST_PATH.read_text()) if MANIFEST_PATH.exists() else {}
 
 # ── QA 1: Storyboard scene count ─────────────────────────────────────────────
