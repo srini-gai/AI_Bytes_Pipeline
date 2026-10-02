@@ -1,39 +1,24 @@
+/**
+ * TokenScene — 6-beat tokenization journey (v41 token-native).
+ *
+ * 11.02s ≈ 331 frames at 30fps. Each beat ≈55 frames (~1.8s).
+ *
+ *   Beat A (0–55f):    Full sentence types across canvas at 120px
+ *   Beat B (55–110f):  Camera rapidly zooms into the word, filling screen
+ *   Beat C (110–170f): Word stretches and physically splits into un|believ|able
+ *   Beat D (170–225f): Three token blocks separate, each fills canvas zone
+ *   Beat E (225–280f): Each block flips/rotates to reveal its integer ID
+ *   Beat F (280–331f): Token-ID blocks accelerate out of frame
+ *
+ * Props unchanged — same TokenSpec interface.
+ */
 import React from 'react';
-import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
+import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {TokenSpec} from '../types';
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const MONO = '"JetBrains Mono", "Fira Code", "SF Mono", monospace';
 const BG = '#050510';
-
-const TITLE_FADE_START = 5;
-const TITLE_FADE_END = 15;
-
-// ── stage 1 — full sentence ─────────────────────────────────────────────────
-const SENTENCE_FADE_IN_END = 20;
-const SENTENCE_FADE_OUT_START = 26;
-const SENTENCE_FADE_OUT_END = 34;
-
-// ── stage 2 — token boxes spread apart ──────────────────────────────────────
-const STAGE2_START = 31;
-const STAGE2_END = 90;
-const TOKEN_STAGGER = 4;      // frames between each token's fade-in start
-const TOKEN_FADE_FRAMES = 14;
-const BASE_GAP = 10;
-const MAX_GAP = 20;
-
-// ── stage 3 — ids / weights / pulse ─────────────────────────────────────────
-const STAGE3_START = 91;
-const STAGE3_FADE_FRAMES = 20;
-const PULSE_PERIOD = 50;
-
-const ROW_TOP = 860;
-const WEIGHT_MAX_H = 80;
-
-interface TokenSceneProps {
-  tokenSpec: TokenSpec;
-  accentColor: string;
-  durationInFrames: number;
-}
 
 function pseudoTokenId(text: string): number {
   let hash = 0;
@@ -43,156 +28,382 @@ function pseudoTokenId(text: string): number {
   return 100 + (hash % 9900);
 }
 
-export const TokenScene: React.FC<TokenSceneProps> = ({tokenSpec, accentColor}) => {
-  const frame = useCurrentFrame();
-  const {sentence, tokens, title, showIds, showWeights, weights} = tokenSpec;
-  const n = tokens.length;
-  const centerIndex = (n - 1) / 2;
+interface TokenSceneProps {
+  tokenSpec: TokenSpec;
+  accentColor: string;
+  durationInFrames: number;
+}
 
-  const titleOpacity = interpolate(
+export const TokenScene: React.FC<TokenSceneProps> = ({
+  tokenSpec,
+  accentColor,
+  durationInFrames,
+}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const {sentence, tokens, title, showIds} = tokenSpec;
+  const accent2 = '#34d399';
+
+  // ── Beat boundaries (proportional to duration) ────────────────────────────
+  const B = (frac: number) => Math.round(durationInFrames * frac);
+  const BEAT_A_END   = B(0.166);   // ~55f
+  const BEAT_B_START = B(0.15);
+  const BEAT_B_END   = B(0.332);   // ~110f
+  const BEAT_C_START = B(0.30);
+  const BEAT_C_END   = B(0.514);   // ~170f
+  const BEAT_D_START = B(0.48);
+  const BEAT_D_END   = B(0.68);    // ~225f
+  const BEAT_E_START = B(0.65);
+  const BEAT_E_END   = B(0.846);   // ~280f
+  const BEAT_F_START = B(0.82);
+
+  // ── Fade envelope ─────────────────────────────────────────────────────────
+  const sceneOpacity = interpolate(
     frame,
-    [TITLE_FADE_START, TITLE_FADE_END],
+    [0, 6, durationInFrames - 6, durationInFrames],
+    [0, 1, 1, 0.3],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Beat A — sentence types across canvas
+  // ══════════════════════════════════════════════════════════════════════════
+  const typewriterProgress = interpolate(
+    frame,
+    [4, BEAT_A_END - 8],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+  const sentenceCharsVisible = Math.floor(typewriterProgress * sentence.length);
+
+  const sentenceOpacity = interpolate(
+    frame,
+    [BEAT_B_START, BEAT_B_END],
+    [1, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Beat B — camera zooms into word (scale up, sentence fades)
+  // ══════════════════════════════════════════════════════════════════════════
+  const zoomScale = interpolate(
+    frame,
+    [BEAT_B_START, BEAT_B_END],
+    [1, 3.5],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Beat C — word stretches, splits into tokens
+  // ══════════════════════════════════════════════════════════════════════════
+  const splitProgress = interpolate(
+    frame,
+    [BEAT_C_START, BEAT_C_END],
     [0, 1],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  const sentenceOpacity = interpolate(
+  // Word visibility: appears as zoom finishes, stays through split
+  const wordOpacity = interpolate(
     frame,
-    [0, SENTENCE_FADE_IN_END, SENTENCE_FADE_OUT_START, SENTENCE_FADE_OUT_END],
+    [BEAT_B_START + 10, BEAT_B_END - 10, BEAT_D_END],
+    [0, 1, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Crack lines between tokens
+  const crackOpacity = interpolate(
+    frame,
+    [BEAT_C_START + 10, BEAT_C_START + 25],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Beat D — token blocks separate into full-canvas zones
+  // ══════════════════════════════════════════════════════════════════════════
+  const separateProgress = interpolate(
+    frame,
+    [BEAT_D_START, BEAT_D_END],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Token positions: stacked vertically, each taking a zone of the 1920h canvas
+  const tokenPositions = tokens.map((_, i) => {
+    const targetY = 320 + i * 480; // Spread across 320, 800, 1280
+    const startY = 960; // Center
+    return interpolate(separateProgress, [0, 1], [startY, targetY]);
+  });
+
+  // Scale tokens up as they separate
+  const tokenScale = interpolate(
+    separateProgress,
+    [0, 0.5, 1],
+    [1, 1.3, 1.15],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Box highlight glow
+  const boxGlow = interpolate(
+    separateProgress,
+    [0.3, 0.8],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Beat E — flip to reveal IDs
+  // ══════════════════════════════════════════════════════════════════════════
+  const flipProgressArr = tokens.map((_, i) => {
+    const stagger = i * 8;
+    return interpolate(
+      frame,
+      [BEAT_E_START + stagger, BEAT_E_START + stagger + 20],
+      [0, 1],
+      {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+    );
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Beat F — accelerate out of frame
+  // ══════════════════════════════════════════════════════════════════════════
+  const exitProgress = interpolate(
+    frame,
+    [BEAT_F_START, durationInFrames - 2],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Title display
+  const titleOpacity = interpolate(
+    frame,
+    [BEAT_C_END - 10, BEAT_C_END + 5, BEAT_F_START, BEAT_F_START + 10],
     [0, 1, 1, 0],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  const gap = interpolate(
-    frame,
-    [STAGE2_START, STAGE2_END],
-    [BASE_GAP, MAX_GAP],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-  );
-  const spreadFactor = gap - BASE_GAP;
-
-  const stage3Progress = interpolate(
-    frame,
-    [STAGE3_START, STAGE3_START + STAGE3_FADE_FRAMES],
-    [0, 1],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-  );
-
-  const showPulse = !showIds && !showWeights;
-  const pulseOpacity = 0.85 + 0.15 * Math.sin(((frame - STAGE3_START) / PULSE_PERIOD) * 2 * Math.PI);
+  // Phase detection for rendering
+  const inBeatAB = frame < BEAT_C_START;
+  const inSplitPhase = frame >= BEAT_C_START && frame < BEAT_D_START + 15;
+  const inSeparated = frame >= BEAT_D_START;
 
   return (
-    <AbsoluteFill style={{backgroundColor: BG}}>
-      <AbsoluteFill
-        style={{background: `radial-gradient(ellipse 800px 500px at 50% 55%, ${accentColor}14 0%, transparent 70%)`}}
-      />
+    <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity}}>
+      {/* Ambient glow */}
+      <AbsoluteFill style={{
+        background: `radial-gradient(ellipse 1000px 700px at 50% 50%, ${accentColor}10 0%, transparent 60%)`,
+      }} />
 
-      {title && (
-        <div
-          style={{
-            position: 'absolute', top: 140, left: 0, right: 0,
-            textAlign: 'center', opacity: titleOpacity, zIndex: 2,
-            fontSize: 20, fontWeight: 700, color: '#ffffff',
-            fontFamily: FONT, letterSpacing: 0.5, padding: '0 60px',
-          }}
-        >
-          {title}
-        </div>
+      {/* ── Beat A: Typewriter sentence ─────────────────────────────── */}
+      {sentenceOpacity > 0.01 && (
+        <AbsoluteFill style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: sentenceOpacity,
+          transform: frame >= BEAT_B_START
+            ? `scale(${zoomScale}) translateY(${interpolate(zoomScale, [1, 3.5], [0, -30])}px)`
+            : undefined,
+          zIndex: 2,
+        }}>
+          <div style={{
+            fontFamily: FONT,
+            fontSize: 100,
+            fontWeight: 900,
+            color: '#ffffff',
+            textAlign: 'center',
+            padding: '0 60px',
+            letterSpacing: 2,
+            textShadow: `0 0 40px ${accentColor}44`,
+          }}>
+            {sentence.slice(0, sentenceCharsVisible)}
+            {sentenceCharsVisible < sentence.length && (
+              <span style={{
+                opacity: Math.sin(frame * 0.4) > 0 ? 1 : 0,
+                color: accentColor,
+              }}>|</span>
+            )}
+          </div>
+        </AbsoluteFill>
       )}
 
-      {sentenceOpacity > 0 && (
-        <div
-          style={{
-            position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: sentenceOpacity, zIndex: 2,
-            fontSize: 32, fontWeight: 600, color: '#ffffff',
-            fontFamily: FONT, textAlign: 'center', padding: '0 100px',
-          }}
-        >
-          {sentence}
-        </div>
-      )}
+      {/* ── Beat C/D/E/F: Token blocks ─────────────────────────────── */}
+      {frame >= BEAT_B_END - 20 && (
+        <>
+          {/* During split phase: word with crack lines */}
+          {inSplitPhase && !inSeparated && (
+            <AbsoluteFill style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 3,
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: `${splitProgress * 40}px`,
+                opacity: wordOpacity,
+              }}>
+                {tokens.map((token, i) => (
+                  <React.Fragment key={i}>
+                    <span style={{
+                      fontFamily: FONT,
+                      fontSize: 120,
+                      fontWeight: 900,
+                      color: '#ffffff',
+                      textShadow: `0 0 30px ${accentColor}66`,
+                      display: 'inline-block',
+                      padding: `${splitProgress * 16}px ${splitProgress * 24}px`,
+                      borderRadius: splitProgress * 16,
+                      background: splitProgress > 0.3
+                        ? `${token.color ?? accentColor}${Math.round(splitProgress * 40).toString(16).padStart(2, '0')}`
+                        : 'transparent',
+                      transition: 'none',
+                    }}>
+                      {token.text}
+                    </span>
+                    {i < tokens.length - 1 && crackOpacity > 0 && (
+                      <div style={{
+                        width: 3,
+                        height: `${crackOpacity * 120}px`,
+                        background: `linear-gradient(to bottom, transparent, ${accent2}, transparent)`,
+                        opacity: crackOpacity * (1 - splitProgress * 0.5),
+                        flexShrink: 0,
+                      }} />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </AbsoluteFill>
+          )}
 
-      {frame >= STAGE2_START && (
-        <div
-          style={{
-            position: 'absolute', left: 0, right: 0, top: ROW_TOP,
-            display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start',
-            gap: `28px ${BASE_GAP}px`,
-            padding: '0 60px', zIndex: 2,
-          }}
-        >
-          {tokens.map((token, i) => {
-            const start = STAGE2_START + i * TOKEN_STAGGER;
-            const fadeInOpacity = interpolate(
-              frame,
-              [start, start + TOKEN_FADE_FRAMES],
-              [0, 1],
-              {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-            );
-            const boxOpacity = frame >= STAGE3_START && showPulse
-              ? fadeInOpacity * pulseOpacity
-              : fadeInOpacity;
+          {/* Separated token blocks — full canvas zones */}
+          {inSeparated && tokens.map((token, i) => {
+            const y = tokenPositions[i];
+            const flipP = flipProgressArr[i];
+            const isFlipped = flipP > 0.5;
+            const rotateY = flipP * 180;
 
-            const delta = i - centerIndex;
-            const translateX = delta * spreadFactor;
+            // Exit: each token flies in a different direction
+            const exitDirs = [
+              {x: -800, y: -400},
+              {x: 0, y: -600},
+              {x: 800, y: -400},
+            ];
+            const dir = exitDirs[i] ?? exitDirs[0];
+            const eased = exitProgress * exitProgress;
+            const exitX = dir.x * eased;
+            const exitY = dir.y * eased;
+            const exitRot = (i - 1) * 30 * eased;
+
             const color = token.color ?? accentColor;
-
-            const idOpacity = showIds ? stage3Progress : 0;
-            const weightValue = showWeights ? Math.max(0, Math.min(1, weights?.[i] ?? 0)) : 0;
-            const weightH = Math.round(WEIGHT_MAX_H * weightValue * stage3Progress);
+            const id = pseudoTokenId(token.text);
 
             return (
               <div
                 key={i}
                 style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  transform: `translateX(${translateX}px)`,
+                  position: 'absolute',
+                  left: '50%',
+                  top: y,
+                  transform: `translate(-50%, -50%) scale(${tokenScale})
+                    rotateY(${rotateY}deg)
+                    translate(${exitX}px, ${exitY}px) rotate(${exitRot}deg)`,
+                  transformStyle: 'preserve-3d',
+                  perspective: 1200,
+                  opacity: 1 - exitProgress * 0.8,
+                  zIndex: 4,
                 }}
               >
-                <div
-                  style={{
-                    padding: 8, borderRadius: 10,
-                    background: color, opacity: boxOpacity,
-                    boxShadow: token.highlight ? `0 0 24px ${color}aa` : `0 0 12px ${color}55`,
-                    border: token.highlight ? '2px solid #ffffff' : '2px solid transparent',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 26, fontWeight: 700, color: '#ffffff',
-                      fontFamily: FONT, whiteSpace: 'nowrap',
-                    }}
-                  >
+                {/* Front face: token text */}
+                <div style={{
+                  backfaceVisibility: 'hidden',
+                  padding: '24px 48px',
+                  borderRadius: 20,
+                  background: isFlipped ? 'transparent' : `${color}30`,
+                  border: isFlipped ? 'none' : `3px solid ${color}88`,
+                  boxShadow: boxGlow > 0 && !isFlipped
+                    ? `0 0 ${40 + boxGlow * 40}px ${color}44, inset 0 0 20px ${color}11`
+                    : 'none',
+                  display: isFlipped ? 'none' : 'block',
+                }}>
+                  <span style={{
+                    fontFamily: FONT,
+                    fontSize: 72,
+                    fontWeight: 900,
+                    color: '#ffffff',
+                    letterSpacing: 2,
+                    textShadow: `0 0 20px ${color}66`,
+                  }}>
                     {token.text}
                   </span>
                 </div>
 
-                {showIds && (
-                  <div
-                    style={{
-                      marginTop: 10, opacity: idOpacity,
-                      fontSize: 16, color: 'rgba(255,255,255,0.5)', fontFamily: FONT,
-                    }}
-                  >
-                    [{pseudoTokenId(token.text)}]
-                  </div>
-                )}
-
-                {showWeights && (
-                  <div style={{marginTop: 10, width: 4, height: WEIGHT_MAX_H, display: 'flex', alignItems: 'flex-end'}}>
-                    <div
-                      style={{
-                        width: 4, height: weightH, borderRadius: 2,
-                        background: accentColor, boxShadow: `0 0 10px ${accentColor}88`,
-                      }}
-                    />
-                  </div>
-                )}
+                {/* Back face: integer ID */}
+                <div style={{
+                  backfaceVisibility: 'hidden',
+                  transform: 'rotateY(180deg)',
+                  position: isFlipped ? 'relative' : 'absolute',
+                  top: isFlipped ? undefined : 0,
+                  left: isFlipped ? undefined : 0,
+                  display: isFlipped ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '20px 40px',
+                  borderRadius: 20,
+                  background: `${accent2}20`,
+                  border: `3px solid ${accent2}66`,
+                  boxShadow: `0 0 50px ${accent2}33`,
+                }}>
+                  <span style={{
+                    fontFamily: MONO,
+                    fontSize: 64,
+                    fontWeight: 700,
+                    color: accent2,
+                    letterSpacing: 3,
+                    textShadow: `0 0 20px ${accent2}66`,
+                  }}>
+                    {id}
+                  </span>
+                  <span style={{
+                    fontFamily: FONT,
+                    fontSize: 22,
+                    fontWeight: 500,
+                    color: 'rgba(255,255,255,0.4)',
+                    letterSpacing: 1,
+                  }}>
+                    {token.text}
+                  </span>
+                </div>
               </div>
             );
           })}
+        </>
+      )}
+
+      {/* Title label */}
+      {title && titleOpacity > 0.01 && (
+        <div style={{
+          position: 'absolute',
+          top: 100,
+          left: 0,
+          right: 0,
+          textAlign: 'center',
+          opacity: titleOpacity,
+          zIndex: 5,
+        }}>
+          <span style={{
+            fontFamily: FONT,
+            fontSize: 28,
+            fontWeight: 800,
+            color: 'rgba(255,255,255,0.7)',
+            letterSpacing: 4,
+            textTransform: 'uppercase',
+          }}>
+            {title}
+          </span>
         </div>
       )}
     </AbsoluteFill>

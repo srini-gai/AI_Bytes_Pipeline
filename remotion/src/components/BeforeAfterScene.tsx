@@ -1,20 +1,19 @@
 /**
- * BeforeAfterScene — Visual Director v3.1 (data-driven)
+ * BeforeAfterScene — Verbose vs terse token trains (v41 token-native).
  *
- * Shows a before/after comparison. The "before" state dominates the screen,
- * gets struck through, then flips to the "after" state.
+ * s08: 5.88s ≈ 176 frames at 30fps. 3 beats:
+ *   Beat A (0–59f):   Verbose prompt label + long token train slides in
+ *   Beat B (59–117f): Terse prompt label + short token train slides in below
+ *   Beat C (117–176f): "MORE TOKENS" / "FEWER TOKENS" labels + arrow comparison
  *
- * All display content comes from onScreenText props:
- *   [0] = before label (e.g. "VERBOSE PROMPT")
- *   [1] = after label  (e.g. "TERSE PROMPT")
- *   [2] = before detail (e.g. "MORE TOKENS")
- *   [3] = after detail  (e.g. "FEWER TOKENS")
+ * on_screen_text: ["VERBOSE PROMPT", "TERSE PROMPT", "MORE TOKENS", "FEWER TOKENS"]
+ * source_type=illustrative for this episode.
  *
- * Production guard: throws if onScreenText has fewer than 4 entries.
+ * Production guard: throws if onScreenText < 4 entries.
  */
 import React from 'react';
-import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
-import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress, smoothstep} from './beatUtils';
+import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import {BG, ACCENT, ACCENT2, FONT, MONO} from './beatUtils';
 import type {SceneBeat} from '../types';
 
 interface BeforeAfterSceneProps {
@@ -25,6 +24,24 @@ interface BeforeAfterSceneProps {
   carryFrom?: string;
 }
 
+// Token train config
+const BLOCK_W = 58;
+const BLOCK_H = 58;
+const BLOCK_GAP = 6;
+const TRAIN_LEFT = 60;
+
+// Verbose train: 14 blocks (long)
+const VERBOSE_COUNT = 14;
+// Terse train: 5 blocks (short)
+const TERSE_COUNT = 5;
+
+// Deterministic pseudo-token labels
+const VERBOSE_LABELS = [
+  'Can', 'you', 'please', 'explain', 'to', 'me', 'in',
+  'great', 'detail', 'how', 'token', 'ization', 'works', '?',
+];
+const TERSE_LABELS = ['How', 'do', 'tokens', 'work', '?'];
+
 export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
   beats,
   onScreenText,
@@ -34,203 +51,263 @@ export const BeforeAfterScene: React.FC<BeforeAfterSceneProps> = ({
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  // Production guard: require at least 4 onScreenText entries
+  // Production guard
   if (onScreenText.length < 4) {
     throw new Error(
       `[PRODUCTION GUARD] BeforeAfterScene: onScreenText must have ≥4 entries ` +
       `[beforeLabel, afterLabel, beforeDetail, afterDetail], got ${onScreenText.length}. ` +
-      `Populate the storyboard on_screen_text.`
+      `Populate the storyboard on_screen_text.`,
     );
   }
 
-  const beforeLabel  = onScreenText[0];
-  const afterLabel   = onScreenText[1];
-  const beforeDetail = onScreenText[2];
-  const afterDetail  = onScreenText[3];
+  const verboseLabel = onScreenText[0]; // "VERBOSE PROMPT"
+  const terseLabel   = onScreenText[1]; // "TERSE PROMPT"
+  const moreTokens   = onScreenText[2]; // "MORE TOKENS"
+  const fewerTokens  = onScreenText[3]; // "FEWER TOKENS"
 
-  const b0 = beats[0] ?? {start: 0, end: 0.8};
-  const b1 = beats[1] ?? {start: 0.8, end: 1.6};
-  const b2 = beats[2] ?? {start: 1.6, end: 3.0};
+  const totalFrames = Math.round(fps * 5.88);
+  const beatLen = Math.round(totalFrames / 3);
 
-  // ── Beat 0: wrong answer card enters from top, settling in centre ────────
-  const slamP  = easeOut(frame, fps, b0.start, b0.end);
-  const cardY  = interpolate(slamP, [0, 1], [-80, 0]);
-  // Screen shake on slam impact (frames around b0.end)
-  const impactF  = Math.round(b0.end * fps);
-  const shake    = interpolate(frame, [impactF, impactF + 6], [10, 0], {
-    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-  });
-  const shakeX = Math.sin(frame * 5.1) * shake;
+  // Beat boundaries (from props or proportional defaults)
+  const b0End = beats[0]?.end ? Math.round(beats[0].end * fps) : beatLen;
+  const b1Start = beats[1]?.start ? Math.round(beats[1].start * fps) : Math.round(beatLen * 0.85);
+  const b1End = beats[1]?.end ? Math.round(beats[1].end * fps) : beatLen * 2;
+  const b2Start = beats[2]?.start ? Math.round(beats[2].start * fps) : Math.round(beatLen * 1.85);
 
-  // ── Beat 1: red diagonal strike-through across the answer ────────────────
-  const strikeP  = linearProgress(frame, fps, b1.start, b1.end);
-  // WRONG stamp drops down onto the card
-  const wrongP   = easeOut(frame, fps, b1.start + 0.2, b1.end);
-  const wrongY   = interpolate(wrongP, [0, 1], [-180, 0]);
+  // Scene fade
+  const sceneOpacity = interpolate(
+    frame,
+    [0, 6, totalFrames - 6, totalFrames],
+    [0, 1, 1, 0.3],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
 
-  // ── Beat 2: card flips — grounded answer revealed ────────────────────────
-  const flipP    = easeOut(frame, fps, b2.start, b2.end);
-  // scaleX: 1 → 0 → 1 (3D card flip)
-  const flipX    = interpolate(flipP, [0, 0.45, 0.55, 1], [1, 0.01, 0.01, 1]);
-  const wrongAlpha = interpolate(flipP, [0, 0.42], [1, 0]);
-  const rightAlpha = interpolate(flipP, [0.58, 1], [0, 1]);
-  const sourceP    = easeOut(frame, fps, b2.start + 0.5, b2.end);
+  // ── Beat A: Verbose train ─────────────────────────────────────────────────
+  const verboseLabelOpacity = interpolate(
+    frame, [4, 16], [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
 
-  // Camera: slow push-in during b0 to make wrong answer feel huge
-  const camScale = interpolate(slamP, [0, 1], [1.12, 1]);
+  // ── Beat B: Terse train ───────────────────────────────────────────────────
+  const terseLabelOpacity = interpolate(
+    frame, [b1Start, b1Start + 14], [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // ── Beat C: Comparison labels ─────────────────────────────────────────────
+  const compLabelOpacity = interpolate(
+    frame, [b2Start + 4, b2Start + 18], [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Arrow from long to short
+  const arrowProgress = interpolate(
+    frame, [b2Start + 10, b2Start + 30], [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Layout positions
+  const verboseY = 320;
+  const terseY = 960;
 
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: BG,
-        overflow: 'hidden',
-        transform: `translateX(${shakeX}px)`,
-      }}
-    >
-      {/* Vignette bg glow — red tint on wrong side */}
+    <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity, overflow: 'hidden'}}>
+      {/* Background glow */}
       <AbsoluteFill style={{
-        background: `radial-gradient(ellipse 1080px 900px at 50% 48%,
-          ${wrongAlpha > 0 ? 'rgba(239,68,68,0.12)' : `${accent2}10`} 0%,
-          transparent 70%)`,
-      }}/>
+        background: `radial-gradient(ellipse 900px 600px at 50% 50%, ${accentColor}0c 0%, transparent 70%)`,
+      }} />
 
-      {/* ── Main card area — scales with camera ─────────────────────────── */}
-      <AbsoluteFill style={{
-        transform: `scale(${camScale})`,
-        transformOrigin: '50% 48%',
+      {/* ── Verbose Prompt Section ──────────────────────────────────────── */}
+      <div style={{
+        position: 'absolute', left: TRAIN_LEFT, top: verboseY - 60,
+        opacity: verboseLabelOpacity, zIndex: 2,
       }}>
-
-        {/* ── WRONG STATE (beats 0–1 + first half of flip) ────────────────── */}
-        <AbsoluteFill style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingTop: 200,
-          opacity: wrongAlpha,
-          transform: `translateY(${cardY}px)`,
+        <span style={{
+          fontFamily: FONT, fontSize: 26, fontWeight: 800,
+          color: 'rgba(239,68,68,0.8)', letterSpacing: 3,
         }}>
-          {/* Wrong answer — dominates 80% of screen width */}
-          <div style={{
-            width: 960,
-            background: 'rgba(239,68,68,0.07)',
-            border: '3px solid rgba(239,68,68,0.5)',
-            borderRadius: 28,
-            padding: '70px 64px 60px',
-            position: 'relative',
-            transform: `scaleX(${wrongAlpha > 0 ? flipX : 1})`,
-            transformOrigin: '50% 50%',
-          }}>
-            {/* Before label chip */}
-            <div style={{
-              fontFamily: FONT, fontSize: 22, fontWeight: 700, color: 'rgba(255,255,255,0.4)',
-              letterSpacing: 4, textTransform: 'uppercase', marginBottom: 32, textAlign: 'center',
-            }}>{beforeLabel}</div>
+          {verboseLabel}
+        </span>
+      </div>
 
-            {/* Before detail */}
-            <div style={{
-              fontFamily: FONT, fontSize: 72, fontWeight: 900,
-              color: 'rgba(255,255,255,0.88)', lineHeight: 1.25, textAlign: 'center',
-              letterSpacing: -1,
+      {/* Verbose token train — wrapping across two rows */}
+      <div style={{
+        position: 'absolute', left: TRAIN_LEFT, top: verboseY,
+        display: 'flex', flexWrap: 'wrap', gap: BLOCK_GAP,
+        width: 960, opacity: verboseLabelOpacity, zIndex: 2,
+      }}>
+        {VERBOSE_LABELS.map((tok, i) => {
+          const blockDelay = i * 2.5;
+          const blockOpacity = interpolate(
+            frame, [8 + blockDelay, 8 + blockDelay + 8], [0, 1],
+            {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+          );
+          const slideX = interpolate(
+            frame, [8 + blockDelay, 8 + blockDelay + 10], [60, 0],
+            {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+          );
+
+          return (
+            <div key={i} style={{
+              width: BLOCK_W, height: BLOCK_H,
+              borderRadius: 10,
+              background: 'rgba(239,68,68,0.15)',
+              border: '2px solid rgba(239,68,68,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: blockOpacity,
+              transform: `translateX(${slideX}px)`,
             }}>
-              {beforeDetail}
-            </div>
-
-            {/* Strike-through line (draws L→R across full card) */}
-            {strikeP > 0 && (
-              <div style={{
-                position: 'absolute',
-                top: '54%',
-                left: 0,
-                height: 6,
-                width: `${smoothstep(strikeP) * 100}%`,
-                background: 'linear-gradient(90deg, #ef4444, #ff6666)',
-                borderRadius: 3,
-                boxShadow: '0 0 18px rgba(239,68,68,0.8)',
-              }}/>
-            )}
-          </div>
-
-          {/* WRONG stamp — drops from above the card */}
-          {wrongP > 0 && (
-            <div style={{
-              position: 'absolute',
-              top: '28%',
-              transform: `translateY(${wrongY}px)`,
-              opacity: smoothstep(wrongP),
-              fontFamily: FONT, fontSize: 180, fontWeight: 900,
-              color: '#ef4444',
-              letterSpacing: -8,
-              textShadow: '0 0 80px rgba(239,68,68,0.5)',
-              lineHeight: 1,
-              userSelect: 'none',
-            }}>
-              ✗
-            </div>
-          )}
-        </AbsoluteFill>
-
-        {/* ── CORRECT STATE (second half of flip) ─────────────────────────── */}
-        <AbsoluteFill style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingTop: 200,
-          opacity: rightAlpha,
-        }}>
-          <div style={{
-            width: 960,
-            background: `linear-gradient(135deg, ${accent2}10, ${accentColor}0a)`,
-            border: `3px solid ${accent2}70`,
-            borderRadius: 28,
-            padding: '70px 64px 60px',
-            position: 'relative',
-            transform: `scaleX(${rightAlpha > 0 ? flipX : 1})`,
-            transformOrigin: '50% 50%',
-          }}>
-            {/* After label chip */}
-            <div style={{
-              fontFamily: FONT, fontSize: 22, fontWeight: 700, color: accent2,
-              letterSpacing: 4, textTransform: 'uppercase', marginBottom: 32, textAlign: 'center',
-            }}>{afterLabel}</div>
-
-            {/* After detail */}
-            <div style={{
-              fontFamily: FONT, fontSize: 72, fontWeight: 900,
-              color: '#ffffff', lineHeight: 1.25, textAlign: 'center', letterSpacing: -1,
-            }}>
-              {afterDetail}
-            </div>
-
-            {/* Checkmark badge */}
-            <div style={{
-              marginTop: 40, display: 'flex', justifyContent: 'center',
-              opacity: smoothstep(sourceP),
-              transform: `scale(${interpolate(sourceP, [0, 1], [0.7, 1])})`,
-            }}>
-              <div style={{
-                background: `${accent2}20`, border: `2px solid ${accent2}99`,
-                borderRadius: 50, padding: '14px 36px',
-                fontFamily: FONT, fontSize: 28, fontWeight: 700, color: accent2,
-                boxShadow: `0 0 30px ${accent2}44`,
+              <span style={{
+                fontFamily: MONO, fontSize: 11, fontWeight: 600,
+                color: 'rgba(239,68,68,0.7)', letterSpacing: 0.3,
               }}>
-                ✓ {afterLabel}
-              </div>
+                {tok}
+              </span>
             </div>
-          </div>
+          );
+        })}
+      </div>
 
-          {/* Bottom label */}
-          <div style={{
-            marginTop: 36,
-            opacity: smoothstep(sourceP),
-            fontFamily: FONT, fontSize: 36, fontWeight: 700,
-            color: accentColor, letterSpacing: 3, textTransform: 'uppercase',
+      {/* Verbose count badge */}
+      {compLabelOpacity > 0.01 && (
+        <div style={{
+          position: 'absolute',
+          left: TRAIN_LEFT + VERBOSE_COUNT * (BLOCK_W + BLOCK_GAP) - (BLOCK_W + BLOCK_GAP) * Math.max(0, VERBOSE_COUNT - 7),
+          top: verboseY + BLOCK_H + BLOCK_GAP + BLOCK_H + 20,
+          opacity: compLabelOpacity, zIndex: 3,
+        }}>
+          <span style={{
+            fontFamily: FONT, fontSize: 22, fontWeight: 800,
+            color: 'rgba(239,68,68,0.8)', letterSpacing: 2,
           }}>
-            {afterDetail}
-          </div>
-        </AbsoluteFill>
-      </AbsoluteFill>
+            {moreTokens}
+          </span>
+        </div>
+      )}
+
+      {/* ── Divider ────────────────────────────────────────────────────── */}
+      <div style={{
+        position: 'absolute', left: 80, right: 80,
+        top: (verboseY + BLOCK_H * 2 + BLOCK_GAP + 80 + terseY - 80) / 2,
+        height: 1,
+        background: `linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)`,
+        opacity: terseLabelOpacity,
+        zIndex: 1,
+      }} />
+
+      {/* ── Terse Prompt Section ────────────────────────────────────────── */}
+      <div style={{
+        position: 'absolute', left: TRAIN_LEFT, top: terseY - 60,
+        opacity: terseLabelOpacity, zIndex: 2,
+      }}>
+        <span style={{
+          fontFamily: FONT, fontSize: 26, fontWeight: 800,
+          color: `${accent2}cc`, letterSpacing: 3,
+        }}>
+          {terseLabel}
+        </span>
+      </div>
+
+      {/* Terse token train — single short row */}
+      <div style={{
+        position: 'absolute', left: TRAIN_LEFT, top: terseY,
+        display: 'flex', gap: BLOCK_GAP,
+        opacity: terseLabelOpacity, zIndex: 2,
+      }}>
+        {TERSE_LABELS.map((tok, i) => {
+          const blockDelay = i * 3;
+          const blockOpacity = interpolate(
+            frame, [b1Start + 6 + blockDelay, b1Start + 6 + blockDelay + 8], [0, 1],
+            {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+          );
+          const slideX = interpolate(
+            frame, [b1Start + 6 + blockDelay, b1Start + 6 + blockDelay + 10], [40, 0],
+            {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+          );
+
+          return (
+            <div key={i} style={{
+              width: BLOCK_W, height: BLOCK_H,
+              borderRadius: 10,
+              background: `${accent2}18`,
+              border: `2px solid ${accent2}55`,
+              boxShadow: `0 0 10px ${accent2}22`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: blockOpacity,
+              transform: `translateX(${slideX}px)`,
+            }}>
+              <span style={{
+                fontFamily: MONO, fontSize: 12, fontWeight: 600,
+                color: `${accent2}99`, letterSpacing: 0.3,
+              }}>
+                {tok}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Terse count badge */}
+      {compLabelOpacity > 0.01 && (
+        <div style={{
+          position: 'absolute',
+          left: TRAIN_LEFT + TERSE_COUNT * (BLOCK_W + BLOCK_GAP) + 20,
+          top: terseY + 14,
+          opacity: compLabelOpacity, zIndex: 3,
+        }}>
+          <span style={{
+            fontFamily: FONT, fontSize: 22, fontWeight: 800,
+            color: `${accent2}cc`, letterSpacing: 2,
+          }}>
+            {fewerTokens}
+          </span>
+        </div>
+      )}
+
+      {/* ── Arrow: long train → short train (Beat C) ───────────────────── */}
+      {arrowProgress > 0.01 && (
+        <svg
+          viewBox="0 0 1080 1920"
+          width={1080} height={1920}
+          style={{position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none'}}
+        >
+          {/* Curved arrow from verbose area down to terse area */}
+          <path
+            d={`M ${540} ${verboseY + BLOCK_H * 2 + BLOCK_GAP + 60}
+                C ${540} ${(verboseY + terseY) / 2},
+                  ${540} ${(verboseY + terseY) / 2},
+                  ${540} ${terseY - 70}`}
+            fill="none"
+            stroke={accentColor}
+            strokeWidth={3}
+            strokeDasharray={`${arrowProgress * 400} 600`}
+            opacity={0.5}
+          />
+          {/* Arrowhead */}
+          {arrowProgress > 0.8 && (
+            <polygon
+              points={`${540 - 10},${terseY - 80} ${540},${terseY - 65} ${540 + 10},${terseY - 80}`}
+              fill={accentColor}
+              opacity={0.6}
+            />
+          )}
+        </svg>
+      )}
+
+      {/* Bottom label */}
+      {compLabelOpacity > 0.01 && (
+        <div style={{
+          position: 'absolute', bottom: 250, left: 0, right: 0,
+          textAlign: 'center', opacity: compLabelOpacity, zIndex: 5,
+        }}>
+          <span style={{
+            fontFamily: FONT, fontSize: 28, fontWeight: 900,
+            color: accentColor, letterSpacing: 4,
+          }}>
+            WRITE SHORT, SAVE TOKENS
+          </span>
+        </div>
+      )}
     </AbsoluteFill>
   );
 };

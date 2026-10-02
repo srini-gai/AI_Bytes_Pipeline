@@ -1,20 +1,20 @@
 /**
- * TakeawayScene — the "Key Takeaway" summary scene.
+ * TakeawayScene — Token convergence takeaway (v41 token-native).
  *
- * Shows a single bold statement with animated visual summary.
- * Sits just before the CTA scene at the end of every episode.
+ * s09: 2.86s ≈ 86 frames at 30fps.
+ *   Beat A (0–28f):   Scattered token blocks visible across canvas
+ *   Beat B (28–55f):  Tokens converge inward to center point
+ *   Beat C (55–86f):  Collapsed tokens form glow, takeaway text emerges
  *
- * Props:
- *   text          — the takeaway statement (≤ 10 words)
- *   accentColor   — theme accent hex
- *   durationInFrames
+ * on_screen_text: ["AI processes TOKENS", "not words directly"]
+ * NO RAG icons, NO pipeline diagrams. Pure token convergence.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {SceneBeat} from '../types';
-import {easeOut, smoothstep} from './beatUtils';
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const MONO = '"JetBrains Mono", "Fira Code", "SF Mono", monospace';
 const BG = '#050510';
 
 interface TakeawaySceneProps {
@@ -22,10 +22,30 @@ interface TakeawaySceneProps {
   accentColor: string;
   accent2?: string;
   durationInFrames: number;
-  // v3 props
   beats?: SceneBeat[];
   onScreenText?: string[];
 }
+
+// Scattered token positions (deterministic, spread across 1080×1920)
+function seededRand(seed: number): number {
+  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+const TOKEN_COUNT = 12;
+const TOKEN_TEXTS = ['un', '1726', 'believ', '42891', 'able', '481', 'tok', 'vec', 'emb', 'att', 'The', 'cat'];
+
+// Generate scattered positions
+const SCATTER_POSITIONS = Array.from({length: TOKEN_COUNT}, (_, i) => ({
+  x: 80 + seededRand(i * 7 + 1) * 920,
+  y: 200 + seededRand(i * 13 + 3) * 1400,
+  rot: (seededRand(i * 19 + 5) - 0.5) * 40,
+  scale: 0.6 + seededRand(i * 23 + 7) * 0.6,
+}));
+
+// Center convergence point
+const CENTER_X = 540;
+const CENTER_Y = 860;
 
 export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
   text,
@@ -38,118 +58,164 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  // ── v3 icon-row mode ─────────────────────────────────────────────────────
-  if (beats && beats.length >= 2) {
-    // B0: 3 concept icons slide in from bottom (staggered)
-    // B1: connector lines draw between them
-    // B2: takeaway text rises below
-    const iconP     = easeOut(frame, fps, beats[0].start, beats[0].end);
-    const connP     = easeOut(frame, fps, beats[1].start, beats[1].end);
-    const textBeatP = beats[2] ? easeOut(frame, fps, beats[2].start, beats[2].end) : connP;
+  const totalFrames = durationInFrames;
 
-    const sceneOp = interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'});
+  // Beat boundaries
+  const convergeStart = Math.round(totalFrames * 0.33);
+  const convergeEnd = Math.round(totalFrames * 0.64);
+  const textStart = Math.round(totalFrames * 0.60);
 
-    const ICONS  = ['🔍', '📚', '🤖'];
-    const LABELS = onScreenText?.slice(0, 3) ?? ['Retrieve', 'Context', 'Generate'];
-    const ICON_Y = 820;
-    const ICON_XS = [200, 540, 880];
-    const ICON_R = 80;
-
-    return (
-      <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOp}}>
-        <AbsoluteFill style={{
-          background: `radial-gradient(ellipse 900px 700px at 50% 43%, ${accentColor}0c 0%, transparent 65%)`,
-        }}/>
-
-        <svg viewBox="0 0 1080 1920" width={1080} height={1920} style={{position:'absolute',inset:0}}>
-          {/* Connector lines draw L→R */}
-          {[0, 1].map(i => {
-            const x1 = ICON_XS[i] + ICON_R;
-            const x2 = ICON_XS[i + 1] - ICON_R;
-            const lineP = smoothstep(interpolate(connP, [i * 0.3, i * 0.3 + 0.6], [0, 1], {
-              extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-            }));
-            return (
-              <line key={i} x1={x1} y1={ICON_Y} x2={x1 + (x2 - x1) * lineP} y2={ICON_Y}
-                stroke={`${accentColor}88`} strokeWidth={3} strokeDasharray="8 4"/>
-            );
-          })}
-
-          {/* Icon circles */}
-          {ICONS.map((icon, i) => {
-            const delay = i / ICONS.length * 0.5;
-            const ip = smoothstep(interpolate(iconP, [delay, delay + 0.5], [0, 1], {
-              extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-            }));
-            const ty = interpolate(ip, [0, 1], [60, 0]);
-            const col = i === 1 ? accent2 : accentColor;
-
-            return (
-              <g key={i} opacity={ip} transform={`translate(0, ${ty})`}>
-                <circle cx={ICON_XS[i]} cy={ICON_Y} r={ICON_R}
-                  fill={`${col}15`} stroke={col} strokeWidth={2.5}/>
-                <text x={ICON_XS[i]} y={ICON_Y + 10} textAnchor="middle" dominantBaseline="middle"
-                  fontSize={40}>{icon}</text>
-                <text x={ICON_XS[i]} y={ICON_Y + ICON_R + 36} textAnchor="middle"
-                  fill={col} fontFamily={FONT} fontSize={22} fontWeight="700">
-                  {LABELS[i]}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* Takeaway text rises from below */}
-        <div style={{
-          position: 'absolute', bottom: 300, left: 60, right: 60,
-          opacity: smoothstep(textBeatP),
-          transform: `translateY(${interpolate(textBeatP, [0, 1], [40, 0])}px)`,
-          textAlign: 'center',
-        }}>
-          <div style={{
-            fontSize: 18, fontWeight: 700, color: accentColor, letterSpacing: 6,
-            textTransform: 'uppercase', fontFamily: FONT, marginBottom: 20,
-          }}>Key Takeaway</div>
-          <div style={{
-            fontSize: 52, fontWeight: 800, color: '#fff', lineHeight: 1.3,
-            fontFamily: FONT, letterSpacing: -0.5, textShadow: `0 0 60px ${accentColor}44`,
-          }}>{text}</div>
-        </div>
-      </AbsoluteFill>
-    );
-  }
-
-  // ── Legacy spring-based mode (unchanged) ────────────────────────────────
+  // Scene opacity
   const sceneOpacity = interpolate(
-    frame,
-    [0, 8, durationInFrames - 10, durationInFrames],
-    [0, 1, 1, 0],
+    frame, [0, 6, totalFrames - 4, totalFrames], [0, 1, 1, 0.4],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  const ruleWidth = interpolate(frame, [8, 30], [0, 80], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const labelOpacity = interpolate(frame, [10, 25], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const labelY = interpolate(frame, [10, 25], [12, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const textOpacity = interpolate(frame, [22, 40], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const textY = interpolate(frame, [22, 40], [50, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const glowSize = 600 + 80 * Math.sin((frame / 50) * 2 * Math.PI);
-  const checkOpacity = interpolate(frame, [38, 55], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const checkScale = interpolate(frame, [38, 55], [0.3, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  // Convergence progress: 0 = scattered, 1 = converged to center
+  const convergeP = interpolate(
+    frame, [convergeStart, convergeEnd], [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+  // Ease-in-out
+  const easedConverge = convergeP < 0.5
+    ? 2 * convergeP * convergeP
+    : 1 - Math.pow(-2 * convergeP + 2, 2) / 2;
+
+  // Token opacity: visible scattered, then shrink at center
+  const tokenOpacity = interpolate(
+    frame, [4, 14, convergeEnd - 4, convergeEnd + 8], [0, 0.8, 0.8, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Center glow grows as tokens converge
+  const glowIntensity = interpolate(
+    easedConverge, [0, 0.5, 1], [0, 0.2, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Text emergence
+  const textOpacity = interpolate(
+    frame, [textStart, textStart + 14], [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+  const textScale = interpolate(
+    frame, [textStart, textStart + 14], [0.7, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // On-screen text lines
+  const line1 = onScreenText?.[0] ?? 'AI processes TOKENS';
+  const line2 = onScreenText?.[1] ?? 'not words directly';
 
   return (
-    <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity}}>
-      <AbsoluteFill style={{background: `radial-gradient(ellipse ${glowSize}px ${glowSize * 0.6}px at 50% 50%, ${accentColor}0f 0%, transparent 70%)`}}/>
-      <AbsoluteFill style={{backgroundImage: `linear-gradient(${accentColor}08 1px, transparent 1px), linear-gradient(90deg, ${accentColor}08 1px, transparent 1px)`, backgroundSize: '80px 80px'}}/>
-      <AbsoluteFill style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'0 80px',gap:0}}>
-        <div style={{width:72,height:72,borderRadius:'50%',background:`linear-gradient(135deg, ${accentColor} 0%, ${accent2} 100%)`,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:36,opacity:checkOpacity,transform:`scale(${checkScale})`,boxShadow:`0 0 40px ${accentColor}55`}}>
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <path d="M7 18L15 26L29 10" stroke="#ffffff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-        <div style={{opacity:labelOpacity,transform:`translateY(${labelY}px)`,fontFamily:FONT,fontSize:18,fontWeight:700,color:accentColor,letterSpacing:6,textTransform:'uppercase',marginBottom:20}}>Key Takeaway</div>
-        <div style={{width:`${ruleWidth}%`,height:2,background:`linear-gradient(90deg, transparent, ${accentColor}, ${accent2}, transparent)`,marginBottom:32,opacity:0.8}}/>
-        <div style={{opacity:textOpacity,transform:`translateY(${textY}px)`,fontFamily:FONT,fontSize:56,fontWeight:800,color:'#ffffff',lineHeight:1.3,textAlign:'center',letterSpacing:-0.5,textShadow:`0 0 60px ${accentColor}44`}}>{text}</div>
-      </AbsoluteFill>
+    <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity, overflow: 'hidden'}}>
+      {/* Center convergence glow */}
+      <AbsoluteFill style={{
+        background: `radial-gradient(circle ${200 + glowIntensity * 300}px at ${CENTER_X}px ${CENTER_Y}px,
+          ${accentColor}${Math.round(glowIntensity * 0.25 * 255).toString(16).padStart(2, '0')} 0%,
+          transparent 70%)`,
+      }} />
+
+      {/* Flash at convergence peak */}
+      {glowIntensity > 0.9 && (
+        <AbsoluteFill style={{
+          background: `radial-gradient(circle 120px at ${CENTER_X}px ${CENTER_Y}px,
+            rgba(255,255,255,${(glowIntensity - 0.9) * 3}) 0%, transparent 80%)`,
+        }} />
+      )}
+
+      {/* Scattered / converging token blocks */}
+      {tokenOpacity > 0.01 && SCATTER_POSITIONS.map((pos, i) => {
+        const currentX = pos.x + (CENTER_X - pos.x) * easedConverge;
+        const currentY = pos.y + (CENTER_Y - pos.y) * easedConverge;
+        const currentRot = pos.rot * (1 - easedConverge);
+        const currentScale = pos.scale * (1 - easedConverge * 0.6);
+
+        const color = i % 2 === 0 ? accentColor : accent2;
+
+        return (
+          <div key={i} style={{
+            position: 'absolute',
+            left: currentX,
+            top: currentY,
+            transform: `translate(-50%, -50%) rotate(${currentRot}deg) scale(${currentScale})`,
+            opacity: tokenOpacity,
+            zIndex: 2,
+          }}>
+            <div style={{
+              width: 64,
+              height: 56,
+              borderRadius: 10,
+              background: `${color}18`,
+              border: `2px solid ${color}55`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <span style={{
+                fontFamily: MONO,
+                fontSize: 13,
+                fontWeight: 600,
+                color: `${color}aa`,
+              }}>
+                {TOKEN_TEXTS[i]}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Takeaway text emerges from convergence point */}
+      {textOpacity > 0.01 && (
+        <AbsoluteFill style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: textOpacity,
+          transform: `scale(${textScale})`,
+          zIndex: 5,
+          padding: '0 60px',
+        }}>
+          {/* Key takeaway label */}
+          <div style={{
+            fontFamily: FONT,
+            fontSize: 18,
+            fontWeight: 700,
+            color: accentColor,
+            letterSpacing: 6,
+            textTransform: 'uppercase',
+            marginBottom: 24,
+          }}>
+            Key Takeaway
+          </div>
+
+          {/* Main text */}
+          <div style={{
+            fontFamily: FONT,
+            fontSize: 52,
+            fontWeight: 900,
+            color: '#ffffff',
+            lineHeight: 1.3,
+            textAlign: 'center',
+            letterSpacing: -0.5,
+            textShadow: `0 0 60px ${accentColor}55`,
+            marginBottom: 12,
+          }}>
+            {line1}
+          </div>
+          <div style={{
+            fontFamily: FONT,
+            fontSize: 36,
+            fontWeight: 700,
+            color: `${accent2}cc`,
+            textAlign: 'center',
+            letterSpacing: 1,
+          }}>
+            {line2}
+          </div>
+        </AbsoluteFill>
+      )}
     </AbsoluteFill>
   );
 };

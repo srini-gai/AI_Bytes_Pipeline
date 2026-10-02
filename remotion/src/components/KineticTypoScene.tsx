@@ -1,16 +1,18 @@
 /**
- * KineticTypoScene — HOOK and key-statement scenes.
+ * KineticTypoScene — HOOK scene (v41 token-native).
  *
- * Behaviour:
- *  Phase 1 (0–18 frames):  Text assembles char-by-char with a glitch flicker
- *  Phase 2 (18–36 frames): Text holds fully visible, slight scale pulse
- *  Phase 3 (36–54 frames): Text shatters / dissolves outward
+ * 2-beat full-canvas shatter:
+ *   Beat A (0–40%): Giant text SLAMS onto canvas from above with bounce
+ *   Beat B (40%–100%): Text cracks down center, fragments fly outward;
+ *                       subtitle (on_screen_text[1]) emerges from crack
  *
  * Props:
- *   text          — the bold statement to display (≤ 10 words)
+ *   text          — the bold word to display (e.g. "WORD")
  *   accentColor   — theme accent hex
  *   glitchColor   — optional second glitch colour (defaults to accent2)
+ *   subtitle      — text that emerges during shatter (e.g. "NOT ONE.")
  *   durationInFrames — total frame count for the scene
+ *   transparentBg — true when compositing over generated video
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -24,27 +26,14 @@ function seededRand(seed: number): number {
   return x - Math.floor(x);
 }
 
-// Characters for glitch substitution
-const GLITCH_CHARS = '!@#$%^&*<>?/\\|[]{}0123456789';
-
 interface KineticTypoSceneProps {
   text: string;
   accentColor: string;
   glitchColor?: string;
   subtitle?: string;
   durationInFrames: number;
-  /** When true, background is transparent so a video layer behind is visible. */
   transparentBg?: boolean;
 }
-
-const ASSEMBLE_START = 0;
-const ASSEMBLE_END = 18;
-const HOLD_START = 18;
-const HOLD_END = 42;
-const SHATTER_START = 42;
-const SHATTER_END = 60;
-
-const CHAR_STAGGER = 2; // frames per character reveal
 
 export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   text,
@@ -56,171 +45,216 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const glitch2 = glitchColor ?? '#34d399';
+  const accent2 = glitchColor ?? '#34d399';
 
-  const chars = text.split('');
-  const n = chars.length;
+  // ── Timing (relative to durationInFrames) ─────────────────────────────────
+  const slamEnd = Math.round(durationInFrames * 0.35);      // ~31f for 88f scene
+  const crackStart = Math.round(durationInFrames * 0.38);   // ~33f
+  const shatterStart = Math.round(durationInFrames * 0.45); // ~40f
+  const subtitleStart = Math.round(durationInFrames * 0.55);// ~48f
 
-  // Overall opacity envelope for the whole scene
-  const sceneOpacity = interpolate(
-    frame,
-    [0, 8, durationInFrames - 12, durationInFrames],
-    [0, 1, 1, 0],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-  );
-
-  // Subtle background glow that intensifies during HOLD phase
-  const glowOpacity = interpolate(
-    frame,
-    [HOLD_START, HOLD_END, SHATTER_START + 10],
-    [0.08, 0.25, 0],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-  );
-
-  // Scale pulse during HOLD
-  const scaleSpring = spring({
+  // ── Beat A: Slam from above ───────────────────────────────────────────────
+  const slamSpring = spring({
     fps,
-    frame: Math.max(0, frame - HOLD_START),
-    config: {damping: 14, stiffness: 60, mass: 0.6},
-    durationInFrames: 30,
-  });
-  const holdScale = interpolate(scaleSpring, [0, 1], [0.93, 1.0]);
-
-  // Shatter progress [0,1]
-  const shatterProgress = interpolate(
     frame,
-    [SHATTER_START, SHATTER_END],
+    config: {damping: 10, stiffness: 180, mass: 0.8},
+    durationInFrames: slamEnd,
+  });
+  const slamY = interpolate(slamSpring, [0, 1], [-600, 0]);
+  const slamScale = interpolate(slamSpring, [0, 1], [1.4, 1.0]);
+
+  // Impact flash
+  const impactFlash = frame >= slamEnd - 4 && frame <= slamEnd + 6
+    ? interpolate(frame, [slamEnd - 4, slamEnd, slamEnd + 6], [0, 0.5, 0], {
+        extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+      })
+    : 0;
+
+  // ── Beat B: Crack and shatter ─────────────────────────────────────────────
+  const crackProgress = interpolate(
+    frame,
+    [crackStart, shatterStart],
     [0, 1],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  return (
-    <AbsoluteFill style={{backgroundColor: transparentBg ? 'transparent' : BG, opacity: sceneOpacity}}>
-      {/* Background accent glow */}
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse 700px 400px at 50% 48%, ${accentColor}${Math.round(glowOpacity * 255).toString(16).padStart(2, '0')} 0%, transparent 65%)`,
-        }}
-      />
+  const shatterProgress = interpolate(
+    frame,
+    [shatterStart, durationInFrames - 4],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
 
-      {/* Main text container */}
-      <AbsoluteFill
+  // Subtitle emergence
+  const subtitleOpacity = interpolate(
+    frame,
+    [subtitleStart, subtitleStart + 12],
+    [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+  const subtitleScale = interpolate(
+    frame,
+    [subtitleStart, subtitleStart + 12],
+    [0.7, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Scene opacity envelope
+  const sceneOpacity = interpolate(
+    frame,
+    [0, 4, durationInFrames - 4, durationInFrames],
+    [0, 1, 1, 0.4],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
+  );
+
+  // Split text into halves for crack effect
+  const chars = text.split('');
+  const midpoint = Math.ceil(chars.length / 2);
+  const leftChars = chars.slice(0, midpoint);
+  const rightChars = chars.slice(midpoint);
+
+  // Per-character shatter
+  const renderShatterChar = (char: string, idx: number, side: 'left' | 'right') => {
+    if (shatterProgress <= 0) return null;
+
+    const globalIdx = side === 'left' ? idx : midpoint + idx;
+    const delay = seededRand(globalIdx * 17) * 0.3;
+    const charShatter = Math.max(0, Math.min(1, (shatterProgress - delay) / (1 - delay)));
+    const eased = charShatter * charShatter;
+
+    // Fragments fly outward from crack center
+    const dirX = side === 'left' ? -1 : 1;
+    const tx = dirX * (200 + seededRand(globalIdx * 7) * 400) * eased;
+    const ty = (seededRand(globalIdx * 13) - 0.3) * 600 * eased;
+    const rot = (seededRand(globalIdx * 19) - 0.5) * 120 * eased;
+    const opacity = 1 - eased;
+
+    return (
+      <span
+        key={`${side}-${idx}`}
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '0 80px',
-          transform: `scale(${frame >= HOLD_START && frame < SHATTER_START ? holdScale : 1})`,
+          display: 'inline-block',
+          fontFamily: FONT,
+          fontSize: 180,
+          fontWeight: 900,
+          color: '#ffffff',
+          letterSpacing: 4,
+          lineHeight: 1,
+          opacity,
+          transform: `translate(${tx}px, ${ty}px) rotate(${rot}deg)`,
+          textShadow: `0 0 40px ${accentColor}88`,
+          willChange: 'transform',
         }}
       >
-        <div
-          style={{
+        {char}
+      </span>
+    );
+  };
+
+  return (
+    <AbsoluteFill style={{backgroundColor: transparentBg ? 'transparent' : BG, opacity: sceneOpacity}}>
+      {/* Impact flash */}
+      {impactFlash > 0 && (
+        <AbsoluteFill style={{
+          backgroundColor: `rgba(255,255,255,${impactFlash})`,
+          zIndex: 10,
+        }} />
+      )}
+
+      {/* Background accent glow — intensifies at slam moment */}
+      <AbsoluteFill style={{
+        background: `radial-gradient(ellipse 900px 600px at 50% 48%, ${accentColor}${
+          Math.round((0.06 + (frame < slamEnd ? 0 : 0.15) * (1 - shatterProgress)) * 255).toString(16).padStart(2, '0')
+        } 0%, transparent 60%)`,
+      }} />
+
+      {/* Crack line down center */}
+      {crackProgress > 0 && shatterProgress < 0.8 && (
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: `${50 - crackProgress * 40}%`,
+          width: 3,
+          height: `${crackProgress * 80}%`,
+          background: `linear-gradient(to bottom, transparent, ${accentColor}, ${accent2}, transparent)`,
+          transform: 'translateX(-50%)',
+          opacity: 1 - shatterProgress,
+          zIndex: 5,
+        }} />
+      )}
+
+      {/* Main text — full canvas dominant */}
+      <AbsoluteFill style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 3,
+      }}>
+        {shatterProgress <= 0 ? (
+          // Pre-shatter: single unit, slamming from above
+          <div style={{
+            transform: `translateY(${slamY}px) scale(${slamScale})`,
+            fontFamily: FONT,
+            fontSize: 180,
+            fontWeight: 900,
+            color: '#ffffff',
+            letterSpacing: 4,
+            lineHeight: 1,
+            textShadow: `0 0 60px ${accentColor}66, 0 8px 30px rgba(0,0,0,0.8)`,
+            // Crack gap during crack phase
+            ...(crackProgress > 0 ? {
+              display: 'flex',
+              gap: `0 ${crackProgress * 20}px`,
+            } : {}),
+          }}>
+            {crackProgress > 0 ? (
+              <>
+                <span>{leftChars.join('')}</span>
+                <span>{rightChars.join('')}</span>
+              </>
+            ) : text}
+          </div>
+        ) : (
+          // During shatter: per-character fragments
+          <div style={{
             display: 'flex',
-            flexWrap: 'wrap',
             justifyContent: 'center',
-            gap: '0 4px',
-            textAlign: 'center',
-          }}
-        >
-          {chars.map((char, i) => {
-            const charStart = ASSEMBLE_START + i * CHAR_STAGGER;
-            const charRevealFrame = charStart + 6;
-
-            // During assembly: show glitch char, then real char
-            const revealed = frame >= charRevealFrame;
-            const inGlitch = frame >= charStart && frame < charRevealFrame;
-
-            // Which glitch char to show (changes every 2 frames for flicker)
-            const glitchIdx = Math.floor(frame / 2) + i;
-            const glitchChar = GLITCH_CHARS[glitchIdx % GLITCH_CHARS.length];
-
-            // Per-char shatter: translate + fade outward
-            const shatterDelay = seededRand(i * 17) * 0.4;
-            const charShatter = Math.max(
-              0,
-              Math.min(1, (shatterProgress - shatterDelay) / (1 - shatterDelay)),
-            );
-            const shatterX = (seededRand(i * 7) - 0.5) * 300 * charShatter * charShatter;
-            const shatterY = (seededRand(i * 13) - 0.5) * 200 * charShatter * charShatter;
-            const shatterRotate = (seededRand(i * 19) - 0.5) * 60 * charShatter;
-            const charOpacity = frame >= SHATTER_START ? 1 - charShatter * charShatter : 1;
-
-            const displayChar = !revealed && !inGlitch
-              ? ' '
-              : inGlitch
-              ? glitchChar
-              : char;
-
-            const isSpace = char === ' ';
-            if (isSpace && !inGlitch) {
-              return <span key={i} style={{display: 'inline-block', width: '0.3em'}} />;
-            }
-
-            const charColor = inGlitch
-              ? (i % 3 === 0 ? accentColor : glitch2)
-              : '#ffffff';
-
-            return (
-              <span
-                key={i}
-                style={{
-                  display: 'inline-block',
-                  fontFamily: FONT,
-                  fontSize: 72,
-                  fontWeight: 900,
-                  color: charColor,
-                  letterSpacing: 2,
-                  lineHeight: 1.1,
-                  opacity: charOpacity,
-                  textShadow: inGlitch
-                    ? `0 0 20px ${accentColor}, 0 0 40px ${glitch2}`
-                    : revealed
-                    ? `0 0 30px ${accentColor}55`
-                    : 'none',
-                  transform: frame >= SHATTER_START
-                    ? `translate(${shatterX}px, ${shatterY}px) rotate(${shatterRotate}deg)`
-                    : 'none',
-                  transition: 'none',
-                  willChange: 'transform',
-                }}
-              >
-                {displayChar}
-              </span>
-            );
-          })}
-        </div>
-
-        {subtitle && (
-          <div
-            style={{
-              marginTop: 40,
-              fontFamily: FONT,
-              fontSize: 28,
-              fontWeight: 400,
-              color: 'rgba(255,255,255,0.65)',
-              textAlign: 'center',
-              opacity: interpolate(
-                frame,
-                [HOLD_START + 5, HOLD_START + 20, SHATTER_START, SHATTER_START + 15],
-                [0, 1, 1, 0],
-                {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-              ),
-              letterSpacing: 1,
-            }}
-          >
-            {subtitle}
+            gap: `0 ${crackProgress * 20}px`,
+          }}>
+            <div style={{display: 'flex'}}>
+              {leftChars.map((c, i) => renderShatterChar(c, i, 'left'))}
+            </div>
+            <div style={{display: 'flex'}}>
+              {rightChars.map((c, i) => renderShatterChar(c, i, 'right'))}
+            </div>
           </div>
         )}
       </AbsoluteFill>
 
-      {/* Scanline overlay — subtle CRT effect */}
-      <AbsoluteFill
-        style={{
-          background: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px)',
-          pointerEvents: 'none',
-        }}
-      />
+      {/* Subtitle emerges from crack center */}
+      {subtitle && subtitleOpacity > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '58%',
+          left: 0,
+          right: 0,
+          textAlign: 'center',
+          zIndex: 6,
+          opacity: subtitleOpacity,
+          transform: `scale(${subtitleScale})`,
+        }}>
+          <span style={{
+            fontFamily: FONT,
+            fontSize: 64,
+            fontWeight: 900,
+            color: accentColor,
+            letterSpacing: 6,
+            textShadow: `0 0 40px ${accentColor}88, 0 4px 20px rgba(0,0,0,0.9)`,
+          }}>
+            {subtitle}
+          </span>
+        </div>
+      )}
     </AbsoluteFill>
   );
 };
