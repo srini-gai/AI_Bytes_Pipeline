@@ -265,19 +265,34 @@ function renderStoryboardScene(
 
     // ── Side-by-side comparison
     case 'SplitCompareScene': {
-      // Labels come from on_screen_text[0] and on_screen_text[3].
-      // NEVER use scene.objects[] as UI text — it contains internal identifiers
-      // (e.g. "without_rag_panel", "with_rag_panel") that must never appear on screen.
-      const leftLabel  = scene.on_screen_text[0] ?? 'Before';
-      const rightLabel = scene.on_screen_text[3] ?? 'After';
+      // Prefer scene.data when it has the proper SplitCompareSpec shape
+      // (left/right with label+points). Fall back to on_screen_text slicing
+      // only when scene.data is absent or malformed.
+      // NEVER use scene.objects[] as UI text — it contains internal identifiers.
+      const splitData = scene.data as {
+        type?: string;
+        left?: {label: string; points: string[]};
+        right?: {label: string; points: string[]};
+        verdict?: string;
+      } | undefined;
+
+      const splitSpec = (splitData?.left && splitData?.right)
+        ? {
+            type: 'split_compare' as const,
+            left:  splitData.left,
+            right: splitData.right,
+            verdict: splitData.verdict ?? '',
+          }
+        : {
+            type: 'split_compare' as const,
+            left:  {label: scene.on_screen_text[0] ?? 'Before', points: scene.on_screen_text.slice(1, 3)},
+            right: {label: scene.on_screen_text[3] ?? 'After',  points: scene.on_screen_text.slice(4, 6)},
+            verdict: scene.on_screen_text[6] ?? '',
+          };
+
       return (
         <SplitCompareScene
-          spec={{
-            type: 'split_compare',
-            left:  {label: leftLabel,  points: scene.on_screen_text.slice(1, 3)},
-            right: {label: rightLabel, points: scene.on_screen_text.slice(4, 6)},
-            verdict: scene.on_screen_text[6] ?? '',
-          }}
+          spec={splitSpec}
           theme={t}
           beats={scene.beats}
           onScreenText={scene.on_screen_text}

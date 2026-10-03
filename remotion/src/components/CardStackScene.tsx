@@ -38,16 +38,23 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
 
   const sceneOpacity = interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'});
 
-  const N = 5;
   const CX = 540;
   const CY = 960;
   const CARD_W = 380;
   const CARD_H = 520;
 
-  const labels = onScreenText.length >= N ? onScreenText : [
-    'Key concept', 'Example', 'Trade-off', 'Best practice', 'Summary',
-  ];
-  const colors = [accentColor, accent2, '#6366f1', '#f59e0b', accentColor];
+  // Derive card labels and summary from onScreenText.
+  // Convention: when onScreenText has content, the last item is the summary/subtitle
+  // (shown on the front card when zoomed), all preceding items are card labels.
+  // Falls back to generic defaults only when onScreenText is empty.
+  const DEFAULT_LABELS = ['Key concept', 'Example', 'Trade-off', 'Best practice', 'Summary'];
+  const hasContent = onScreenText.length >= 2; // at least 1 card + 1 summary
+  const cardLabels = hasContent ? onScreenText.slice(0, -1) : DEFAULT_LABELS;
+  const summaryText = hasContent ? onScreenText[onScreenText.length - 1] : 'Core insight';
+  const N = cardLabels.length;
+  const labels = cardLabels;
+  const BASE_COLORS = [accentColor, accent2, '#6366f1', '#f59e0b', accentColor];
+  const colors = Array.from({length: N}, (_, i) => BASE_COLORS[i % BASE_COLORS.length]);
 
   return (
     <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity, overflow: 'hidden'}}>
@@ -113,7 +120,7 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
                 padding: '0 32px',
                 opacity: smoothstep(zoomP),
               }}>
-                {onScreenText[N] ?? 'Core insight'}
+                {summaryText}
               </div>
             )}
           </div>

@@ -33,7 +33,26 @@ function seededRand(seed: number): number {
 }
 
 const TOKEN_COUNT = 12;
-const TOKEN_TEXTS = ['un', '1726', 'believ', '42891', 'able', '481', 'tok', 'vec', 'emb', 'att', 'The', 'cat'];
+// Default scatter fragments — only used when no episode content is available
+const DEFAULT_TOKEN_TEXTS = ['un', '1726', 'believ', '42891', 'able', '481', 'tok', 'vec', 'emb', 'att', 'The', 'cat'];
+
+/**
+ * Derive scatter words from the episode's actual content (text + onScreenText).
+ * Avoids showing Tokens-episode fragments in non-Tokens episodes.
+ */
+function deriveScatterWords(text: string, onScreenText?: string[]): string[] {
+  const source = [text, ...(onScreenText ?? [])].join(' ');
+  const words = source
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 2 && w.length <= 10);
+  if (words.length === 0) return DEFAULT_TOKEN_TEXTS;
+  const result: string[] = [];
+  for (let i = 0; i < TOKEN_COUNT; i++) {
+    result.push(words[i % words.length]);
+  }
+  return result;
+}
 
 // Generate scattered positions
 const SCATTER_POSITIONS = Array.from({length: TOKEN_COUNT}, (_, i) => ({
@@ -57,6 +76,12 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+
+  // Derive scatter words from episode content (memoized per render)
+  const scatterWords = React.useMemo(
+    () => deriveScatterWords(text, onScreenText),
+    [text, onScreenText],
+  );
 
   const totalFrames = durationInFrames;
 
@@ -158,7 +183,7 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
                 fontWeight: 600,
                 color: `${color}aa`,
               }}>
-                {TOKEN_TEXTS[i]}
+                {scatterWords[i]}
               </span>
             </div>
           </div>
