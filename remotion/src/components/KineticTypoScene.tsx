@@ -13,6 +13,8 @@
  *   subtitle      — text that emerges during shatter (e.g. "NOT ONE.")
  *   durationInFrames — total frame count for the scene
  *   transparentBg — true when compositing over generated video
+ *   subtitleStyle — 'stamp' renders the subtitle as a rejection stamp
+ *                   (palette.danger border/text on a surface background)
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -35,6 +37,7 @@ interface KineticTypoSceneProps {
   durationInFrames: number;
   transparentBg?: boolean;
   artDirection?: ArtDirection;
+  subtitleStyle?: 'stamp';
 }
 
 export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
@@ -45,6 +48,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   durationInFrames,
   transparentBg = false,
   artDirection: ad,
+  subtitleStyle,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -256,6 +260,24 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
           opacity: subtitleOpacity,
           transform: `scale(${subtitleScale})`,
         }}>
+          {subtitleStyle === 'stamp' ? (
+            <span style={{
+              display: 'inline-block',
+              fontFamily: fontFamily,
+              fontSize: 64,
+              fontWeight: 900,
+              color: ad?.palette.danger ?? '#ef4444',
+              letterSpacing: 6,
+              padding: '14px 32px',
+              border: `7px solid ${ad?.palette.danger ?? '#ef4444'}`,
+              borderRadius: 14,
+              background: ad?.palette.surface ?? 'transparent',
+              boxShadow: ad?.depth.shadow_md ?? 'none',
+              transform: 'rotate(-6deg)',
+            }}>
+              {subtitle}
+            </span>
+          ) : (
           <span style={{
             fontFamily: fontFamily,
             fontSize: 64,
@@ -268,6 +290,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
           }}>
             {subtitle}
           </span>
+          )}
         </div>
       )}
     </AbsoluteFill>

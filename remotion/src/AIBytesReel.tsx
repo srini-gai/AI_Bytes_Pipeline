@@ -63,11 +63,14 @@ import type {
   DataSpec,
   DiagramSpec,
   GeneratedVideoClipsMap,
+  KineticTypoSceneData,
   NumberCounterData,
   SketchSpec,
+  SplitCompareWorkspace,
   StoryboardScene,
   Theme,
   TokenSpec,
+  TransformSceneData,
 } from './types';
 
 import {getArtDirection, artDirectionToTheme} from './themes';
@@ -214,6 +217,7 @@ function renderStoryboardScene(
           durationInFrames={durationInFrames}
           transparentBg={!!genVideoSrc}
           artDirection={ad}
+          subtitleStyle={(scene.data as KineticTypoSceneData | undefined)?.subtitle_style}
         />
       );
 
@@ -304,6 +308,7 @@ function renderStoryboardScene(
           beats={scene.beats}
           onScreenText={scene.on_screen_text}
           artDirection={ad}
+          workspace={splitData as SplitCompareWorkspace | undefined}
         />
       );
     }
@@ -398,6 +403,8 @@ function renderStoryboardScene(
           accentColor={accent}
           accent2={accent2}
           artDirection={ad}
+          data={scene.data as TransformSceneData | undefined}
+          durationInFrames={durationInFrames}
         />
       );
 

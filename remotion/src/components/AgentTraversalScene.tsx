@@ -24,6 +24,7 @@ import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {ACCENT, ACCENT2, FONT, easeOut, linearProgress} from './beatUtils';
 import {AgentCharacter} from './CharacterUtils';
+import {TaskCard} from './WorkspaceUtils';
 import type {SceneBeat} from '../types';
 import type {ArtDirection} from '../themes';
 
@@ -58,9 +59,6 @@ const AGENT_Y = ZONE_Y + ZONE_H / 2;
 // Task card position (upper-right area)
 const CARD_X = 620;
 const CARD_Y = 380;
-const CARD_W = 380;
-const CARD_H_BASE = 120;
-const CARD_STEP_H = 48;
 
 function zoneX(index: number): number {
   return ZONE_START_X + index * (ZONE_W + ZONE_GAP) + ZONE_W / 2;
@@ -90,9 +88,6 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
   const trackFill = ad?.zones?.track_fill ?? struct(0.03);
   const trackStroke = ad?.zones?.track_stroke ?? struct(0.06);
   const zoneLabelColor = ad?.zones?.label_color ?? textColor;
-  const cardBg = ad?.zones?.task_card_bg ?? struct(0.05);
-  const cardBorder = ad?.zones?.task_card_border ?? struct(0.12);
-  const cardText = ad?.zones?.task_card_text ?? textColor;
 
   // Zone labels from onScreenText
   const zones = [
@@ -310,114 +305,17 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
           toolIcons={tools}
         />
 
-        {/* ── Task card (upper right) ── */}
-        <g opacity={b[0].progress}>
-          {/* Card background */}
-          <rect
-            x={CARD_X}
-            y={CARD_Y}
-            width={CARD_W}
-            height={CARD_H_BASE + taskSteps.length * CARD_STEP_H}
-            rx={12}
-            fill={cardBg}
-            stroke={completedSteps >= taskSteps.length ? accent2 : cardBorder}
-            strokeWidth={completedSteps >= taskSteps.length ? 2 : 1}
-          />
-
-          {/* Card title */}
-          <text
-            x={CARD_X + 20}
-            y={CARD_Y + 36}
-            fontSize={18}
-            fontWeight={700}
-            fill={cardText}
-          >
-            📋 Task Progress
-          </text>
-
-          {/* Progress bar */}
-          <rect
-            x={CARD_X + 20}
-            y={CARD_Y + 52}
-            width={CARD_W - 40}
-            height={4}
-            rx={2}
-            fill={struct(0.1)}
-          />
-          <rect
-            x={CARD_X + 20}
-            y={CARD_Y + 52}
-            width={(CARD_W - 40) * (completedSteps / taskSteps.length)}
-            height={4}
-            rx={2}
-            fill={accent2}
-          />
-
-          {/* Checklist items */}
-          {taskSteps.map((step, i) => {
-            const stepY = CARD_Y + 80 + i * CARD_STEP_H;
-            const isChecked = i < completedSteps;
-            return (
-              <g key={`step-${i}`}>
-                {/* Checkbox */}
-                <rect
-                  x={CARD_X + 20}
-                  y={stepY}
-                  width={22}
-                  height={22}
-                  rx={4}
-                  fill={isChecked ? accent2 : 'transparent'}
-                  stroke={isChecked ? accent2 : struct(0.2)}
-                  strokeWidth={1.5}
-                />
-                {isChecked && (
-                  <path
-                    d={`M ${CARD_X + 25} ${stepY + 11} L ${CARD_X + 30} ${stepY + 16} L ${CARD_X + 37} ${stepY + 7}`}
-                    fill="none"
-                    stroke="#fff"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                )}
-                {/* Step label */}
-                <text
-                  x={CARD_X + 52}
-                  y={stepY + 16}
-                  fontSize={16}
-                  fill={isChecked ? cardText : (isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)')}
-                  textDecoration={isChecked ? 'line-through' : 'none'}
-                >
-                  {step}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Complete badge */}
-          {completedSteps >= taskSteps.length && (
-            <g opacity={b[4].progress}>
-              <rect
-                x={CARD_X + CARD_W - 110}
-                y={CARD_Y + 16}
-                width={90}
-                height={28}
-                rx={14}
-                fill={accent2}
-              />
-              <text
-                x={CARD_X + CARD_W - 65}
-                y={CARD_Y + 35}
-                textAnchor="middle"
-                fontSize={13}
-                fontWeight={700}
-                fill="#fff"
-              >
-                COMPLETE
-              </text>
-            </g>
-          )}
-        </g>
+        {/* ── Task card (upper right) — shared continuity object ── */}
+        <TaskCard
+          x={CARD_X}
+          y={CARD_Y}
+          steps={taskSteps}
+          completedSteps={completedSteps}
+          accent2={accent2}
+          opacity={b[0].progress}
+          completeBadgeOpacity={b[4].progress}
+          artDirection={ad}
+        />
 
         {/* ── Scene title (top area) ── */}
         <text

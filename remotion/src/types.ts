@@ -174,6 +174,49 @@ export interface TokenSpec {
   weights?: number[];
 }
 
+// ─── Workspace continuity types (Visual Director v4) ─────────────────────────
+
+/** Multi-step task card carried across scenes as a continuity object */
+export interface TaskCardSpec {
+  steps: string[];
+  /** Number of steps already checked when the scene starts (default 0) */
+  completed?: number;
+  /** Card header (default "📋 Task Progress") */
+  title?: string;
+}
+
+/** Character shown inside a SplitCompare panel */
+export type PanelCharacter = 'chatbot' | 'agent';
+
+/** Optional scene.data for TransformScene */
+export interface TransformSceneData {
+  /** Icon per item; items without an icon render none */
+  icons?: string[];
+  /** 'chat_widget' contains the items inside a chatbot window frame */
+  frame?: 'chat_widget';
+  /** Header label for the chat widget frame */
+  chat_title?: string;
+  task_card?: TaskCardSpec;
+}
+
+/** Optional scene.data for KineticTypoScene */
+export interface KineticTypoSceneData {
+  /** 'stamp' renders the subtitle as a rejection stamp in palette.danger */
+  subtitle_style?: 'stamp';
+}
+
+/** Optional workspace extras in SplitCompareScene scene.data */
+export interface SplitCompareWorkspace {
+  left_character?: PanelCharacter;
+  right_character?: PanelCharacter;
+  /** Header label for chatbot widget frames */
+  chat_title?: string;
+  /** 'enter_plan_go': agent enters, pauses to plan, then heads off-panel right */
+  agent_motion?: 'enter_plan_go';
+  /** Task card that starts on the left panel and hands off to the right panel */
+  task_card?: TaskCardSpec;
+}
+
 // ─── Beat types (Visual Director v3) ─────────────────────────────────────────
 
 /** A single timed visual event within a scene */

@@ -35,6 +35,10 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
   const fontFamily = ad?.typography.font ?? FONT;
   const useGlow = ad?.depth.use_glow ?? true;
   const themedItemColors = ad?.item_colors ?? undefined;
+  // Light worlds use opaque surface cards so the front card occludes the labels
+  // of the cards behind it (translucent tints let back labels bleed through).
+  const opaqueCards = ad?.light_or_dark === 'light';
+  const surface = ad?.palette.surface ?? '#ffffff';
 
   const b0 = beats[0] ?? {start: 0,   end: 1.5};
   const b1 = beats[1] ?? {start: 1.5, end: 3.0};
@@ -99,7 +103,10 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
               top:  y - CARD_H / 2,
               width:  CARD_W,
               height: CARD_H,
-              background: `${colors[idx]}15`,
+              background: opaqueCards
+                ? `linear-gradient(${colors[idx]}12, ${colors[idx]}12), ${surface}`
+                : `${colors[idx]}15`,
+              boxShadow: opaqueCards ? (isFront ? ad?.depth.shadow_lg : ad?.depth.shadow_sm) : undefined,
               border: `2px solid ${colors[idx]}${isFront ? 'dd' : '66'}`,
               borderRadius: 24,
               transform: `rotate(${rot}deg) scale(${scale})`,

@@ -11,6 +11,12 @@
  *   (AIBytesReel must supply human-readable text — this component
  *    never displays raw objects[] array contents as UI text)
  * - Legacy frame-based mode preserved unchanged
+ *
+ * v4 workspace extras (beat mode, opt-in via `workspace`):
+ * - left/right_character 'chatbot' → ChatbotCharacter contained in a ChatWidget frame
+ * - left/right_character 'agent'   → free-moving AgentCharacter (no frame)
+ * - agent_motion 'enter_plan_go'   → agent enters (beat 1), pauses, exits right (beat 2)
+ * - task_card                      → continuity task card hands off left → right (beat 1)
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
@@ -18,6 +24,9 @@ import type {SplitCompareSpec, SideBySideSpec} from '../types';
 import type {SceneBeat} from '../types';
 import type {ArtDirection} from '../themes';
 import {easeOut, linearProgress, smoothstep} from './beatUtils';
+import {AgentCharacter, ChatbotCharacter} from './CharacterUtils';
+import {ChatWidget, TaskCard, TASK_CARD_W} from './WorkspaceUtils';
+import type {PanelCharacter, SplitCompareWorkspace} from '../types';
 
 interface SceneTheme { accent: string; accent2: string; }
 
@@ -48,7 +57,14 @@ interface SplitCompareSceneProps {
   beats?: SceneBeat[];
   onScreenText?: string[];
   artDirection?: ArtDirection;
+  workspace?: SplitCompareWorkspace;
 }
+
+// Workspace extras layout (beat mode)
+const CHAT_WIDGET_TOP = PANEL_TOP + 360;
+const CHAT_WIDGET_H = 300;
+const AGENT_HOME_Y = PANEL_TOP + 520;
+const TASK_CARD_Y = PANEL_TOP + 720;
 
 const Panel: React.FC<{
   panel: {label: string; points: string[]};
@@ -125,7 +141,7 @@ const Panel: React.FC<{
   );
 };
 
-export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme, beats, onScreenText, artDirection: ad}) => {
+export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme, beats, onScreenText, artDirection: ad, workspace}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = theme ?? DEFAULT_THEME;
@@ -244,6 +260,8 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
           </div>
         </div>
 
+        {workspace && renderWorkspace(workspace, beats, frame, fps, leftP, rightP, ad)}
+
         {/* Verdict */}
         {verdict && verdP > 0.1 && (
           <div style={{
@@ -334,3 +352,135 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
     </AbsoluteFill>
   );
 };
+
+// ─── v4 workspace extras ─────────────────────────────────────────────────────
+
+function panelLeft(side: 'left' | 'right'): number {
+  return side === 'left' ? LEFT_X : RIGHT_X;
+}
+
+function renderWorkspace(
+  ws: SplitCompareWorkspace,
+  beats: SceneBeat[],
+  frame: number,
+  fps: number,
+  leftP: number,
+  rightP: number,
+  ad: ArtDirection | undefined,
+): React.ReactNode {
+  const accent2 = ad?.palette.success ?? '#34d399';
+  const b1 = beats[1];
+  const b2 = beats[2];
+  const sides: Array<['left' | 'right', PanelCharacter | undefined, number]> = [
+    ['left', ws.left_character, leftP],
+    ['right', ws.right_character, rightP],
+  ];
+
+  // Agent motion: enter during beat 1, pause, head off-panel right during beat 2
+  const agentHomeX = (side: 'left' | 'right'): number => panelLeft(side) + COL_W / 2;
+  const enterP = b1 ? easeOut(frame, fps, b1.start, b1.start + (b1.end - b1.start) * 0.5) : 1;
+  const exitP = b2 ? easeOut(frame, fps, b2.start, b2.end) : 0;
+  const moving = ws.agent_motion === 'enter_plan_go';
+
+  // Task card handoff: second half of beat 1, after the agent has arrived
+  const handoffP = b1 ? easeOut(frame, fps, b1.start + (b1.end - b1.start) * 0.5, b1.end) : 0;
+  const cardX = (side: 'left' | 'right'): number => panelLeft(side) + (COL_W - TASK_CARD_W) / 2;
+
+  return (
+    <>
+      {/* Chatbot: always contained inside a chat widget frame */}
+      {sides.map(([side, character, p]) => character === 'chatbot' && (
+        <div
+          key={`chat-${side}`}
+          style={{
+            position: 'absolute',
+            top: CHAT_WIDGET_TOP,
+            left: panelLeft(side) + 32,
+            opacity: p,
+            transform: `translateX(${interpolate(p, [0, 1], [side === 'left' ? -180 : 180, 0])}px)`,
+            zIndex: 3,
+          }}
+        >
+          <ChatWidget
+            width={COL_W - 64}
+            height={CHAT_WIDGET_H}
+            title={ws.chat_title}
+            chatbotState="frozen"
+            stateProgress={(frame % (fps * 2)) / (fps * 2)}
+            artDirection={ad}
+          >
+            <svg width={COL_W - 64} height={CHAT_WIDGET_H - 64}>
+              <ChatbotCharacter
+                x={90}
+                y={(CHAT_WIDGET_H - 64) / 2}
+                size={110}
+                state="frozen"
+                stateProgress={(frame % (fps * 2)) / (fps * 2)}
+                artDirection={ad}
+              />
+              {/* Last reply bubble — the chatbot waits for the next prompt */}
+              <rect
+                x={170}
+                y={(CHAT_WIDGET_H - 64) / 2 - 30}
+                width={190}
+                height={60}
+                rx={20}
+                fill={ad?.light_or_dark === 'light' ? '#F1F5F9' : 'rgba(255,255,255,0.08)'}
+              />
+              {[0, 1, 2].map((i) => (
+                <circle
+                  key={i}
+                  cx={235 + i * 30}
+                  cy={(CHAT_WIDGET_H - 64) / 2}
+                  r={7}
+                  fill={ad?.palette.passive ?? '#94A3B8'}
+                  opacity={0.4 + 0.6 * Math.abs(Math.sin((frame / fps) * Math.PI + i * 0.6))}
+                />
+              ))}
+            </svg>
+          </ChatWidget>
+        </div>
+      ))}
+
+      {/* Agent + task card share one full-canvas SVG so they can cross panel borders */}
+      <svg
+        viewBox="0 0 1080 1920"
+        style={{position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 4, pointerEvents: 'none'}}
+      >
+        {ws.task_card && (
+          <TaskCard
+            x={interpolate(handoffP, [0, 1], [cardX('left'), cardX('right')])}
+            y={TASK_CARD_Y}
+            steps={ws.task_card.steps}
+            completedSteps={ws.task_card.completed ?? 0}
+            title={ws.task_card.title}
+            accent2={accent2}
+            opacity={leftP}
+            artDirection={ad}
+          />
+        )}
+
+        {sides.map(([side, character, p]) => {
+          if (character !== 'agent') return null;
+          const home = agentHomeX(side);
+          const x = moving
+            ? interpolate(enterP, [0, 1], [1180, home]) + interpolate(exitP, [0, 1], [0, 420])
+            : home;
+          const state = moving ? (exitP > 0 ? 'active' as const : 'idle' as const) : 'active' as const;
+          return (
+            <AgentCharacter
+              key={`agent-${side}`}
+              x={x}
+              y={AGENT_HOME_Y}
+              size={120}
+              state={state}
+              stateProgress={(frame % fps) / fps}
+              opacity={moving ? Math.min(1, enterP * 1.5) : p}
+              artDirection={ad}
+            />
+          );
+        })}
+      </svg>
+    </>
+  );
+}

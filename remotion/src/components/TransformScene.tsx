@@ -6,12 +6,16 @@
  * reveals the assembled summary label.
  *
  * All display content comes from props — no topic-specific defaults.
+ * Item icons come only from data.icons; items without one render no icon.
+ * Optional data.frame='chat_widget' contains the items in a chatbot window;
+ * optional data.task_card shows the continuity task card (upper right).
  * Production guard: throws if onScreenText has fewer than 3 entries.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress, smoothstep} from './beatUtils';
-import type {SceneBeat} from '../types';
+import {ChatWidget, TaskCard} from './WorkspaceUtils';
+import type {SceneBeat, TransformSceneData} from '../types';
 import type {ArtDirection} from '../themes';
 
 interface TransformItem {
@@ -31,7 +35,15 @@ interface TransformSceneProps {
   accentColor?: string;
   accent2?: string;
   artDirection?: ArtDirection;
+  data?: TransformSceneData;
+  /** Scene length; used to keep the summary label on screen long enough to read */
+  durationInFrames?: number;
 }
+
+/** Minimum time the summary label stays fully visible before the scene fades out */
+const SUMMARY_MIN_READ_SEC = 1.5;
+const SUMMARY_RAMP_SEC = 0.4;
+const SCENE_FADE_OUT_SEC = 0.3;
 
 /**
  * Parse onScreenText entries like "un → 1726" into primary/label pairs.
@@ -50,7 +62,6 @@ function parseTransformEntry(entry: string, color: string, icon: string): Transf
   return {primary: entry, label: '', icon, color};
 }
 
-const ITEM_ICONS = ['🔤', '🔢', '⚡'];
 const ITEM_COLORS = ['#6366f1', '#a78bfa', '#34d399'];
 
 export const TransformScene: React.FC<TransformSceneProps> = ({
@@ -59,9 +70,14 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
   accentColor = ACCENT,
   accent2 = ACCENT2,
   artDirection: ad,
+  data,
+  durationInFrames,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+  const icons = data?.icons ?? [];
+  const chatFrame = data?.frame === 'chat_widget';
+  const taskCard = data?.task_card;
 
   // Art-direction overrides with fallbacks to hardcoded defaults
   const ITEM_COLORS_THEMED = ad?.item_colors ?? ITEM_COLORS;
@@ -86,7 +102,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
     parseTransformEntry(
       entry,
       ITEM_COLORS_THEMED[i % ITEM_COLORS_THEMED.length],
-      ITEM_ICONS[i % ITEM_ICONS.length],
+      icons[i] ?? '',
     )
   );
 
@@ -109,11 +125,27 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
     [1, 1.06],
   );
 
+  // Summary label reveal: starts at the final beat, but early enough that it is
+  // fully visible for SUMMARY_MIN_READ_SEC before the scene's fade-out.
+  const sceneSec = durationInFrames ? durationInFrames / fps : b3.end;
+  const latestReveal = sceneSec - SCENE_FADE_OUT_SEC - SUMMARY_MIN_READ_SEC - SUMMARY_RAMP_SEC;
+  const summaryStart = Math.max(0, Math.min(b3.start, latestReveal));
+  const summaryOpacity = linearProgress(frame, fps, summaryStart, summaryStart + SUMMARY_RAMP_SEC);
+
   const sceneOpacity = interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'});
 
-  const CARD_W = 240;
+  // Card width shrinks only when items would not fit the canvas (or chat frame)
   const CARD_GAP = 48;
+  const MAX_ROW_W = chatFrame ? 900 : 1000;
+  const CARD_W = Math.min(240, Math.floor((MAX_ROW_W - (items.length - 1) * CARD_GAP) / items.length));
   const TOTAL_W  = items.length * CARD_W + (items.length - 1) * CARD_GAP;
+
+  // Chat widget frame geometry (relative to the item row container)
+  const FRAME_PAD_X = 50;
+  const FRAME_TOP = -60;
+  const FRAME_H = 400;
+  const firstBeat = beats[0] ?? {start: 0, end: 1};
+  const chatbotActive = letterProgress.some((p) => p > 0 && p < 1);
 
   return (
     <AbsoluteFill
@@ -143,6 +175,19 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
         }}
       >
         <div style={{position: 'relative', width: TOTAL_W, paddingTop: 100}}>
+          {/* Chat widget frame — the chatbot is contained inside its window */}
+          {chatFrame && (
+            <ChatWidget
+              width={TOTAL_W + FRAME_PAD_X * 2}
+              height={FRAME_H}
+              title={data?.chat_title}
+              chatbotState={chatbotActive ? 'active' : 'idle'}
+              stateProgress={(frame % fps) / fps}
+              artDirection={ad}
+              style={{position: 'absolute', left: -FRAME_PAD_X, top: FRAME_TOP}}
+            />
+          )}
+
           {/* Transform item cards */}
           {items.map((item, i) => {
             const p = letterProgress[i];
@@ -183,7 +228,8 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                   {item.primary}
                 </div>
 
-                {/* Icon below primary */}
+                {/* Icon below primary — only when scene data supplies one */}
+                {item.icon && (
                 <div
                   style={{
                     fontSize: 42,
@@ -193,6 +239,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                 >
                   {item.icon}
                 </div>
+                )}
 
                 {/* Label */}
                 {item.label && (
@@ -253,7 +300,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
           alignItems: 'center',
           justifyContent: 'flex-end',
           paddingBottom: 200,
-          opacity: interpolate(linearProgress(frame, fps, b3.start, b3.end), [0.3, 1], [0, 1]),
+          opacity: summaryOpacity,
         }}
       >
         <div
@@ -269,6 +316,26 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
           {summaryLabel}
         </div>
       </AbsoluteFill>
+
+      {/* Continuity task card — same position as AgentTraversalScene */}
+      {taskCard && (
+        <AbsoluteFill>
+          <svg viewBox="0 0 1080 1920" style={{width: '100%', height: '100%'}}>
+            <g transform={`translate(${interpolate(easeOut(frame, fps, firstBeat.start, firstBeat.end), [0, 1], [160, 0])}, 0)`}>
+              <TaskCard
+                x={620}
+                y={380}
+                steps={taskCard.steps}
+                completedSteps={taskCard.completed ?? 0}
+                title={taskCard.title}
+                accent2={accent2}
+                opacity={easeOut(frame, fps, firstBeat.start, firstBeat.end)}
+                artDirection={ad}
+              />
+            </g>
+          </svg>
+        </AbsoluteFill>
+      )}
     </AbsoluteFill>
   );
 };
