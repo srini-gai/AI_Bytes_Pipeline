@@ -12,6 +12,7 @@ import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress, smoothstep} from './beatUtils';
 import type {SceneBeat} from '../types';
+import type {ArtDirection} from '../themes';
 
 interface TransformItem {
   /** Primary display text (the main visual — a token, a letter, a label) */
@@ -29,6 +30,7 @@ interface TransformSceneProps {
   objects: string[];
   accentColor?: string;
   accent2?: string;
+  artDirection?: ArtDirection;
 }
 
 /**
@@ -56,9 +58,17 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
   onScreenText,
   accentColor = ACCENT,
   accent2 = ACCENT2,
+  artDirection: ad,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+
+  // Art-direction overrides with fallbacks to hardcoded defaults
+  const ITEM_COLORS_THEMED = ad?.item_colors ?? ITEM_COLORS;
+  const bgColor = ad?.palette.bg ?? BG;
+  const textColor = ad?.palette.text ?? '#ffffff';
+  const fontFamily = ad?.typography.font ?? FONT;
+  const useGlow = ad?.depth.use_glow ?? true;
 
   // Production guard: require at least 3 onScreenText entries for transform items
   if (onScreenText.length < 3) {
@@ -75,7 +85,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
   const items: TransformItem[] = itemEntries.map((entry, i) =>
     parseTransformEntry(
       entry,
-      ITEM_COLORS[i % ITEM_COLORS.length],
+      ITEM_COLORS_THEMED[i % ITEM_COLORS_THEMED.length],
       ITEM_ICONS[i % ITEM_ICONS.length],
     )
   );
@@ -108,17 +118,19 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: BG,
+        backgroundColor: bgColor,
         opacity: sceneOpacity,
         overflow: 'hidden',
       }}
     >
       {/* Background glow */}
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse 800px 500px at 50% 48%, ${accentColor}10 0%, transparent 70%)`,
-        }}
-      />
+      {useGlow && (
+        <AbsoluteFill
+          style={{
+            background: `radial-gradient(ellipse 800px 500px at 50% 48%, ${accentColor}10 0%, transparent 70%)`,
+          }}
+        />
+      )}
 
       {/* Main canvas — centred vertically at 46% */}
       <AbsoluteFill
@@ -158,12 +170,12 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                 {/* Primary text */}
                 <div
                   style={{
-                    fontFamily: FONT,
+                    fontFamily: fontFamily,
                     fontSize: 72,
                     fontWeight: 900,
                     color: item.color,
                     lineHeight: 1,
-                    textShadow: `0 0 80px ${item.color}66`,
+                    textShadow: useGlow ? `0 0 80px ${item.color}66` : 'none',
                     letterSpacing: -2,
                     textAlign: 'center',
                   }}
@@ -176,7 +188,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                   style={{
                     fontSize: 42,
                     transform: `scale(${interpolate(p, [0.5, 1], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'})})`,
-                    filter: `drop-shadow(0 0 16px ${item.color}88)`,
+                    filter: useGlow ? `drop-shadow(0 0 16px ${item.color}88)` : 'none',
                   }}
                 >
                   {item.icon}
@@ -186,7 +198,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                 {item.label && (
                   <div
                     style={{
-                      fontFamily: FONT,
+                      fontFamily: fontFamily,
                       fontSize: 30,
                       fontWeight: 700,
                       color: item.color,
@@ -224,7 +236,7 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
                   height: 3,
                   background: `linear-gradient(90deg, ${items[i].color}, ${items[i + 1].color})`,
                   borderRadius: 2,
-                  boxShadow: `0 0 10px ${accentColor}66`,
+                  boxShadow: useGlow ? `0 0 10px ${accentColor}66` : 'none',
                   opacity: lineSmooth > 0.05 ? 1 : 0,
                 }}
               />
@@ -246,12 +258,12 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
       >
         <div
           style={{
-            fontFamily: FONT,
+            fontFamily: fontFamily,
             fontSize: 22,
             fontWeight: 700,
             letterSpacing: 8,
             textTransform: 'uppercase',
-            color: accentColor,
+            color: ad?.palette.primary ?? accentColor,
           }}
         >
           {summaryLabel}

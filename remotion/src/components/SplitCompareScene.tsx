@@ -16,6 +16,7 @@ import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {SplitCompareSpec, SideBySideSpec} from '../types';
 import type {SceneBeat} from '../types';
+import type {ArtDirection} from '../themes';
 import {easeOut, linearProgress, smoothstep} from './beatUtils';
 
 interface SceneTheme { accent: string; accent2: string; }
@@ -46,6 +47,7 @@ interface SplitCompareSceneProps {
   theme?: SceneTheme;
   beats?: SceneBeat[];
   onScreenText?: string[];
+  artDirection?: ArtDirection;
 }
 
 const Panel: React.FC<{
@@ -123,10 +125,20 @@ const Panel: React.FC<{
   );
 };
 
-export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme, beats, onScreenText}) => {
+export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme, beats, onScreenText, artDirection: ad}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = theme ?? DEFAULT_THEME;
+
+  // Art-direction derived values with backward-compatible fallbacks
+  const bgColor = ad?.palette.bg ?? '#050510';
+  const fontFamily = ad?.typography.font ?? FONT;
+  const useGlow = ad?.depth.use_glow ?? true;
+  const panelText = ad?.split_compare?.panel_text ?? 'rgba(255,255,255,0.88)';
+  const vsBg = ad?.split_compare?.vs_bg ?? '#1a1a2e';
+  const vsText = ad?.split_compare?.vs_text ?? 'rgba(255,255,255,0.6)';
+  const verdictColor = ad?.palette.danger ?? '#ff4444';
+  const verdictBgOpacity = ad?.split_compare?.verdict_bg_opacity ?? '15';
 
   // ── v3 beat-driven mode ──────────────────────────────────────────────────
   if (beats && beats.length >= 2) {
@@ -135,12 +147,12 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
     const verdP  = beats[2] ? easeOut(frame, fps, beats[2].start, beats[2].end) : rightP;
     // No fade-in: content present from frame 1
     const isSplit   = spec.type === 'split_compare';
-    const leftCol   = isSplit ? '#ff4444' : t.accent;
-    const rightCol  = isSplit ? '#22c55e' : t.accent2;
+    const leftCol   = isSplit ? (ad?.split_compare?.left_color ?? '#ff4444') : t.accent;
+    const rightCol  = isSplit ? (ad?.split_compare?.right_color ?? '#22c55e') : t.accent2;
     const verdict   = spec.type === 'split_compare' ? spec.verdict : undefined;
 
     return (
-      <AbsoluteFill style={{backgroundColor: '#050510'}}>
+      <AbsoluteFill style={{backgroundColor: bgColor}}>
         {/* Background: left red tint / right green tint */}
         <AbsoluteFill style={{
           background: `linear-gradient(90deg, ${leftCol}08 0%, transparent 50%, ${rightCol}08 100%)`,
@@ -160,9 +172,9 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
           }}/>
           <div style={{position: 'relative', padding: '50px 32px 32px'}}>
             <div style={{
-              fontFamily: FONT, fontSize: 38, fontWeight: 900, color: leftCol,
+              fontFamily: fontFamily, fontSize: 38, fontWeight: 900, color: leftCol,
               textAlign: 'center', marginBottom: 28,
-              textShadow: `0 0 24px ${leftCol}66`,
+              textShadow: useGlow ? `0 0 24px ${leftCol}66` : 'none',
             }}>
               {/* Strictly use spec.left.label — which AIBytesReel sets to "WITHOUT RAG" */}
               {spec.left.label}
@@ -176,7 +188,7 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
                 })),
               }}>
                 <div style={{color: leftCol, fontSize: 22, marginTop: 4}}>▸</div>
-                <div style={{fontSize: 30, color: 'rgba(255,255,255,0.88)', fontFamily: FONT, lineHeight: 1.45}}>
+                <div style={{fontSize: 30, color: panelText, fontFamily: fontFamily, lineHeight: 1.45}}>
                   {pt}
                 </div>
               </div>
@@ -188,10 +200,10 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
         <div style={{
           position: 'absolute', left: LEFT_X + COL_W + Math.round(COL_GAP / 2) - 26,
           top: PANEL_TOP + 120,
-          width: 52, height: 52, borderRadius: '50%', background: '#1a1a2e',
+          width: 52, height: 52, borderRadius: '50%', background: vsBg,
           border: `2px solid ${t.accent}66`, display: 'flex', alignItems: 'center',
           justifyContent: 'center', zIndex: 5, fontSize: 18, fontWeight: 900,
-          color: 'rgba(255,255,255,0.6)', fontFamily: FONT,
+          color: vsText, fontFamily: fontFamily,
         }}>VS</div>
 
         {/* Right panel */}
@@ -208,9 +220,9 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
           }}/>
           <div style={{position: 'relative', padding: '50px 32px 32px'}}>
             <div style={{
-              fontFamily: FONT, fontSize: 38, fontWeight: 900, color: rightCol,
+              fontFamily: fontFamily, fontSize: 38, fontWeight: 900, color: rightCol,
               textAlign: 'center', marginBottom: 28,
-              textShadow: `0 0 24px ${rightCol}66`,
+              textShadow: useGlow ? `0 0 24px ${rightCol}66` : 'none',
             }}>
               {/* Strictly use spec.right.label — which AIBytesReel sets to "WITH RAG" */}
               {spec.right.label}
@@ -224,7 +236,7 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
                 })),
               }}>
                 <div style={{color: rightCol, fontSize: 22, marginTop: 4}}>▸</div>
-                <div style={{fontSize: 30, color: 'rgba(255,255,255,0.88)', fontFamily: FONT, lineHeight: 1.45}}>
+                <div style={{fontSize: 30, color: panelText, fontFamily: fontFamily, lineHeight: 1.45}}>
                   {pt}
                 </div>
               </div>
@@ -239,11 +251,11 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
             opacity: smoothstep(verdP),
             transform: `translateY(${interpolate(verdP, [0, 1], [24, 0])}px)`,
             zIndex: 3,
-            backgroundColor: 'rgba(255,68,68,0.15)',
+            backgroundColor: `${verdictColor}${verdictBgOpacity}`,
             border: '2px solid rgba(255,68,68,0.4)',
             borderRadius: 20, padding: '22px 32px', textAlign: 'center',
           }}>
-            <div style={{fontSize: 40, fontWeight: 900, color: '#ff6666', fontFamily: FONT}}>
+            <div style={{fontSize: 40, fontWeight: 900, color: ad?.palette.danger ?? '#ff6666', fontFamily: fontFamily}}>
               {verdict}
             </div>
           </div>
@@ -265,7 +277,7 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
   const titleOpacity = interpolate(frame, [0, 18], [0, 1], {extrapolateRight: 'clamp'});
 
   return (
-    <AbsoluteFill style={{backgroundColor: '#050510'}}>
+    <AbsoluteFill style={{backgroundColor: bgColor}}>
       <AbsoluteFill style={{
         background: 'linear-gradient(to bottom, transparent 72%, rgba(0,0,0,0.82) 100%)',
       }}/>
@@ -273,7 +285,7 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
         position: 'absolute', top: 136, left: 0, right: 0,
         textAlign: 'center', opacity: titleOpacity, zIndex: 2,
         fontSize: 26, letterSpacing: 6, textTransform: 'uppercase' as const,
-        color: t.accent, fontFamily: FONT, fontWeight: 700,
+        color: t.accent, fontFamily: fontFamily, fontWeight: 700,
       }}>Compare</div>
 
       <Panel
@@ -303,7 +315,7 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
         width: 52, height: 52, borderRadius: '50%', background: '#1a1a2e',
         border: `2px solid ${t.accent}66`, display: 'flex', alignItems: 'center',
         justifyContent: 'center', zIndex: 5, fontSize: 18, fontWeight: 900,
-        color: 'rgba(255,255,255,0.6)', fontFamily: FONT,
+        color: 'rgba(255,255,255,0.6)', fontFamily: fontFamily,
       }}>VS</div>
 
       {verdict && (
@@ -314,7 +326,7 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
           border: '1.5px solid rgba(255,68,68,0.4)', borderRadius: 16,
           padding: '18px 28px', textAlign: 'center',
         }}>
-          <div style={{fontSize: 36, fontWeight: 700, color: '#ff6666', fontFamily: FONT}}>
+          <div style={{fontSize: 36, fontWeight: 700, color: '#ff6666', fontFamily: fontFamily}}>
             {verdict}
           </div>
         </div>

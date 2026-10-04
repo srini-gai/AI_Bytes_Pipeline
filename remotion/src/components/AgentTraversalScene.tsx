@@ -22,11 +22,13 @@
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
-import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress} from './beatUtils';
+import {ACCENT, ACCENT2, FONT, easeOut, linearProgress} from './beatUtils';
 import {AgentCharacter} from './CharacterUtils';
 import type {SceneBeat} from '../types';
+import type {ArtDirection} from '../themes';
 
 interface AgentTraversalSceneProps {
+  artDirection?: ArtDirection;
   beats: SceneBeat[];
   onScreenText: string[];
   objects: string[];
@@ -73,9 +75,24 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
   accentColor = ACCENT,
   accent2 = ACCENT2,
   data,
+  artDirection: ad,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+
+  const bgColor = ad?.palette.bg ?? '#050510';
+  const textColor = ad?.palette.text ?? '#ffffff';
+  const fontFamily = ad?.typography.font ?? 'Inter';
+  const useGlow = ad?.depth.use_glow ?? true;
+  const isLight = ad?.light_or_dark === 'light';
+  const struct = (a: number): string =>
+    isLight ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+  const trackFill = ad?.zones?.track_fill ?? struct(0.03);
+  const trackStroke = ad?.zones?.track_stroke ?? struct(0.06);
+  const zoneLabelColor = ad?.zones?.label_color ?? textColor;
+  const cardBg = ad?.zones?.task_card_bg ?? struct(0.05);
+  const cardBorder = ad?.zones?.task_card_border ?? struct(0.12);
+  const cardText = ad?.zones?.task_card_text ?? textColor;
 
   // Zone labels from onScreenText
   const zones = [
@@ -154,7 +171,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
   const sceneOpacity = interpolate(frame, [0, 8], [0, 1], {extrapolateRight: 'clamp'});
 
   return (
-    <AbsoluteFill style={{backgroundColor: BG, fontFamily: FONT}}>
+    <AbsoluteFill style={{backgroundColor: bgColor, fontFamily: ad ? `${fontFamily}, sans-serif` : FONT}}>
       <svg
         viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
         style={{width: '100%', height: '100%', opacity: sceneOpacity}}
@@ -166,8 +183,8 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
           width={ZONES_TOTAL_W + 40}
           height={ZONE_H + 20}
           rx={16}
-          fill="rgba(255,255,255,0.03)"
-          stroke="rgba(255,255,255,0.06)"
+          fill={trackFill}
+          stroke={trackStroke}
           strokeWidth={1}
         />
 
@@ -182,13 +199,13 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
               <line
                 x1={x1} y1={arrowY}
                 x2={x2 - 8} y2={arrowY}
-                stroke={showArrow ? accentColor : 'rgba(255,255,255,0.15)'}
+                stroke={showArrow ? accentColor : struct(0.15)}
                 strokeWidth={2}
                 strokeDasharray={showArrow ? 'none' : '4 4'}
               />
               <polygon
                 points={`${x2 - 8},${arrowY - 5} ${x2},${arrowY} ${x2 - 8},${arrowY + 5}`}
-                fill={showArrow ? accentColor : 'rgba(255,255,255,0.15)'}
+                fill={showArrow ? accentColor : struct(0.15)}
               />
             </g>
           );
@@ -205,13 +222,13 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
             ? accent2
             : isActive
               ? accentColor
-              : 'rgba(255,255,255,0.08)';
+              : struct(0.08);
 
           const borderColor = isComplete
             ? accent2
             : isActive
               ? accentColor
-              : 'rgba(255,255,255,0.12)';
+              : struct(0.12);
 
           return (
             <g key={`zone-${i}`}>
@@ -222,9 +239,10 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
                 width={ZONE_W}
                 height={ZONE_H}
                 rx={12}
-                fill={isActive || isComplete ? `${zoneColor}15` : 'rgba(255,255,255,0.02)'}
+                fill={isActive || isComplete ? `${zoneColor}15` : struct(0.02)}
                 stroke={borderColor}
                 strokeWidth={isActive ? 2 : 1}
+                style={useGlow && isActive ? {filter: `drop-shadow(0 0 12px ${zoneColor})`} : undefined}
               />
 
               {/* Zone label */}
@@ -235,7 +253,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
                 fontSize={20}
                 fontWeight={700}
                 letterSpacing={2}
-                fill={isActive || isComplete ? '#fff' : 'rgba(255,255,255,0.4)'}
+                fill={isActive || isComplete ? zoneLabelColor : (isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)')}
               >
                 {label}
               </text>
@@ -285,6 +303,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
           size={90}
           state={agentState}
           stateProgress={b[currentBeatIdx]?.linear ?? 0}
+          artDirection={ad}
           accentColor={accentColor}
           accent2={accent2}
           activeToolSlot={activeSlot}
@@ -300,8 +319,8 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
             width={CARD_W}
             height={CARD_H_BASE + taskSteps.length * CARD_STEP_H}
             rx={12}
-            fill="rgba(255,255,255,0.05)"
-            stroke={completedSteps >= taskSteps.length ? accent2 : 'rgba(255,255,255,0.12)'}
+            fill={cardBg}
+            stroke={completedSteps >= taskSteps.length ? accent2 : cardBorder}
             strokeWidth={completedSteps >= taskSteps.length ? 2 : 1}
           />
 
@@ -311,7 +330,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
             y={CARD_Y + 36}
             fontSize={18}
             fontWeight={700}
-            fill="#fff"
+            fill={cardText}
           >
             📋 Task Progress
           </text>
@@ -323,7 +342,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
             width={CARD_W - 40}
             height={4}
             rx={2}
-            fill="rgba(255,255,255,0.1)"
+            fill={struct(0.1)}
           />
           <rect
             x={CARD_X + 20}
@@ -348,7 +367,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
                   height={22}
                   rx={4}
                   fill={isChecked ? accent2 : 'transparent'}
-                  stroke={isChecked ? accent2 : 'rgba(255,255,255,0.2)'}
+                  stroke={isChecked ? accent2 : struct(0.2)}
                   strokeWidth={1.5}
                 />
                 {isChecked && (
@@ -366,7 +385,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
                   x={CARD_X + 52}
                   y={stepY + 16}
                   fontSize={16}
-                  fill={isChecked ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'}
+                  fill={isChecked ? cardText : (isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)')}
                   textDecoration={isChecked ? 'line-through' : 'none'}
                 >
                   {step}
@@ -407,7 +426,7 @@ export const AgentTraversalScene: React.FC<AgentTraversalSceneProps> = ({
           textAnchor="middle"
           fontSize={28}
           fontWeight={700}
-          fill="rgba(255,255,255,0.8)"
+          fill={textColor}
           opacity={b[0].progress}
         >
           {onScreenText[4] ?? ''}

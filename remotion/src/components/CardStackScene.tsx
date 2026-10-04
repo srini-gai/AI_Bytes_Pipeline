@@ -10,6 +10,7 @@ import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress, smoothstep} from './beatUtils';
 import type {SceneBeat} from '../types';
+import type {ArtDirection} from '../themes';
 
 interface CardStackSceneProps {
   beats: SceneBeat[];
@@ -17,6 +18,7 @@ interface CardStackSceneProps {
   objects: string[];
   accentColor?: string;
   accent2?: string;
+  artDirection?: ArtDirection;
 }
 
 export const CardStackScene: React.FC<CardStackSceneProps> = ({
@@ -24,9 +26,15 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
   onScreenText,
   accentColor = ACCENT,
   accent2 = ACCENT2,
+  artDirection: ad,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+
+  const bgColor = ad?.palette.bg ?? BG;
+  const fontFamily = ad?.typography.font ?? FONT;
+  const useGlow = ad?.depth.use_glow ?? true;
+  const themedItemColors = ad?.item_colors ?? undefined;
 
   const b0 = beats[0] ?? {start: 0,   end: 1.5};
   const b1 = beats[1] ?? {start: 1.5, end: 3.0};
@@ -53,13 +61,17 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
   const summaryText = hasContent ? onScreenText[onScreenText.length - 1] : 'Core insight';
   const N = cardLabels.length;
   const labels = cardLabels;
-  const BASE_COLORS = [accentColor, accent2, '#6366f1', '#f59e0b', accentColor];
+  const BASE_COLORS = themedItemColors && themedItemColors.length > 0
+    ? themedItemColors
+    : [accentColor, accent2, '#6366f1', '#f59e0b', accentColor];
   const colors = Array.from({length: N}, (_, i) => BASE_COLORS[i % BASE_COLORS.length]);
 
   return (
-    <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity, overflow: 'hidden'}}>
+    <AbsoluteFill style={{backgroundColor: bgColor, opacity: sceneOpacity, overflow: 'hidden'}}>
       <AbsoluteFill style={{
-        background: `radial-gradient(ellipse 800px 800px at 50% 50%, ${accentColor}0c 0%, transparent 65%)`,
+        background: useGlow
+          ? `radial-gradient(ellipse 800px 800px at 50% 50%, ${accentColor}0c 0%, transparent 65%)`
+          : 'none',
       }}/>
 
       {/* Render back-to-front */}
@@ -101,7 +113,7 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
             }}
           >
             <div style={{
-              fontFamily: FONT,
+              fontFamily,
               fontSize: isFront && zoomP > 0.3 ? 28 : 22,
               fontWeight: 700,
               color: colors[idx],
@@ -113,9 +125,9 @@ export const CardStackScene: React.FC<CardStackSceneProps> = ({
             </div>
             {isFront && zoomP > 0.4 && (
               <div style={{
-                fontFamily: FONT,
+                fontFamily,
                 fontSize: 19,
-                color: '#ffffff88',
+                color: ad?.palette.muted ?? '#ffffff88',
                 textAlign: 'center',
                 padding: '0 32px',
                 opacity: smoothstep(zoomP),

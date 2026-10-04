@@ -22,6 +22,7 @@ import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {BG, ACCENT, ACCENT2, FONT, easeOut, linearProgress} from './beatUtils';
 import type {SceneBeat} from '../types';
+import type {ArtDirection} from '../themes';
 
 interface CircularFlowSceneProps {
   beats: SceneBeat[];
@@ -29,6 +30,7 @@ interface CircularFlowSceneProps {
   objects: string[];
   accentColor?: string;
   accent2?: string;
+  artDirection?: ArtDirection;
   data?: {
     center_label?: string;
     detail_labels?: string[];
@@ -65,10 +67,20 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
   objects,
   accentColor = ACCENT,
   accent2 = ACCENT2,
+  artDirection: ad,
   data,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+
+  // Art-direction overrides with backward-compatible fallbacks
+  const bgColor = ad?.palette.bg ?? BG;
+  const textColor = ad?.palette.text ?? '#fff';
+  const mutedColor = ad?.palette.muted ?? 'rgba(255,255,255,0.5)';
+  const borderColor = ad?.palette.border ?? 'rgba(255,255,255,0.08)';
+  const fontFamily = ad?.typography.font ?? FONT;
+  const useGlow = ad?.depth.use_glow ?? true;
+  const qColors = ad?.item_colors?.slice(0, 4) ?? Q_COLORS;
 
   // Labels
   const labels = [
@@ -122,7 +134,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
   const cycleGlow = b[4].progress;
 
   return (
-    <AbsoluteFill style={{backgroundColor: BG, fontFamily: FONT}}>
+    <AbsoluteFill style={{backgroundColor: bgColor, fontFamily: fontFamily}}>
       <svg
         viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
         style={{width: '100%', height: '100%', opacity: sceneOpacity}}
@@ -134,7 +146,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
           textAnchor="middle"
           fontSize={26}
           fontWeight={700}
-          fill="rgba(255,255,255,0.8)"
+          fill={mutedColor}
           opacity={b[0].progress}
         >
           {onScreenText[4] ?? ''}
@@ -147,7 +159,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
           <circle
             cx={0} cy={0} r={WHEEL_R}
             fill="none"
-            stroke={cycleGlow > 0 ? accent2 : 'rgba(255,255,255,0.08)'}
+            stroke={cycleGlow > 0 ? accent2 : borderColor}
             strokeWidth={cycleGlow > 0 ? 3 : 2}
             opacity={b[0].progress * (cycleGlow > 0 ? 0.6 + 0.4 * cycleGlow : 0.5)}
           />
@@ -156,9 +168,9 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
           <circle
             cx={0} cy={0} r={WHEEL_R * 0.6}
             fill="none"
-            stroke="rgba(255,255,255,0.05)"
+            stroke={borderColor}
             strokeWidth={1}
-            opacity={b[0].progress}
+            opacity={b[0].progress * 0.6}
           />
 
           {/* ── Quadrant sectors ── */}
@@ -167,7 +179,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
             const endAngle = QUADRANT_ANGLES[i] + Math.PI / 4;
             const isActive = i === activeQuadrant;
             const isComplete = i < activeQuadrant || (b[4].ended);
-            const qColor = Q_COLORS[i];
+            const qColor = qColors[i] ?? Q_COLORS[i];
 
             // Sector path (arc segment)
             const innerR = HUB_R + 10;
@@ -210,12 +222,12 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
                   d={sectorPath}
                   fill={qColor}
                   opacity={fillOpacity}
-                  stroke={isActive ? qColor : 'rgba(255,255,255,0.06)'}
+                  stroke={isActive ? qColor : borderColor}
                   strokeWidth={isActive ? 2 : 0.5}
                 />
 
                 {/* Active pulse ring */}
-                {isActive && (
+                {isActive && useGlow && (
                   <circle
                     cx={iconX}
                     cy={iconY}
@@ -248,7 +260,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
                     fontSize={isActive ? 17 : 14}
                     fontWeight={700}
                     letterSpacing={1.5}
-                    fill={isActive ? '#fff' : 'rgba(255,255,255,0.5)'}
+                    fill={isActive ? textColor : mutedColor}
                   >
                     {labels[i]}
                   </text>
@@ -259,7 +271,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
                       x={0} y={4}
                       textAnchor="middle"
                       fontSize={12}
-                      fill="rgba(255,255,255,0.6)"
+                      fill={mutedColor}
                       opacity={b[activeQuadrant + 1]?.progress ?? 0}
                     >
                       {detailLabels[i]}
@@ -284,7 +296,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
                         textAnchor="middle"
                         dominantBaseline="central"
                         fontSize={18}
-                        fill={isActive ? qColor : 'rgba(255,255,255,0.3)'}
+                        fill={isActive ? qColor : mutedColor}
                       >
                         →
                       </text>
@@ -298,8 +310,8 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
           {/* ── Center hub ── */}
           <circle
             cx={0} cy={0} r={HUB_R}
-            fill="rgba(255,255,255,0.06)"
-            stroke={cycleGlow > 0 ? accent2 : 'rgba(255,255,255,0.12)'}
+            fill={ad?.palette.surface ?? 'rgba(255,255,255,0.06)'}
+            stroke={cycleGlow > 0 ? accent2 : borderColor}
             strokeWidth={cycleGlow > 0 ? 2 : 1}
           />
           <g transform={`rotate(${-rotation})`}>
@@ -310,7 +322,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
               fontSize={16}
               fontWeight={700}
               letterSpacing={2}
-              fill={cycleGlow > 0 ? accent2 : 'rgba(255,255,255,0.6)'}
+              fill={cycleGlow > 0 ? accent2 : mutedColor}
             >
               {centerLabel}
             </text>

@@ -70,6 +70,9 @@ import type {
   TokenSpec,
 } from './types';
 
+import {getArtDirection, artDirectionToTheme} from './themes';
+import type {ArtDirection} from './themes';
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FPS = 30;
@@ -159,9 +162,12 @@ function renderStoryboardScene(
   clips: ClipsMap | undefined,
   episode: string,
   generatedVideoClips?: GeneratedVideoClipsMap,
+  ad?: ArtDirection,
 ): React.ReactNode {
-  const accent  = t.accent;
-  const accent2 = t.accent2;
+  // When an ArtDirection manifest is available, derive colors from it.
+  // Otherwise fall back to the legacy Theme object for backward compatibility.
+  const accent  = ad?.palette.primary  ?? t.accent;
+  const accent2 = ad?.palette.secondary ?? t.accent2;
 
   // ── Phase 3B: for GENERATIVE_VIDEO scenes, use GeneratedVideoBackground ───
   // Resolve the scene_id key — storyboard may use numeric id (e.g. 1) or string (e.g. "s01").
@@ -207,6 +213,7 @@ function renderStoryboardScene(
           subtitle={scene.on_screen_text[1]}
           durationInFrames={durationInFrames}
           transparentBg={!!genVideoSrc}
+          artDirection={ad}
         />
       );
 
@@ -296,6 +303,7 @@ function renderStoryboardScene(
           theme={t}
           beats={scene.beats}
           onScreenText={scene.on_screen_text}
+          artDirection={ad}
         />
       );
     }
@@ -389,6 +397,7 @@ function renderStoryboardScene(
           objects={scene.objects}
           accentColor={accent}
           accent2={accent2}
+          artDirection={ad}
         />
       );
 
@@ -521,6 +530,7 @@ function renderStoryboardScene(
           objects={scene.objects}
           accentColor={accent}
           accent2={accent2}
+          artDirection={ad}
         />
       );
 
@@ -535,6 +545,7 @@ function renderStoryboardScene(
           accentColor={accent}
           accent2={accent2}
           data={scene.data as { task_steps?: string[] } | undefined}
+          artDirection={ad}
         />
       );
 
@@ -547,6 +558,7 @@ function renderStoryboardScene(
           accentColor={accent}
           accent2={accent2}
           data={scene.data as { center_label?: string; detail_labels?: string[] } | undefined}
+          artDirection={ad}
         />
       );
 
@@ -560,6 +572,7 @@ function renderStoryboardScene(
           durationInFrames={durationInFrames}
           beats={scene.beats}
           onScreenText={scene.on_screen_text}
+          artDirection={ad}
         />
       );
 
@@ -570,6 +583,7 @@ function renderStoryboardScene(
           takeaway={takeaway}
           videoSrc={clips?.cta}
           theme={t}
+          artDirection={ad}
         />
       );
 
@@ -615,6 +629,8 @@ interface StoryboardProps {
   clips?: ClipsMap;
   /** Phase 3B: Higgsfield-generated clips keyed by scene_id. */
   generatedVideoClips?: GeneratedVideoClipsMap;
+  /** Art direction manifest for this episode. */
+  artDirection?: ArtDirection;
 }
 
 const StoryboardReel: React.FC<StoryboardProps> = ({
@@ -626,6 +642,7 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
   episode,
   clips,
   generatedVideoClips,
+  artDirection,
 }) => {
   // Pre-compute cumulative start frames
   let cursor = 0;
@@ -636,14 +653,17 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
     return {scene, startFrame, durationFrames};
   });
 
+  // Outer background comes from art direction when available
+  const bgColor = artDirection?.palette.bg ?? '#050510';
+
   return (
-    <AbsoluteFill style={{backgroundColor: '#050510'}}>
+    <AbsoluteFill style={{backgroundColor: bgColor}}>
       {scenes.map(({scene, startFrame, durationFrames}, i) => (
         <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames}>
           <Fade duration={durationFrames} noFadeIn={i === 0}>
             {renderStoryboardScene(
               scene, theme, durationFrames, topic, hook, takeaway,
-              clips, episode, generatedVideoClips,
+              clips, episode, generatedVideoClips, artDirection,
             )}
           </Fade>
         </Sequence>
@@ -670,9 +690,14 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
     token_spec,
     storyboard,
     generatedVideoClips,
+    art_direction,
   } = props;
 
-  const t = theme ?? DEFAULT_THEME;
+  // Resolve art direction manifest. When an art_direction id is provided,
+  // look up the full manifest and derive a legacy Theme from it.
+  // Otherwise use the provided theme or the default dark theme.
+  const ad = art_direction ? getArtDirection(art_direction) : undefined;
+  const t = ad ? artDirectionToTheme(ad) : (theme ?? DEFAULT_THEME);
 
   // ── STORYBOARD MODE ────────────────────────────────────────────────────────
   if (storyboard && storyboard.length > 0) {
@@ -686,6 +711,7 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
         episode={episode}
         clips={clips}
         generatedVideoClips={generatedVideoClips}
+        artDirection={ad}
       />
     );
   }

@@ -12,6 +12,7 @@
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {SceneBeat} from '../types';
+import type {ArtDirection} from '../themes';
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const MONO = '"JetBrains Mono", "Fira Code", "SF Mono", monospace';
@@ -24,6 +25,7 @@ interface TakeawaySceneProps {
   durationInFrames: number;
   beats?: SceneBeat[];
   onScreenText?: string[];
+  artDirection?: ArtDirection;
 }
 
 // Scattered token positions (deterministic, spread across 1080×1920)
@@ -73,9 +75,19 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
   durationInFrames,
   beats,
   onScreenText,
+  artDirection: ad,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
+
+  // Art direction derivations (fall back to legacy dark-tech look)
+  const bgColor = ad?.palette.bg ?? BG;
+  const textColor = ad?.palette.text ?? '#ffffff';
+  const fontFamily = ad?.typography.font ?? FONT;
+  const monoFamily = ad?.typography.mono ?? MONO;
+  const useGlow = ad?.depth.use_glow ?? true;
+  const isLight = ad?.light_or_dark === 'light';
+  const itemColors = ad?.item_colors;
 
   // Derive scatter words from episode content (memoized per render)
   const scatterWords = React.useMemo(
@@ -133,19 +145,23 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
   const line2 = onScreenText?.[1] ?? 'not words directly';
 
   return (
-    <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity, overflow: 'hidden'}}>
+    <AbsoluteFill style={{backgroundColor: bgColor, opacity: sceneOpacity, overflow: 'hidden'}}>
       {/* Center convergence glow */}
-      <AbsoluteFill style={{
-        background: `radial-gradient(circle ${200 + glowIntensity * 300}px at ${CENTER_X}px ${CENTER_Y}px,
-          ${accentColor}${Math.round(glowIntensity * 0.25 * 255).toString(16).padStart(2, '0')} 0%,
-          transparent 70%)`,
-      }} />
+      {useGlow && (
+        <AbsoluteFill style={{
+          background: `radial-gradient(circle ${200 + glowIntensity * 300}px at ${CENTER_X}px ${CENTER_Y}px,
+            ${accentColor}${Math.round(glowIntensity * 0.25 * 255).toString(16).padStart(2, '0')} 0%,
+            transparent 70%)`,
+        }} />
+      )}
 
       {/* Flash at convergence peak */}
-      {glowIntensity > 0.9 && (
+      {useGlow && glowIntensity > 0.9 && (
         <AbsoluteFill style={{
           background: `radial-gradient(circle 120px at ${CENTER_X}px ${CENTER_Y}px,
-            rgba(255,255,255,${(glowIntensity - 0.9) * 3}) 0%, transparent 80%)`,
+            ${isLight
+              ? `rgba(0,0,0,${(glowIntensity - 0.9) * 3})`
+              : `rgba(255,255,255,${(glowIntensity - 0.9) * 3})`} 0%, transparent 80%)`,
         }} />
       )}
 
@@ -156,7 +172,9 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
         const currentRot = pos.rot * (1 - easedConverge);
         const currentScale = pos.scale * (1 - easedConverge * 0.6);
 
-        const color = i % 2 === 0 ? accentColor : accent2;
+        const color = itemColors && itemColors.length > 0
+          ? itemColors[i % itemColors.length]
+          : (i % 2 === 0 ? accentColor : accent2);
 
         return (
           <div key={i} style={{
@@ -178,7 +196,7 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
               justifyContent: 'center',
             }}>
               <span style={{
-                fontFamily: MONO,
+                fontFamily: monoFamily,
                 fontSize: 13,
                 fontWeight: 600,
                 color: `${color}aa`,
@@ -204,7 +222,7 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
         }}>
           {/* Key takeaway label */}
           <div style={{
-            fontFamily: FONT,
+            fontFamily: fontFamily,
             fontSize: 18,
             fontWeight: 700,
             color: accentColor,
@@ -217,20 +235,20 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
 
           {/* Main text */}
           <div style={{
-            fontFamily: FONT,
+            fontFamily: fontFamily,
             fontSize: 52,
             fontWeight: 900,
-            color: '#ffffff',
+            color: textColor,
             lineHeight: 1.3,
             textAlign: 'center',
             letterSpacing: -0.5,
-            textShadow: `0 0 60px ${accentColor}55`,
+            textShadow: useGlow ? `0 0 60px ${accentColor}55` : 'none',
             marginBottom: 12,
           }}>
             {line1}
           </div>
           <div style={{
-            fontFamily: FONT,
+            fontFamily: fontFamily,
             fontSize: 36,
             fontWeight: 700,
             color: `${accent2}cc`,

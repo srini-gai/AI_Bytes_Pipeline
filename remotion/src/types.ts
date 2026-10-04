@@ -359,4 +359,10 @@ export interface AIBytesReelProps {
    * uses the clip as the background layer; Remotion overlays branding/text on top.
    */
   generatedVideoClips?: GeneratedVideoClipsMap;
+  /**
+   * Art direction manifest id (e.g. 'bright-workspace', 'cinematic-dark').
+   * When present, selects the visual world for this episode.
+   * Falls back to 'cinematic-dark' when absent.
+   */
+  art_direction?: string;
 }

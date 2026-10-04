@@ -15,6 +15,7 @@
  */
 import React from 'react';
 import {interpolate} from 'remotion';
+import type {ArtDirection} from '../themes';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ export interface ChatbotCharacterProps extends CharacterBaseProps {
   /** 0→1 progress through current state transition */
   stateProgress?: number;
   accentColor?: string;
+  artDirection?: ArtDirection;
 }
 
 export interface AgentCharacterProps extends CharacterBaseProps {
@@ -44,6 +46,7 @@ export interface AgentCharacterProps extends CharacterBaseProps {
   activeToolSlot?: number;
   /** Tool icons to show in belt slots */
   toolIcons?: string[];
+  artDirection?: ArtDirection;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -71,16 +74,32 @@ export const ChatbotCharacter: React.FC<ChatbotCharacterProps> = ({
   opacity = 1,
   state,
   stateProgress = 1,
-  accentColor = CHATBOT_COLOR_IDLE,
+  accentColor,
+  artDirection: ad,
 }) => {
   const r = size / 2;
 
+  // Derive chatbot colors from art direction with fallbacks
+  const idleColor = ad?.character_chatbot?.idle ?? CHATBOT_COLOR_IDLE;
+  const activeColor = ad?.character_chatbot?.active ?? CHATBOT_COLOR_ACTIVE;
+  const frozenColor = ad?.character_chatbot?.frozen ?? CHATBOT_COLOR_FROZEN;
+  const isLight = ad?.light_or_dark === 'light';
+  // Explicit accentColor prop wins; otherwise use the themed idle color
+  const baseColor = accentColor ?? idleColor;
+
+  // Foreground alpha helper: dark themes use white, light themes use black
+  const fgAlpha = (a: number) =>
+    isLight ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+
+  const eyeFill = ad?.palette?.text ?? '#fff';
+  const pupilFill = ad?.palette?.bg ?? '#1e1b4b';
+
   // Color by state
   const bodyColor = state === 'frozen'
-    ? lerpColor(accentColor, CHATBOT_COLOR_FROZEN, stateProgress)
+    ? lerpColor(baseColor, frozenColor, stateProgress)
     : state === 'active'
-      ? lerpColor(accentColor, CHATBOT_COLOR_ACTIVE, stateProgress)
-      : accentColor;
+      ? lerpColor(baseColor, activeColor, stateProgress)
+      : baseColor;
 
   // Frozen state: subtle pulse
   const frozenScale = state === 'frozen'
@@ -103,7 +122,7 @@ export const ChatbotCharacter: React.FC<ChatbotCharacterProps> = ({
         cy={0}
         r={r}
         fill={bodyColor}
-        stroke="rgba(255,255,255,0.15)"
+        stroke={fgAlpha(0.15)}
         strokeWidth={2}
       />
 
@@ -113,42 +132,42 @@ export const ChatbotCharacter: React.FC<ChatbotCharacterProps> = ({
         cy={0}
         r={r * 0.85}
         fill="none"
-        stroke="rgba(255,255,255,0.08)"
+        stroke={fgAlpha(0.08)}
         strokeWidth={1}
       />
 
       {/* Eyes */}
-      <circle cx={-r * 0.3} cy={-r * 0.15} r={r * 0.1} fill="#fff" />
-      <circle cx={r * 0.3} cy={-r * 0.15} r={r * 0.1} fill="#fff" />
+      <circle cx={-r * 0.3} cy={-r * 0.15} r={r * 0.1} fill={eyeFill} />
+      <circle cx={r * 0.3} cy={-r * 0.15} r={r * 0.1} fill={eyeFill} />
 
       {/* Pupils — shift slightly based on state */}
       <circle
         cx={-r * 0.3 + (state === 'active' ? 2 : 0)}
         cy={-r * 0.15}
         r={r * 0.05}
-        fill="#1e1b4b"
+        fill={pupilFill}
       />
       <circle
         cx={r * 0.3 + (state === 'active' ? 2 : 0)}
         cy={-r * 0.15}
         r={r * 0.05}
-        fill="#1e1b4b"
+        fill={pupilFill}
       />
 
       {/* Mouth — chat bubble or ellipsis */}
       {state === 'frozen' ? (
         // Frozen: ellipsis dots
         <g>
-          <circle cx={-r * 0.2} cy={r * 0.25} r={r * 0.06} fill="rgba(255,255,255,0.5)" />
-          <circle cx={0}        cy={r * 0.25} r={r * 0.06} fill="rgba(255,255,255,0.5)" />
-          <circle cx={r * 0.2}  cy={r * 0.25} r={r * 0.06} fill="rgba(255,255,255,0.5)" />
+          <circle cx={-r * 0.2} cy={r * 0.25} r={r * 0.06} fill={fgAlpha(0.5)} />
+          <circle cx={0}        cy={r * 0.25} r={r * 0.06} fill={fgAlpha(0.5)} />
+          <circle cx={r * 0.2}  cy={r * 0.25} r={r * 0.06} fill={fgAlpha(0.5)} />
         </g>
       ) : (
         // Normal/active: small smile arc
         <path
           d={`M ${-r * 0.2} ${r * 0.2} Q 0 ${r * 0.4} ${r * 0.2} ${r * 0.2}`}
           fill="none"
-          stroke="#fff"
+          stroke={eyeFill}
           strokeWidth={2}
           strokeLinecap="round"
         />
@@ -163,7 +182,7 @@ export const ChatbotCharacter: React.FC<ChatbotCharacterProps> = ({
             width={r * 0.4}
             height={r * 0.08}
             rx={2}
-            fill="#fff"
+            fill={eyeFill}
             opacity={0.6}
           />
           <rect
@@ -172,7 +191,7 @@ export const ChatbotCharacter: React.FC<ChatbotCharacterProps> = ({
             width={r * 0.3}
             height={r * 0.08}
             rx={2}
-            fill="#fff"
+            fill={eyeFill}
             opacity={0.4}
           />
         </g>
@@ -197,19 +216,39 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
   opacity = 1,
   state,
   stateProgress = 1,
-  accentColor = AGENT_COLOR_IDLE,
-  accent2 = AGENT_COLOR_DONE,
+  accentColor,
+  accent2,
   activeToolSlot = -1,
   toolIcons = [],
+  artDirection: ad,
 }) => {
   const r = size / 2;
 
+  // Derive agent colors from art direction with fallbacks
+  const idleColor = ad?.character_agent?.idle ?? AGENT_COLOR_IDLE;
+  const activeColor = ad?.character_agent?.active ?? AGENT_COLOR_ACTIVE;
+  const doneColor = ad?.character_agent?.done ?? AGENT_COLOR_DONE;
+  const isLight = ad?.light_or_dark === 'light';
+  // Explicit props win; otherwise use themed colors
+  const baseColor = accentColor ?? idleColor;
+  const finalDoneColor = accent2 ?? doneColor;
+
+  // Foreground alpha helper: dark themes use white, light themes use black
+  const fgAlpha = (a: number) =>
+    isLight ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+  // Eyes/icons stay white (bodies are saturated colors in both themes);
+  // pupils stay dark so they contrast with the white eyes. Active-slot outline
+  // darkens on light themes so it stays visible against a light canvas.
+  const eyeFill = '#fff';
+  const pupilFill = '#1e1b4b';
+  const outlineColor = isLight ? '#0f172a' : '#fff';
+
   // Body color by state
   const bodyColor = state === 'done'
-    ? lerpColor(accentColor, accent2, stateProgress)
+    ? lerpColor(baseColor, finalDoneColor, stateProgress)
     : state === 'active'
-      ? lerpColor(accentColor, AGENT_COLOR_ACTIVE, stateProgress * 0.5)
-      : accentColor;
+      ? lerpColor(baseColor, activeColor, stateProgress * 0.5)
+      : baseColor;
 
   // Active state: slight forward lean
   const leanX = state === 'active' ? 4 * stateProgress : 0;
@@ -237,7 +276,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
         <polygon
           points={hexagonPoints(0, 0, r * 1.15)}
           fill="none"
-          stroke={accentColor}
+          stroke={baseColor}
           strokeWidth={3}
           opacity={glowOpacity}
         />
@@ -247,7 +286,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
       <polygon
         points={hexPoints}
         fill={bodyColor}
-        stroke="rgba(255,255,255,0.2)"
+        stroke={fgAlpha(0.2)}
         strokeWidth={2}
         strokeLinejoin="round"
       />
@@ -256,13 +295,13 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
       <line
         x1={-r * 0.3} y1={-r * 0.6}
         x2={-r * 0.6} y2={0}
-        stroke="rgba(255,255,255,0.06)"
+        stroke={fgAlpha(0.06)}
         strokeWidth={1}
       />
       <line
         x1={r * 0.3} y1={-r * 0.6}
         x2={r * 0.6} y2={0}
-        stroke="rgba(255,255,255,0.06)"
+        stroke={fgAlpha(0.06)}
         strokeWidth={1}
       />
 
@@ -273,7 +312,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
         width={r * 0.2}
         height={r * 0.12}
         rx={2}
-        fill="#fff"
+        fill={eyeFill}
       />
       <rect
         x={r * 0.15}
@@ -281,7 +320,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
         width={r * 0.2}
         height={r * 0.12}
         rx={2}
-        fill="#fff"
+        fill={eyeFill}
       />
 
       {/* Pupils */}
@@ -291,7 +330,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
         width={r * 0.08}
         height={r * 0.08}
         rx={1}
-        fill="#1e1b4b"
+        fill={pupilFill}
       />
       <rect
         x={r * 0.2 + (state === 'active' ? 3 : 0)}
@@ -299,7 +338,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
         width={r * 0.08}
         height={r * 0.08}
         rx={1}
-        fill="#1e1b4b"
+        fill={pupilFill}
       />
 
       {/* Tool belt — row of slots below body */}
@@ -316,8 +355,8 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
                 width={r * 0.36}
                 height={r * 0.24}
                 rx={3}
-                fill={isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}
-                stroke={isActive ? '#fff' : 'rgba(255,255,255,0.15)'}
+                fill={isActive ? fgAlpha(0.25) : fgAlpha(0.08)}
+                stroke={isActive ? outlineColor : fgAlpha(0.15)}
                 strokeWidth={isActive ? 2 : 1}
               />
               {icon && (
@@ -326,7 +365,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
                   y={r * 0.04}
                   textAnchor="middle"
                   fontSize={r * 0.2}
-                  fill="#fff"
+                  fill={isLight ? '#0f172a' : '#fff'}
                 >
                   {icon}
                 </text>
@@ -343,7 +382,7 @@ export const AgentCharacter: React.FC<AgentCharacterProps> = ({
             cx={r * 0.5}
             cy={-r * 0.55}
             r={r * 0.25}
-            fill={accent2}
+            fill={finalDoneColor}
             stroke="#fff"
             strokeWidth={2}
           />

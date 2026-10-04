@@ -1,5 +1,6 @@
 import React from 'react';
 import {AbsoluteFill, interpolate, OffthreadVideo, staticFile, useCurrentFrame} from 'remotion';
+import type {ArtDirection} from '../themes';
 
 interface SceneTheme {
   accent: string;
@@ -17,11 +18,18 @@ interface CTASceneProps {
   takeaway: string;
   videoSrc?: string;
   theme?: SceneTheme;
+  artDirection?: ArtDirection;
 }
 
-export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) => {
+export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme, artDirection: ad}) => {
   const frame = useCurrentFrame();
   const t = theme ?? DEFAULT_THEME;
+
+  // Art-direction derived values with backward-compatible fallbacks
+  const bgColor = ad?.palette.bg ?? '#050510';
+  const textColor = ad?.palette.text ?? '#ffffff';
+  const overlayColor = ad?.overlay ?? t.overlay;
+  const useGlow = ad?.depth.use_glow ?? true;
 
   // Compressed to fit ≤3s (≤90 frames): label→f20, text→f40, button→f70
   const labelOpacity = interpolate(frame, [0, 12], [0, 1], {extrapolateRight: 'clamp'});
@@ -34,7 +42,7 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
   const btnY = interpolate(frame, [48, 70], [24, 0], {extrapolateRight: 'clamp'});
 
   return (
-    <AbsoluteFill style={{backgroundColor: '#050510'}}>
+    <AbsoluteFill style={{backgroundColor: bgColor}}>
       {/* Accent gradient fallback — visible even without a video; ensures
           luminance stays above QA threshold during Fade crossfade */}
       <AbsoluteFill style={{
@@ -53,12 +61,12 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
       )}
 
       {/* Theme tinted overlay */}
-      <AbsoluteFill style={{backgroundColor: t.overlay}} />
+      <AbsoluteFill style={{backgroundColor: overlayColor}} />
 
       {/* Bottom gradient — caption zone */}
       <AbsoluteFill
         style={{
-          background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.85) 100%)',
+          background: `linear-gradient(to bottom, transparent 50%, ${ad?.light_or_dark === 'light' ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.85)'} 100%)`,
         }}
       />
 
@@ -85,7 +93,7 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             fontWeight: 700,
             marginBottom: 28,
-            textShadow: `0 2px 12px rgba(0,0,0,0.9), 0 0 24px ${t.accent}66`,
+            textShadow: useGlow ? `0 2px 12px rgba(0,0,0,0.9), 0 0 24px ${t.accent}66` : 'none',
           }}
         >
           Key Takeaway
@@ -98,12 +106,12 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme}) =
             transform: `translateY(${textY}px)`,
             fontSize: 64,
             fontWeight: 800,
-            color: '#ffffff',
+            color: textColor,
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             letterSpacing: -0.5,
             lineHeight: 1.25,
             textAlign: 'center',
-            textShadow: '0 4px 28px rgba(0,0,0,0.95)',
+            textShadow: useGlow ? '0 4px 28px rgba(0,0,0,0.95)' : 'none',
             marginBottom: 60,
           }}
         >

@@ -16,6 +16,7 @@
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import type {ArtDirection} from '../themes';
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const BG = '#050510';
@@ -33,6 +34,7 @@ interface KineticTypoSceneProps {
   subtitle?: string;
   durationInFrames: number;
   transparentBg?: boolean;
+  artDirection?: ArtDirection;
 }
 
 export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
@@ -42,10 +44,17 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   subtitle,
   durationInFrames,
   transparentBg = false,
+  artDirection: ad,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const accent2 = glitchColor ?? '#34d399';
+  const accent2 = glitchColor ?? ad?.palette.secondary ?? '#34d399';
+
+  // Art-direction-aware colors
+  const bgColor = ad?.palette.bg ?? BG;
+  const textColor = ad?.palette.text ?? '#ffffff';
+  const fontFamily = ad?.typography.font ?? FONT;
+  const useGlow = ad?.depth.use_glow ?? true;
 
   // ── Timing (relative to durationInFrames) ─────────────────────────────────
   const slamEnd = Math.round(durationInFrames * 0.35);      // ~31f for 88f scene
@@ -134,15 +143,15 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
         key={`${side}-${idx}`}
         style={{
           display: 'inline-block',
-          fontFamily: FONT,
+          fontFamily: fontFamily,
           fontSize: 180,
           fontWeight: 900,
-          color: '#ffffff',
+          color: textColor,
           letterSpacing: 4,
           lineHeight: 1,
           opacity,
           transform: `translate(${tx}px, ${ty}px) rotate(${rot}deg)`,
-          textShadow: `0 0 40px ${accentColor}88`,
+          textShadow: useGlow ? `0 0 40px ${accentColor}88` : `0 4px 12px rgba(0,0,0,0.15)`,
           willChange: 'transform',
         }}
       >
@@ -152,7 +161,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   };
 
   return (
-    <AbsoluteFill style={{backgroundColor: transparentBg ? 'transparent' : BG, opacity: sceneOpacity}}>
+    <AbsoluteFill style={{backgroundColor: transparentBg ? 'transparent' : bgColor, opacity: sceneOpacity}}>
       {/* Impact flash */}
       {impactFlash > 0 && (
         <AbsoluteFill style={{
@@ -161,12 +170,14 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
         }} />
       )}
 
-      {/* Background accent glow — intensifies at slam moment */}
-      <AbsoluteFill style={{
-        background: `radial-gradient(ellipse 900px 600px at 50% 48%, ${accentColor}${
-          Math.round((0.06 + (frame < slamEnd ? 0 : 0.15) * (1 - shatterProgress)) * 255).toString(16).padStart(2, '0')
-        } 0%, transparent 60%)`,
-      }} />
+      {/* Background accent glow — intensifies at slam moment (dark theme only) */}
+      {useGlow && (
+        <AbsoluteFill style={{
+          background: `radial-gradient(ellipse 900px 600px at 50% 48%, ${accentColor}${
+            Math.round((0.06 + (frame < slamEnd ? 0 : 0.15) * (1 - shatterProgress)) * 255).toString(16).padStart(2, '0')
+          } 0%, transparent 60%)`,
+        }} />
+      )}
 
       {/* Crack line down center */}
       {crackProgress > 0 && shatterProgress < 0.8 && (
@@ -194,13 +205,15 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
           // Pre-shatter: single unit, slamming from above
           <div style={{
             transform: `translateY(${slamY}px) scale(${slamScale})`,
-            fontFamily: FONT,
+            fontFamily: fontFamily,
             fontSize: 180,
             fontWeight: 900,
-            color: '#ffffff',
+            color: textColor,
             letterSpacing: 4,
             lineHeight: 1,
-            textShadow: `0 0 60px ${accentColor}66, 0 8px 30px rgba(0,0,0,0.8)`,
+            textShadow: useGlow
+              ? `0 0 60px ${accentColor}66, 0 8px 30px rgba(0,0,0,0.8)`
+              : `0 4px 16px rgba(0,0,0,0.12)`,
             // Crack gap during crack phase
             ...(crackProgress > 0 ? {
               display: 'flex',
@@ -244,12 +257,14 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
           transform: `scale(${subtitleScale})`,
         }}>
           <span style={{
-            fontFamily: FONT,
+            fontFamily: fontFamily,
             fontSize: 64,
             fontWeight: 900,
             color: accentColor,
             letterSpacing: 6,
-            textShadow: `0 0 40px ${accentColor}88, 0 4px 20px rgba(0,0,0,0.9)`,
+            textShadow: useGlow
+              ? `0 0 40px ${accentColor}88, 0 4px 20px rgba(0,0,0,0.9)`
+              : `0 2px 8px rgba(0,0,0,0.1)`,
           }}>
             {subtitle}
           </span>
