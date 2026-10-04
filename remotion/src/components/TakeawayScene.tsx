@@ -97,10 +97,11 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
 
   const totalFrames = durationInFrames;
 
-  // Beat boundaries
-  const convergeStart = Math.round(totalFrames * 0.33);
-  const convergeEnd = Math.round(totalFrames * 0.64);
-  const textStart = Math.round(totalFrames * 0.60);
+  // Beat boundaries. Light worlds have no glow to carry the converge phase, so
+  // the words converge earlier and the takeaway arrives sooner (holds longer).
+  const convergeStart = Math.round(totalFrames * (isLight ? 0.22 : 0.33));
+  const convergeEnd = Math.round(totalFrames * (isLight ? 0.50 : 0.64));
+  const textStart = Math.round(totalFrames * (isLight ? 0.42 : 0.60));
 
   // Scene opacity
   const sceneOpacity = interpolate(
@@ -119,8 +120,9 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
     : 1 - Math.pow(-2 * convergeP + 2, 2) / 2;
 
   // Token opacity: visible scattered, then shrink at center
+  const tokenPeak = isLight ? 1 : 0.8;
   const tokenOpacity = interpolate(
-    frame, [4, 14, convergeEnd - 4, convergeEnd + 8], [0, 0.8, 0.8, 0],
+    frame, [4, 14, convergeEnd - 4, convergeEnd + 8], [0, tokenPeak, tokenPeak, 0],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
@@ -185,7 +187,19 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
             opacity: tokenOpacity,
             zIndex: 2,
           }}>
-            <div style={{
+            {/* Light worlds: solid, readable word tags on surface cards (no glow to
+                carry faint tokens). Dark worlds keep the original glow-era tokens. */}
+            <div style={isLight ? {
+              padding: '10px 20px',
+              borderRadius: 12,
+              background: `linear-gradient(${color}22, ${color}22), ${ad?.palette.surface ?? '#ffffff'}`,
+              border: `2px solid ${color}`,
+              boxShadow: ad?.depth.shadow_md,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              whiteSpace: 'nowrap',
+            } : {
               width: 64,
               height: 56,
               borderRadius: 10,
@@ -195,7 +209,12 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
             }}>
-              <span style={{
+              <span style={isLight ? {
+                fontFamily: fontFamily,
+                fontSize: 28,
+                fontWeight: 800,
+                color,
+              } : {
                 fontFamily: monoFamily,
                 fontSize: 13,
                 fontWeight: 600,
