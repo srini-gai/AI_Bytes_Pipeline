@@ -590,3 +590,64 @@ def test_fetch_all_clips_skips_failed_scenes(mock_fetch, tmp_path):
 
     assert "hook" not in clips
     assert "concept" in clips
+
+
+# ── Art Director guard (no default visual world) ──────────────────────────────
+
+def _write_storyboard(tmp_path, payload) -> None:
+    ep_dir = tmp_path / "week_01" / "ep05"
+    ep_dir.mkdir(parents=True, exist_ok=True)
+    (ep_dir / "ep05_storyboard_en.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_load_storyboard_doc_reads_v4_dict(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    _write_storyboard(tmp_path, {"storyboard": [{"scene_id": 1}], "art_direction": {"id": "cinematic-dark"}})
+    doc = visual_agent._load_storyboard_doc(5, 1, "en")
+    assert doc["format"] == "v4"
+    assert doc["art_direction"]["id"] == "cinematic-dark"
+    assert visual_agent._load_storyboard(5, 1, "en") == [{"scene_id": 1}]
+
+
+def test_load_storyboard_doc_reads_legacy_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    _write_storyboard(tmp_path, [{"scene_id": 1}])
+    assert visual_agent._load_storyboard_doc(5, 1, "en")["format"] == "legacy_list"
+
+
+def test_resolve_art_direction_v4_requires_registered_world(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    doc = {"storyboard": [{}], "art_direction": None, "format": "v4"}
+    with pytest.raises(RuntimeError, match="ART_DIRECTION_GUARD"):
+        visual_agent._resolve_art_direction(doc, 5, 1, "en")
+    doc["art_direction"] = {"id": "pastel-dream"}
+    with pytest.raises(RuntimeError, match="ART_DIRECTION_GUARD"):
+        visual_agent._resolve_art_direction(doc, 5, 1, "en")
+
+
+def test_resolve_art_direction_returns_explicit_choice(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    doc = {"storyboard": [{}], "art_direction": {"id": "cinematic-dark"}, "format": "v4"}
+    assert visual_agent._resolve_art_direction(doc, 5, 1, "en") == "cinematic-dark"
+
+
+def test_resolve_art_direction_legacy_has_no_world(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    assert visual_agent._resolve_art_direction(None, 5, 1, "en") is None
+    legacy = {"storyboard": [{}], "art_direction": None, "format": "legacy_list"}
+    assert visual_agent._resolve_art_direction(legacy, 5, 1, "en") is None
+
+
+def test_resolve_art_direction_blocks_render_after_planning_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_BASE_PATH", str(tmp_path))
+    ep_dir = tmp_path / "week_01" / "ep05"
+    ep_dir.mkdir(parents=True)
+    (ep_dir / "ep05_art_direction_FAILED_EN.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="planning failed"):
+        visual_agent._resolve_art_direction(None, 5, 1, "en")
+
+
+def test_build_props_carries_art_direction_only_when_chosen():
+    assert "art_direction" not in visual_agent._build_props(SAMPLE_SCRIPT)
+    props = visual_agent._build_props(SAMPLE_SCRIPT, storyboard=[{"scene_id": 1}], art_direction="bright-workspace")
+    assert props["art_direction"] == "bright-workspace"

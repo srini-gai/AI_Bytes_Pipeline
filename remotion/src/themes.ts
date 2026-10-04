@@ -390,10 +390,22 @@ export const ART_DIRECTIONS: Record<string, ArtDirection> = {
 
 /**
  * Look up an art direction manifest by id.
- * Falls back to cinematic-dark when the id is unknown.
+ *
+ * There is no default visual world: an unknown id is a planning error and
+ * fails the render rather than silently substituting another manifest.
+ * (Props with no art_direction at all keep the legacy pre-v4 theme path in
+ * AIBytesReel — that is how the EP00 reference episode renders.)
  */
 export function getArtDirection(id: string): ArtDirection {
-  return ART_DIRECTIONS[id] ?? CINEMATIC_DARK;
+  const ad = ART_DIRECTIONS[id];
+  if (!ad) {
+    throw new Error(
+      `[ART DIRECTION GUARD] Unknown art_direction '${id}'. ` +
+      `Registered: ${Object.keys(ART_DIRECTIONS).join(', ')}. ` +
+      `The Art Director must select a registered visual world — no default is applied.`,
+    );
+  }
+  return ad;
 }
 
 /**

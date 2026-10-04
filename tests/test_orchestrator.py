@@ -11,6 +11,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import orchestrator
 
 
+@pytest.fixture(autouse=True)
+def _no_real_visual_director(monkeypatch):
+    """
+    The Visual Director calls the Anthropic API. Mock it for every orchestrator
+    test, and use a dummy key so any unmocked call fails auth instead of spending.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    director = MagicMock()
+    director.run.return_value = {"storyboard": [], "skipped": True, "output_path": ""}
+    monkeypatch.setattr(orchestrator, "visual_director_agent", director)
+    return director
+
+
 # ── _auto_week ────────────────────────────────────────────────────────────────
 
 def test_auto_week_first_day(monkeypatch):

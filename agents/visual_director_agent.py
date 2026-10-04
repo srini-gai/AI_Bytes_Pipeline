@@ -12,6 +12,10 @@ v4 changes (Creative Visual Reasoning):
   - Visual fingerprint storage and novelty guard against recent episodes
   - Renderability validation before implementation
   - Visual-only comprehension test (muted-video understanding)
+  - Art Director stage: every episode must explicitly select a registered
+    art_direction (visual world) — planning FAILS if no decision is made;
+    there is no default world
+  - approve_episode() persists the approved visual + art-direction fingerprint
 
 Carries forward from v3.2:
   - Quality gate thresholds (beats, duration, typography, score)
@@ -25,7 +29,9 @@ Output file:        ep{NN}_storyboard_{LANG}.json
 import json
 import logging
 import os
+import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import anthropic
@@ -122,6 +128,197 @@ CAMERA_MOVES = {
     "pan-follow", "reveal", "static", "focus-shift", "track-object",
 }
 
+# ── Art Director (v4) ───────────────────────────────────────────────────────
+# The registry of renderable visual worlds lives in remotion/src/themes.ts
+# (ART_DIRECTIONS). It is parsed here so the planner and the renderer share one
+# source of truth. There is NO default world: a missing or unregistered
+# selection fails planning.
+
+THEMES_TS_PATH = Path(__file__).resolve().parent.parent / "remotion" / "src" / "themes.ts"
+
+ART_DIRECTION_RATIONALE_KEYS = (
+    "topic_semantics",
+    "visual_thesis",
+    "continuity_object",
+    "attention_pattern",
+    "fingerprint_comparison",
+)
+
+# Sentinel the planner may return when no registered world fits the episode.
+NEW_WORLD_REQUIRED = "NEW_WORLD_REQUIRED"
+
+
+class ArtDirectionError(RuntimeError):
+    """Planning cannot proceed without an explicit, registered Art Director decision."""
+
+
+def load_art_direction_registry(themes_path: Path = THEMES_TS_PATH) -> dict[str, dict]:
+    """
+    Parse remotion/src/themes.ts and return {id: {name, visual_world, light_or_dark}}
+    for every manifest registered in ART_DIRECTIONS.
+    """
+    try:
+        source = themes_path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ArtDirectionError(f"Art direction registry unreadable: {themes_path}: {e}") from e
+
+    registry_block = re.search(
+        r"export const ART_DIRECTIONS[^=]*=\s*\{(.*?)\};", source, re.DOTALL
+    )
+    if not registry_block:
+        raise ArtDirectionError(f"ART_DIRECTIONS registry not found in {themes_path}")
+
+    manifests: dict[str, dict] = {}
+    for const_name, body in re.findall(
+        r"export const (\w+): ArtDirection = \{(.*?)\n\};", source, re.DOTALL
+    ):
+        manifests[const_name] = dict(
+            re.findall(r"^\s{2}(id|name|visual_world|light_or_dark): '([^']*)'", body, re.MULTILINE)
+        )
+
+    registry: dict[str, dict] = {}
+    for key, const_name in re.findall(r"'([^']+)'\s*:\s*(\w+)", registry_block.group(1)):
+        fields = manifests.get(const_name, {})
+        registry[key] = {
+            "name": fields.get("name", key),
+            "visual_world": fields.get("visual_world", ""),
+            "light_or_dark": fields.get("light_or_dark", ""),
+        }
+
+    if not registry:
+        raise ArtDirectionError(f"ART_DIRECTIONS registry in {themes_path} is empty")
+    return registry
+
+
+def _format_art_direction_menu(registry: dict[str, dict]) -> str:
+    """Format the registered visual worlds for the planner prompt."""
+    lines = ["Registered visual worlds (art_direction.id must be one of these):"]
+    for ad_id, meta in registry.items():
+        lines.append(
+            f"  - {ad_id}: {meta.get('visual_world', '')} "
+            f"[{meta.get('light_or_dark', '?')}]"
+        )
+    lines.append(
+        f"If none genuinely fits, return art_direction.id = \"{NEW_WORLD_REQUIRED}\" "
+        f"with a proposed visual_world — planning will stop for a new manifest."
+    )
+    return "\n".join(lines)
+
+
+def _fingerprint_art_direction_id(fingerprint: dict) -> str:
+    """Return the art-direction id recorded in an episode fingerprint, if any."""
+    ad = fingerprint.get("art_direction")
+    if isinstance(ad, dict):
+        return str(ad.get("id", ""))
+    if isinstance(ad, str):
+        return ad
+    return ""
+
+
+def _validate_art_direction(
+    art_direction: object,
+    registry: dict[str, dict],
+    fingerprints: dict,
+) -> list[str]:
+    """
+    Validate the Art Director decision. Returns violation strings
+    (empty list = valid). Never substitutes a default world.
+    """
+    if not isinstance(art_direction, dict) or not art_direction:
+        return [
+            "ART_DIRECTION_MISSING: no art_direction decision — the Art Director "
+            "must explicitly select a visual world (there is no default)"
+        ]
+
+    violations: list[str] = []
+    ad_id = str(art_direction.get("id", "")).strip()
+
+    if ad_id == NEW_WORLD_REQUIRED:
+        return [
+            f"ART_DIRECTION_NEW_WORLD_REQUIRED: proposed visual world "
+            f"'{art_direction.get('visual_world', '')}' has no registered manifest"
+        ]
+    if not ad_id:
+        violations.append("ART_DIRECTION_MISSING: art_direction.id is empty")
+    elif ad_id not in registry:
+        violations.append(
+            f"ART_DIRECTION_UNREGISTERED: '{ad_id}' is not in ART_DIRECTIONS "
+            f"({', '.join(registry)})"
+        )
+
+    if not str(art_direction.get("visual_world", "")).strip():
+        violations.append("ART_DIRECTION_INCOMPLETE: art_direction.visual_world is empty")
+
+    rationale = art_direction.get("rationale")
+    if not isinstance(rationale, dict):
+        violations.append(
+            "ART_DIRECTION_INCOMPLETE: art_direction.rationale missing — must cover "
+            + ", ".join(ART_DIRECTION_RATIONALE_KEYS)
+        )
+    else:
+        missing = [k for k in ART_DIRECTION_RATIONALE_KEYS if not str(rationale.get(k, "")).strip()]
+        if missing:
+            violations.append(
+                f"ART_DIRECTION_INCOMPLETE: rationale missing {', '.join(missing)}"
+            )
+
+    # Repetition guard: reusing the most recently approved world needs a reason
+    if ad_id and fingerprints:
+        last_key = list(fingerprints.keys())[-1]
+        if (
+            _fingerprint_art_direction_id(fingerprints[last_key]) == ad_id
+            and not str(art_direction.get("repeat_justification", "")).strip()
+        ):
+            violations.append(
+                f"ART_DIRECTION_REPEAT: '{ad_id}' repeats the most recent approved "
+                f"episode ({last_key}) — add repeat_justification or choose another world"
+            )
+
+    return violations
+
+
+def _is_art_direction_violation(violation: str) -> bool:
+    return violation.startswith("ART_DIRECTION_")
+
+
+def art_direction_failure_path(episode: int, week: int, lang: str) -> Path:
+    """Marker written when planning fails for lack of an Art Director decision."""
+    return _episode_dir(episode, week) / f"ep{episode:02d}_art_direction_FAILED_{lang.upper()}.json"
+
+
+def _record_art_direction_failure(
+    episode: int, week: int, lang: str, violations: list[str]
+) -> None:
+    """Persist the failure so the downstream render cannot silently fall back."""
+    path = art_direction_failure_path(episode, week, lang)
+    path.write_text(
+        json.dumps(
+            {
+                "episode": episode,
+                "week": week,
+                "lang": lang.upper(),
+                "failed_at": datetime.now(timezone.utc).isoformat(),
+                "violations": violations,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    logger.error(f"EP{episode:02d} — Art Director decision missing/invalid -> {path}")
+
+
+def _clear_art_direction_failure(episode: int, week: int, lang: str) -> None:
+    path = art_direction_failure_path(episode, week, lang)
+    if path.exists():
+        path.unlink()
+        logger.info(f"EP{episode:02d} — cleared stale Art Director failure marker")
+
+
+def _episode_key(episode: int, week: int) -> str:
+    return f"week{week:02d}_ep{episode:02d}"
+
+
 # ── Fingerprint storage ─────────────────────────────────────────────────────
 
 FINGERPRINT_PATH = Path(
@@ -142,23 +339,27 @@ def _load_fingerprints() -> dict:
 
 
 def _save_fingerprint(episode_key: str, fingerprint: dict) -> None:
-    """Append a new fingerprint to the fingerprint store."""
-    try:
-        if FINGERPRINT_PATH.exists():
-            data = json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8"))
-        else:
-            data = {
-                "version": "v4.0",
-                "description": "Visual fingerprints for approved episodes",
-                "episodes": {},
-            }
-        data["episodes"][episode_key] = fingerprint
-        FINGERPRINT_PATH.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        logger.info(f"Fingerprint saved: {episode_key}")
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Could not save fingerprint: {e}")
+    """
+    Add/replace an approved episode fingerprint in the fingerprint store.
+    Raises on failure — an approval must never be silently lost.
+    """
+    if FINGERPRINT_PATH.exists():
+        data = json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8"))
+    else:
+        data = {
+            "version": "v4.1",
+            "description": "Visual + art-direction fingerprints for approved episodes",
+            "episodes": {},
+        }
+    data.setdefault("episodes", {})
+    # Re-insert so the most recently approved episode is always last
+    data["episodes"].pop(episode_key, None)
+    data["episodes"][episode_key] = fingerprint
+    FINGERPRINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = FINGERPRINT_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(FINGERPRINT_PATH)
+    logger.info(f"Fingerprint saved: {episode_key} -> {FINGERPRINT_PATH}")
 
 
 def _format_fingerprints_for_prompt(fingerprints: dict) -> str:
@@ -174,6 +375,12 @@ def _format_fingerprints_for_prompt(fingerprints: dict) -> str:
         lines.append(f"  Comparison structure: {fp.get('comparison_structure', 'N/A')}")
         lines.append(f"  Dominant primitives: {', '.join(fp.get('dominant_primitives', []))}")
         lines.append(f"  Visual world: {fp.get('visual_world', 'N/A')}")
+        ad = fp.get("art_direction")
+        if isinstance(ad, dict) and ad.get("id"):
+            lines.append(
+                f"  Art direction: {ad.get('id')} — {ad.get('visual_world', '')} "
+                f"[{ad.get('light_or_dark', '?')}]"
+            )
         comps = fp.get("component_sequence", [])
         if comps:
             lines.append(f"  Component sequence: {' → '.join(comps)}")
@@ -205,10 +412,25 @@ You must follow this planning order. Do NOT start from component selection:
   4. Physical Visual Actions — use meaningful action verbs (split, merge, transform, etc.)
   5. Continuity Object — carry one object through scenes as chapters of one journey
   6. Visual Grammar — what to use, what to deliberately avoid
-  7. Novelty Guard — compare against recent episode fingerprints, alter if too similar
-  8. Scene Plan — duration, pacing, structure
-  9. Component Mapping — ONLY NOW choose implementation components
-  10. Renderability — can current components render each beat?
+  7. Art Director — explicitly select the episode's visual world (see ART DIRECTOR)
+  8. Novelty Guard — compare against recent episode fingerprints, alter if too similar
+  9. Scene Plan — duration, pacing, structure
+  10. Component Mapping — ONLY NOW choose implementation components
+  11. Renderability — can current components render each beat?
+
+══════════════════════════════════════════════════════
+ART DIRECTOR (v4 — mandatory, no default)
+══════════════════════════════════════════════════════
+Every episode must explicitly choose its visual world from the registered worlds
+listed in the user message. There is NO default world — never pick one by habit.
+Base the choice on:
+  • topic/content semantics — where does this subject naturally live?
+  • the Visual Thesis
+  • the continuity object — what environment makes it read natively?
+  • emotional/attention pattern — the mood and pacing the topic needs
+  • recent art-direction fingerprints — avoid unintended repetition
+Reusing the most recently approved world is allowed only with an explicit
+repeat_justification. If no registered world fits, set id to "NEW_WORLD_REQUIRED".
 
 ══════════════════════════════════════════════════════
 CLAIM CLASSIFICATION (v4 — required per beat)
@@ -386,6 +608,18 @@ OUTPUT FORMAT — return ONLY this JSON, no fences
       "at_midpoint": "<what the viewer understands>",
       "at_takeaway": "<what the viewer understands>"
     }
+  },
+  "art_direction": {
+    "id": "<registered visual world id, or NEW_WORLD_REQUIRED>",
+    "visual_world": "<one line: the visual world>",
+    "rationale": {
+      "topic_semantics": "<why this world fits the subject>",
+      "visual_thesis": "<how it supports the visual thesis>",
+      "continuity_object": "<how the continuity object reads in this world>",
+      "attention_pattern": "<emotional / attention pattern it creates>",
+      "fingerprint_comparison": "<how it relates to recent episodes' worlds>"
+    },
+    "repeat_justification": "<required only if repeating the most recent world>"
   },
   "novelty_assessment": {
     "similarity_scores": {"<episode_key>": "<LOW|LOW-MEDIUM|MEDIUM|HIGH>"},
@@ -745,15 +979,32 @@ def run(
           "visual_complexity": dict,
           "visual_thesis": dict,
           "visual_fingerprint": dict,
+          "art_direction": dict,
           "novelty_assessment": dict,
           "violations": list[str],
           "skipped": bool
         }
+
+    Raises:
+        ArtDirectionError: no explicit, registered Art Director decision. A
+            failure marker is written so the visual render cannot fall back.
     """
     lang = lang.lower()
     output_path = (
         _episode_dir(episode, week) / f"ep{episode:02d}_storyboard_{lang.upper()}.json"
     )
+
+    # Art Director inputs: registered worlds + recent approved fingerprints
+    try:
+        registry = load_art_direction_registry()
+    except ArtDirectionError as e:
+        _record_art_direction_failure(episode, week, lang, [str(e)])
+        raise
+    fingerprints = _load_fingerprints()
+    # An episode is never compared against its own previously approved fingerprint
+    prior_fingerprints = {
+        k: v for k, v in fingerprints.items() if k != _episode_key(episode, week)
+    }
 
     # Cache check — skip Claude call if storyboard already on disk and passes
     if output_path.exists():
@@ -761,6 +1012,9 @@ def run(
             cached = json.loads(output_path.read_text(encoding="utf-8"))
             scenes = cached.get("storyboard", [])
             violations = _validate_storyboard(scenes, episode)
+            violations += _validate_art_direction(
+                cached.get("art_direction"), registry, prior_fingerprints
+            )
             if not violations:
                 complexity = cached.get(
                     "visual_complexity", _compute_visual_complexity(scenes)
@@ -783,6 +1037,7 @@ def run(
                     "visual_complexity": complexity,
                     "visual_thesis": cached.get("visual_thesis", {}),
                     "visual_fingerprint": cached.get("visual_fingerprint", {}),
+                    "art_direction": cached.get("art_direction", {}),
                     "novelty_assessment": cached.get("novelty_assessment", {}),
                     "violations": [],
                     "skipped": True,
@@ -795,9 +1050,8 @@ def run(
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"EP{episode:02d} — could not read cached storyboard: {e}")
 
-    # Load recent fingerprints for novelty guard
-    fingerprints = _load_fingerprints()
-    fingerprint_context = _format_fingerprints_for_prompt(fingerprints)
+    # Recent fingerprints for the novelty guard + Art Director
+    fingerprint_context = _format_fingerprints_for_prompt(prior_fingerprints)
 
     # Build user message from script — v4 includes fingerprint context
     user_msg = (
@@ -823,6 +1077,10 @@ def run(
         f"══════════════════════════════════════════════════════\n"
         f"{fingerprint_context}\n\n"
         f"══════════════════════════════════════════════════════\n"
+        f"ART DIRECTOR — REGISTERED VISUAL WORLDS\n"
+        f"══════════════════════════════════════════════════════\n"
+        f"{_format_art_direction_menu(registry)}\n\n"
+        f"══════════════════════════════════════════════════════\n"
         f"INSTRUCTIONS\n"
         f"══════════════════════════════════════════════════════\n"
         f"Follow the v4 Creative Visual Reasoning pipeline:\n"
@@ -831,17 +1089,20 @@ def run(
         f"3. Classify every claim as FACTUAL_EXACT / ILLUSTRATIVE / VISUAL_METAPHOR\n"
         f"4. Decompose into conceptual beats with physical visual actions\n"
         f"5. Define continuity object and its transformation journey\n"
-        f"6. Check novelty against the fingerprints above — alter if too similar\n"
-        f"7. ONLY THEN map to implementation components\n"
-        f"8. Include claim_type in each beat\n"
-        f"9. Compute visual_complexity score\n\n"
+        f"6. Art Director: explicitly select art_direction from the registered worlds, "
+        f"justified by topic semantics, visual thesis, continuity object, attention "
+        f"pattern and recent fingerprints (no default world)\n"
+        f"7. Check novelty against the fingerprints above — alter if too similar\n"
+        f"8. ONLY THEN map to implementation components\n"
+        f"9. Include claim_type in each beat\n"
+        f"10. Compute visual_complexity score\n\n"
         f"Constraints:\n"
         f"- Total duration: 45–60 seconds\n"
         f"- CTA ≤ 3 seconds, HOOK ≤ 4 seconds\n"
         f"- Every scene > 4s needs ≥2 beats, > 6s needs ≥3 beats\n"
         f"- visual_first_score must be ≥80\n"
         f"- Every numeric viz scene must include source_type\n"
-        f"- Return the COMPLETE JSON output including visual_thesis, "
+        f"- Return the COMPLETE JSON output including visual_thesis, art_direction, "
         f"novelty_assessment, visual_fingerprint, storyboard, and visual_complexity\n"
     )
 
@@ -873,9 +1134,22 @@ def run(
             visual_thesis = data.get("visual_thesis", {})
             novelty_assessment = data.get("novelty_assessment", {})
             visual_fingerprint = data.get("visual_fingerprint", {})
+            art_direction = data.get("art_direction")
 
             # Validate storyboard
             violations = _validate_storyboard(scenes, episode)
+
+            # Validate the Art Director decision — no default world, ever
+            ad_violations = _validate_art_direction(
+                art_direction, registry, prior_fingerprints
+            )
+            if any(v.startswith("ART_DIRECTION_NEW_WORLD_REQUIRED") for v in ad_violations):
+                _record_art_direction_failure(episode, week, lang, ad_violations)
+                raise ArtDirectionError(
+                    f"EP{episode:02d} planning stopped: {ad_violations[0]} — "
+                    f"add a manifest to remotion/src/themes.ts and re-plan"
+                )
+            violations.extend(ad_violations)
 
             # Validate novelty
             novelty_violations = _validate_novelty(novelty_assessment)
@@ -897,6 +1171,13 @@ def run(
                     user_msg = user_msg_retry
                     time.sleep(2 ** attempt)
                     continue
+                remaining_ad = [v for v in violations if _is_art_direction_violation(v)]
+                if remaining_ad:
+                    _record_art_direction_failure(episode, week, lang, remaining_ad)
+                    raise ArtDirectionError(
+                        f"EP{episode:02d} planning failed: no valid Art Director decision "
+                        f"after 3 attempts: {'; '.join(remaining_ad)}"
+                    )
                 logger.error(
                     f"EP{episode:02d} — storyboard still has violations after 3 attempts; "
                     f"proceeding with warnings"
@@ -910,6 +1191,8 @@ def run(
             complexity = data.get("visual_complexity") or _compute_visual_complexity(scenes)
 
             result_data = {
+                "topic": script.get("topic", ""),
+                "art_direction": art_direction,
                 "visual_thesis": visual_thesis,
                 "novelty_assessment": novelty_assessment,
                 "visual_fingerprint": visual_fingerprint,
@@ -922,6 +1205,8 @@ def run(
                 "visual_complexity": complexity,
                 "violations": violations,
             }
+
+            _clear_art_direction_failure(episode, week, lang)
 
             if not dry_run:
                 output_path.write_text(
@@ -944,10 +1229,14 @@ def run(
                 "visual_complexity": complexity,
                 "visual_thesis": visual_thesis,
                 "visual_fingerprint": visual_fingerprint,
+                "art_direction": art_direction,
                 "novelty_assessment": novelty_assessment,
                 "violations": violations,
                 "skipped": False,
             }
+
+        except ArtDirectionError:
+            raise
 
         except (json.JSONDecodeError, ValueError) as e:
             last_error = e
@@ -979,3 +1268,74 @@ def run(
     raise RuntimeError(
         f"EP{episode:02d} visual_director_agent failed after 3 attempts: {last_error}"
     )
+
+
+# ── Approval: persist the art-direction fingerprint ─────────────────────────
+
+def approve_episode(
+    episode: int,
+    week: int,
+    lang: str = "en",
+    source: Path | None = None,
+    approved_by: str = "human",
+) -> dict:
+    """
+    Persist the approved episode's visual + art-direction fingerprint to
+    visual_fingerprints.json so future plans can avoid unintended repetition.
+
+    Call only after a human has approved the episode visuals.
+
+    Args:
+        source: storyboard doc (default ep{NN}_storyboard_{LANG}.json) or a
+                render-props JSON whose art_direction is a manifest id.
+
+    Raises:
+        ArtDirectionError: the approved episode has no registered art direction.
+    """
+    try:
+        lang = lang.lower()
+        path = Path(source) if source else (
+            _episode_dir(episode, week) / f"ep{episode:02d}_storyboard_{lang.upper()}.json"
+        )
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        scenes = doc.get("storyboard") or []
+        if not scenes:
+            raise ValueError(f"{path.name} has no storyboard to fingerprint")
+
+        registry = load_art_direction_registry()
+        raw_ad = doc.get("art_direction")
+        ad: dict = dict(raw_ad) if isinstance(raw_ad, dict) else (
+            {"id": raw_ad} if isinstance(raw_ad, str) else {}
+        )
+        ad_id = str(ad.get("id", "")).strip()
+        if ad_id not in registry:
+            raise ArtDirectionError(
+                f"EP{episode:02d} cannot be approved: art_direction "
+                f"'{ad_id or 'MISSING'}' is not a registered visual world"
+            )
+        meta = registry[ad_id]
+        ad.setdefault("visual_world", meta["visual_world"])
+        ad["name"] = meta["name"]
+        ad["light_or_dark"] = meta["light_or_dark"]
+
+        fingerprint = dict(doc.get("visual_fingerprint") or {})
+        fingerprint.update({
+            "topic": doc.get("topic", fingerprint.get("topic", "")),
+            "art_direction": ad,
+            "component_sequence": [s.get("component", "") for s in scenes],
+            "scene_type_sequence": [s.get("scene_type", "") for s in scenes],
+            "scene_count": len(scenes),
+            "duration_seconds": round(sum(s.get("duration_seconds", 0) for s in scenes), 2),
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approved_by": approved_by,
+            "source": path.name,
+        })
+        fingerprint.setdefault("visual_world", ad["visual_world"])
+
+        key = _episode_key(episode, week)
+        _save_fingerprint(key, fingerprint)
+        logger.info(f"EP{episode:02d} — approved; art direction '{ad_id}' fingerprinted as {key}")
+        return {"success": True, "output_path": str(FINGERPRINT_PATH), "episode_key": key}
+    except Exception as e:
+        logger.error(f"EP{episode:02d} — approval fingerprint failed: {e}")
+        raise

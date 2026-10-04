@@ -61,6 +61,8 @@ Two manifests ship:
 
 Flow: `ep_props.json` `"art_direction"` string → `getArtDirection()` → full manifest → passed through `StoryboardReel` → `renderStoryboardScene` → individual components via `artDirection` prop. All components fall back to dark-tech defaults when no art direction is passed.
 
+**No default world (2026-10-04).** `bright-workspace` is EP02-specific. Every new episode's Visual Director plan must contain an explicit `art_direction` decision (registered id + visual_world + rationale); planning fails otherwise and `visual_agent` refuses to render. `getArtDirection()` throws on unknown ids. After approval, run `scripts/approve_episode.py` to persist the art-direction fingerprint to `visual_fingerprints.json`. See `skills/VISUAL_DIRECTOR.md` → Art Director.
+
 ---
 
 ## Episode Status

@@ -41,6 +41,51 @@ Every episode follows this 11-stage sequence:
 ```
 
 The system prompt in `visual_director_agent.py` enforces this order.
+Stage 7 (Visual Grammar) is followed by the mandatory **Art Director** decision below.
+
+---
+
+## Art Director (v4.1 — mandatory, no default world)
+
+Every new episode must explicitly output `art_direction` before rendering:
+
+```json
+"art_direction": {
+  "id": "<registered manifest id>",
+  "visual_world": "<one line>",
+  "rationale": {
+    "topic_semantics": "...", "visual_thesis": "...", "continuity_object": "...",
+    "attention_pattern": "...", "fingerprint_comparison": "..."
+  },
+  "repeat_justification": "<only if repeating the most recently approved world>"
+}
+```
+
+- Choose from the worlds registered in `remotion/src/themes.ts` (`ART_DIRECTIONS`),
+  based on topic semantics, Visual Thesis, continuity object, emotional/attention
+  pattern and recent art-direction fingerprints. Current worlds: `cinematic-dark`,
+  `bright-workspace` — both remain valid options.
+- **There is no default.** `bright-workspace` is EP02-specific; `cinematic-dark` is not a
+  fallback either. A missing, incomplete or unregistered decision fails planning
+  (`ArtDirectionError`) and writes `ep{NN}_art_direction_FAILED_{LANG}.json`;
+  `visual_agent` refuses to render while that marker exists.
+- If no registered world fits, the planner returns `NEW_WORLD_REQUIRED` and planning
+  stops until a new manifest is added to `themes.ts`.
+- Reusing the most recently approved episode's world requires `repeat_justification`.
+- The renderer throws on an unknown `art_direction` id. Props with no `art_direction`
+  render only through the legacy pre-v4 theme path (EP00 reference).
+
+### Persist after approval
+
+After a human approves an episode's visuals:
+
+```bash
+python scripts/approve_episode.py --week N --episode N [--source <storyboard-or-props.json>]
+```
+
+This writes the visual + art-direction fingerprint to
+`$OUTPUT_BASE_PATH/visual_fingerprints.json`, which feeds the novelty guard and the
+Art Director repeat guard for future episodes.
 
 ---
 

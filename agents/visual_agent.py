@@ -30,6 +30,8 @@ from typing import Optional
 
 import av
 
+from agents import visual_director_agent
+
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -289,6 +291,21 @@ def _load_storyboard(episode: int, week: int, lang: str) -> list | None:
     Load storyboard JSON for this episode from disk, if it exists.
     Returns the storyboard list, or None if not found.
     """
+    doc = _load_storyboard_doc(episode, week, lang)
+    return doc["storyboard"] if doc else None
+
+
+def _load_storyboard_doc(episode: int, week: int, lang: str) -> dict | None:
+    """
+    Load the storyboard file for this episode.
+
+    Accepts both formats:
+      - v4 Visual Director doc: {"storyboard": [...], "art_direction": {...}, ...}
+      - legacy v3 bare list:    [...]
+
+    Returns {"storyboard": list, "art_direction": object|None, "format": "v4"|"legacy_list"}
+    or None if no storyboard exists.
+    """
     base = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
     lang_tag_lower = lang.lower()
     lang_tag_upper = lang.upper()
@@ -305,10 +322,20 @@ def _load_storyboard(episode: int, week: int, lang: str) -> list | None:
             data = json.loads(storyboard_path.read_text(encoding="utf-8"))
             if isinstance(data, list) and data:
                 logger.info(
-                    f"EP{episode:02d} [{lang_tag.upper()}] loaded storyboard "
+                    f"EP{episode:02d} [{lang_tag.upper()}] loaded legacy storyboard "
                     f"({len(data)} scenes) from {storyboard_path.name}"
                 )
-                return data
+                return {"storyboard": data, "art_direction": None, "format": "legacy_list"}
+            if isinstance(data, dict) and isinstance(data.get("storyboard"), list) and data["storyboard"]:
+                logger.info(
+                    f"EP{episode:02d} [{lang_tag.upper()}] loaded v4 storyboard "
+                    f"({len(data['storyboard'])} scenes) from {storyboard_path.name}"
+                )
+                return {
+                    "storyboard": data["storyboard"],
+                    "art_direction": data.get("art_direction"),
+                    "format": "v4",
+                }
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"EP{episode:02d} storyboard load failed: {e}")
     return None
@@ -441,11 +468,45 @@ def _stage_generated_clips(
     return staged
 
 
+def _resolve_art_direction(
+    storyboard_doc: dict | None, episode: int, week: int, lang: str
+) -> str | None:
+    """
+    Return the Art Director's manifest id for this render, or None for legacy
+    (pre-v4) episodes. Never substitutes a default visual world.
+
+    Raises RuntimeError when planning recorded an Art Director failure, or when
+    a v4 storyboard carries no registered art_direction.
+    """
+    failure_marker = visual_director_agent.art_direction_failure_path(episode, week, lang)
+    if failure_marker.exists():
+        raise RuntimeError(
+            f"EP{episode:02d} ART_DIRECTION_GUARD FAIL: planning failed without an Art "
+            f"Director decision ({failure_marker.name}). Refusing to render with a default "
+            f"visual world — re-run the Visual Director."
+        )
+    if not storyboard_doc or storyboard_doc.get("format") != "v4":
+        return None
+
+    raw = storyboard_doc.get("art_direction")
+    ad_id = str(raw.get("id", "") if isinstance(raw, dict) else (raw or "")).strip()
+    registry = visual_director_agent.load_art_direction_registry()
+    if ad_id not in registry:
+        raise RuntimeError(
+            f"EP{episode:02d} ART_DIRECTION_GUARD FAIL: v4 storyboard has art_direction "
+            f"'{ad_id or 'MISSING'}' — must be one of {', '.join(registry)}. "
+            f"No default visual world is applied."
+        )
+    logger.info(f"EP{episode:02d} ART_DIRECTION={ad_id} ({registry[ad_id]['visual_world']})")
+    return ad_id
+
+
 def _build_props(
     script: dict,
     clips: dict[str, str] | None = None,
     storyboard: list | None = None,
     generated_video_clips: Optional[dict[str, str]] = None,
+    art_direction: str | None = None,
 ) -> dict:
     """Map script JSON fields to AIBytesReel composition props.
 
@@ -491,6 +552,8 @@ def _build_props(
             props["data_spec"] = script["data_spec"]
         if script.get("token_spec"):
             props["token_spec"] = script["token_spec"]
+    if art_direction:
+        props["art_direction"] = art_direction
     if clips:
         props["clips"] = clips
     if generated_video_clips:
@@ -685,7 +748,10 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         )
 
     # Load storyboard from disk (written by visual_director_agent, if it ran)
-    storyboard = _load_storyboard(episode, week, lang)
+    storyboard_doc = _load_storyboard_doc(episode, week, lang)
+    storyboard = storyboard_doc["storyboard"] if storyboard_doc else None
+    # Art Director decision — fails here (before any generation) if missing
+    art_direction = _resolve_art_direction(storyboard_doc, episode, week, lang)
 
     # Phase 3B: generate video backgrounds for GENERATIVE_VIDEO scenes.
     # Only runs for the first (canonical) language render to avoid duplicate
@@ -720,6 +786,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         clips=staged_clips,
         storyboard=storyboard,
         generated_video_clips=generated_video_clips_staged,
+        art_direction=art_direction,
     )
 
     # ── RENDER-MODE GUARD (Step 4) ────────────────────────────────────────────

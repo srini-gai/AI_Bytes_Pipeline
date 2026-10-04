@@ -404,8 +404,9 @@ export interface AIBytesReelProps {
   generatedVideoClips?: GeneratedVideoClipsMap;
   /**
    * Art direction manifest id (e.g. 'bright-workspace', 'cinematic-dark').
-   * When present, selects the visual world for this episode.
-   * Falls back to 'cinematic-dark' when absent.
+   * Chosen explicitly by the Art Director for every v4 episode; an unknown id
+   * fails the render (no default world). Absent only for legacy pre-v4 props,
+   * which keep the legacy `theme` path.
    */
   art_direction?: string;
 }
