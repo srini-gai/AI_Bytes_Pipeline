@@ -31,6 +31,7 @@ from typing import Optional
 import av
 
 from agents import visual_director_agent
+from agents.cache_identity import json_identity, quarantine_stale, read_meta, write_meta
 
 logger = logging.getLogger(__name__)
 
@@ -468,6 +469,34 @@ def _stage_generated_clips(
     return staged
 
 
+# Script fields that reach the render (directly or via legacy mode)
+_RENDER_SCRIPT_FIELDS = (
+    "episode", "topic", "title", "hook", "concept", "takeaway", "tags", "voiceover",
+    "theme", "slides", "diagram_spec", "sketch_spec", "data_spec", "token_spec",
+)
+
+
+def visual_identity(
+    script: dict, storyboard: list | None, art_direction: str | None, lang: str
+) -> str:
+    """
+    Identity of the inputs that determine a visual render: storyboard (incl.
+    narration), Art Director choice and the script's render fields. Computed
+    from local inputs only — no network — so the cache decision happens first.
+    """
+    return json_identity({
+        "storyboard": storyboard,
+        "art_direction": art_direction,
+        "render_fields": {k: script.get(k) for k in _RENDER_SCRIPT_FIELDS},
+        "lang": lang.lower(),
+    })
+
+
+def visuals_meta_path(episode: int, week: int, lang: str) -> Path:
+    suffix = "_TA" if lang.lower() == "ta" else ""
+    return _episode_dir(episode, week) / f"ep{episode:02d}_visuals{suffix}.meta.json"
+
+
 def _resolve_art_direction(
     storyboard_doc: dict | None, episode: int, week: int, lang: str
 ) -> str | None:
@@ -692,14 +721,32 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
     visuals_suffix = "_TA" if lang == "ta" else ""
     output_path = ep_dir / f"ep{episode:02d}_visuals{visuals_suffix}.mp4"
 
-    if output_path.exists() and output_path.stat().st_size > 100_000:
-        logger.info(f"EP{episode:02d} visuals already rendered — skipping")
-        return {
-            "success": True,
-            "output_path": str(output_path),
-            "skipped": True,
-            "message": "Visuals already rendered - skipping.",
-        }
+    # Storyboard + Art Director decision (local reads; fails before any generation)
+    storyboard_doc = _load_storyboard_doc(episode, week, lang)
+    storyboard = storyboard_doc["storyboard"] if storyboard_doc else None
+    art_direction = _resolve_art_direction(storyboard_doc, episode, week, lang)
+
+    # Cache check — reuse ONLY when the cached render's input identity matches
+    identity = visual_identity(script, storyboard, art_direction, lang)
+    meta_path = visuals_meta_path(episode, week, lang)
+    if output_path.exists():
+        meta = read_meta(meta_path)
+        cached_identity = meta.get("visual_identity") if meta else None
+        if cached_identity == identity and output_path.stat().st_size > 100_000:
+            logger.info(f"EP{episode:02d} visuals cache hit (identity {identity}) — skipping")
+            return {
+                "success": True,
+                "output_path": str(output_path),
+                "skipped": True,
+                "visual_identity": identity,
+                "message": "Visuals already rendered from identical inputs - skipping.",
+            }
+        reason = (
+            "no render metadata" if cached_identity is None
+            else f"render identity {cached_identity} != current {identity}"
+        )
+        quarantine_stale(output_path, reason)
+        quarantine_stale(meta_path, reason)
 
     # Step 1: always collect clips that already exist on disk.
     # EN and TA share the same clips/ folder for the same episode, so a clip
@@ -747,11 +794,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             f"EP{episode:02d} [{lang.upper()}] staged {len(staged_clips)}/{len(all_scenes)} clips for Remotion"
         )
 
-    # Load storyboard from disk (written by visual_director_agent, if it ran)
-    storyboard_doc = _load_storyboard_doc(episode, week, lang)
-    storyboard = storyboard_doc["storyboard"] if storyboard_doc else None
-    # Art Director decision — fails here (before any generation) if missing
-    art_direction = _resolve_art_direction(storyboard_doc, episode, week, lang)
+    # (storyboard + art direction were resolved before the cache check above)
 
     # Phase 3B: generate video backgrounds for GENERATIVE_VIDEO scenes.
     # Only runs for the first (canonical) language render to avoid duplicate
@@ -941,10 +984,27 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
                     f"EP{episode:02d} render complete in {render_time:.1f}s — "
                     f"duration={duration:.1f}s size={output_path.stat().st_size/1_048_576:.1f}MB"
                 )
+            # Record the identity of the inputs that produced this render, and
+            # the exact props (read by assembly's three-hash check).
+            props_path = output_path.with_name(
+                f"ep{episode:02d}_render_props{visuals_suffix}.json"
+            )
+            props_path.write_text(json.dumps(props, indent=2, ensure_ascii=False), encoding="utf-8")
+            write_meta(meta_path, {
+                "visual_identity": identity,
+                "art_direction": art_direction,
+                "scene_count": len(storyboard) if storyboard else 0,
+                "planned_duration": expected_duration,
+                "rendered_duration": duration,
+                "render_props": props_path.name,
+                "rendered_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            })
+
             result_dict: dict = {
                 "success": True,
                 "output_path": str(output_path),
                 "skipped": False,
+                "visual_identity": identity,
                 "duration": duration,
                 "storyboard_planned_duration": expected_duration,
                 "render_time": round(render_time, 1),

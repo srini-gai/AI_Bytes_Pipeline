@@ -18,6 +18,8 @@ from pathlib import Path
 
 import av
 
+from agents.cache_identity import quarantine_stale, read_meta, write_meta
+
 logger = logging.getLogger(__name__)
 
 OUTPUT_BASE = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
@@ -253,33 +255,45 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
             "Run voice_agent first."
         )
 
-    if output_path.exists() and output_path.stat().st_size > 500_000:
-        # Skip only if final is NEWER than both source inputs (visuals + voice).
-        # If visuals were re-rendered after the final was assembled, the final is
-        # stale and must be re-assembled — otherwise the old (possibly legacy-mode)
-        # final will be served instead of the corrected visuals.
-        final_mtime   = output_path.stat().st_mtime
-        visuals_mtime = visuals_path.stat().st_mtime
-        voice_mtime   = voice_path.stat().st_mtime
-        if final_mtime > visuals_mtime and final_mtime > voice_mtime:
+    # Input identities: voice-source hash (written by voice_agent only for audio
+    # it synthesised from that text) and visual render identity (visual_agent).
+    voice_hash_path = ep_dir / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+    visuals_meta = read_meta(ep_dir / f"ep{episode:02d}_visuals{visuals_suffix}.meta.json")
+    voice_identity = (
+        voice_hash_path.read_text(encoding="utf-8").strip() if voice_hash_path.exists() else None
+    )
+    visual_identity = visuals_meta.get("visual_identity") if visuals_meta else None
+    final_meta_path = ep_dir / f"ep{episode:02d}_final_{lang.upper()}.meta.json"
+
+    # Cache check — reuse the final ONLY when both current input identities are
+    # known and match the identities recorded when it was assembled.
+    if output_path.exists():
+        final_meta = read_meta(final_meta_path) or {}
+        inputs_known = bool(voice_identity and visual_identity)
+        if (
+            inputs_known
+            and final_meta.get("voice_source_hash") == voice_identity
+            and final_meta.get("visual_identity") == visual_identity
+            and output_path.stat().st_size > 500_000
+        ):
             logger.info(
-                f"EP{episode:02d} [{lang.upper()}] already assembled and up-to-date - skipping"
+                f"EP{episode:02d} [{lang.upper()}] final cache hit "
+                f"(voice {voice_identity}, visual {visual_identity}) - skipping"
             )
             return {
                 "success": True,
                 "output_path": str(output_path),
                 "lang": lang,
                 "skipped": True,
-                "message": "Final video already assembled - skipping.",
+                "message": "Final video already assembled from identical inputs - skipping.",
             }
-        else:
-            logger.warning(
-                f"EP{episode:02d} [{lang.upper()}] stale final detected "
-                f"(final_mtime={final_mtime:.0f} visuals_mtime={visuals_mtime:.0f} "
-                f"voice_mtime={voice_mtime:.0f}) — re-assembling from updated inputs"
-            )
-            output_path.unlink()
-            logger.info(f"EP{episode:02d} [{lang.upper()}] stale final removed, re-assembling")
+        reason = (
+            "input identity unknown (missing voice hash or visual metadata)" if not inputs_known
+            else "voice/visual input identity changed since assembly" if final_meta
+            else "no assembly metadata"
+        )
+        quarantine_stale(output_path, reason)
+        quarantine_stale(final_meta_path, reason)
 
     t0 = time.monotonic()
     logger.info(f"EP{episode:02d} [{lang.upper()}] starting assembly")
@@ -338,8 +352,9 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
     # ── THREE-HASH CONSISTENCY GUARD ─────────────────────────────────────
     # canonical_script_hash == storyboard_narration_hash == voice_source_hash
     # Prevents stale voice files pairing with newer scripts.
-    render_props_path = ep_dir / f"ep{episode:02d}_render_props.json"
-    voice_hash_path = ep_dir / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+    render_props_path = ep_dir / f"ep{episode:02d}_render_props{visuals_suffix}.json"
+    if not render_props_path.exists():
+        render_props_path = ep_dir / f"ep{episode:02d}_render_props.json"
 
     if render_props_path.exists() and voice_hash_path.exists():
         try:
@@ -429,6 +444,14 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
     # Step 4: Validate output
     duration = _validate_output(output_path, episode, lang)
     assembly_time = time.monotonic() - t0
+
+    # Record the input identities this final was assembled from
+    write_meta(final_meta_path, {
+        "voice_source_hash": voice_identity,
+        "visual_identity": visual_identity,
+        "duration": round(duration, 2),
+        "assembled_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    })
 
     logger.info(
         f"EP{episode:02d} [{lang.upper()}] assembly complete in {assembly_time:.1f}s "

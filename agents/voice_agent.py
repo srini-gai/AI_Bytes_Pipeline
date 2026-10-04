@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import os
 import time
@@ -7,6 +6,8 @@ from pathlib import Path
 import av
 from dotenv import load_dotenv
 from elevenlabs import ElevenLabs, VoiceSettings
+
+from agents.cache_identity import quarantine_stale, text_hash
 
 load_dotenv()
 
@@ -160,29 +161,43 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         raise RuntimeError(f"EP{episode:02d} script has no voiceover text")
 
     output_path = _episode_dir(episode, week) / f"ep{episode:02d}_voice_{lang.upper()}.mp3"
+    hash_path = _episode_dir(episode, week) / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+    voice_hash = text_hash(voiceover)
 
-    # Cache check — skip ElevenLabs call if valid MP3 already on disk
+    # Cache check — reuse an existing MP3 ONLY if its stored voice-source hash
+    # matches the current voiceover. A missing or mismatched hash means the MP3
+    # was not provably generated from this text: quarantine it and regenerate.
+    # The hash file is never (re)written beside an MP3 it did not produce.
     if output_path.exists():
-        try:
-            duration = _validate_duration(output_path, lang)
-            logger.info(
-                f"EP{episode:02d} [{lang.upper()}] — voice already on disk ({duration:.1f}s) — skipping TTS"
+        stored_hash = hash_path.read_text(encoding="utf-8").strip() if hash_path.exists() else None
+        if stored_hash != voice_hash:
+            reason = (
+                "no stored voice-source hash" if stored_hash is None
+                else f"stored hash {stored_hash} != current {voice_hash}"
             )
-            # Ensure voice hash file exists even on cache hit
-            voice_hash = hashlib.sha256(voiceover.encode("utf-8")).hexdigest()[:16]
-            hash_path = _episode_dir(episode, week) / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
-            hash_path.write_text(voice_hash, encoding="utf-8")
-            return {
-                "success": True,
-                "output_path": str(output_path),
-                "duration": duration,
-                "lang": lang,
-                "voice_source_hash": voice_hash,
-            }
-        except ValueError:
-            logger.warning(
-                f"EP{episode:02d} [{lang.upper()}] — existing MP3 failed validation, re-generating"
-            )
+            quarantine_stale(output_path, reason)
+            quarantine_stale(hash_path, reason)
+        else:
+            try:
+                duration = _validate_duration(output_path, lang)
+                logger.info(
+                    f"EP{episode:02d} [{lang.upper()}] — voice cache hit "
+                    f"(hash {voice_hash}, {duration:.1f}s) — skipping TTS"
+                )
+                return {
+                    "success": True,
+                    "output_path": str(output_path),
+                    "duration": duration,
+                    "lang": lang,
+                    "voice_source_hash": voice_hash,
+                    "skipped": True,
+                }
+            except ValueError:
+                logger.warning(
+                    f"EP{episode:02d} [{lang.upper()}] — existing MP3 failed validation, re-generating"
+                )
+                quarantine_stale(output_path, "failed duration validation")
+                quarantine_stale(hash_path, "failed duration validation")
 
     voice_id_key = f"ELEVENLABS_VOICE_ID_{lang.upper()}"
     voice_id = os.getenv(voice_id_key, "")
@@ -225,11 +240,9 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             logger.info(f"EP{episode:02d} [{lang.upper()}] — duration {duration:.1f}s — PASS")
 
             # ── Save voice source hash ───────────────────────────────────
-            # SHA-256 of the exact voiceover text that produced this MP3.
-            # Assembly agent checks this against canonical script hash to
-            # prevent stale voice files from pairing with newer scripts.
-            voice_hash = hashlib.sha256(voiceover.encode("utf-8")).hexdigest()[:16]
-            hash_path = _episode_dir(episode, week) / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+            # SHA-256 of the exact voiceover text that produced this MP3 —
+            # written only here, after this text was synthesised and validated.
+            # The voice cache and the assembly three-hash check rely on it.
             hash_path.write_text(voice_hash, encoding="utf-8")
             logger.info(
                 f"EP{episode:02d} [{lang.upper()}] — voice source hash saved: {voice_hash} -> {hash_path.name}"
