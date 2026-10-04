@@ -210,12 +210,27 @@ behaviour for the purpose of fixing another episode.
 
 | Param | Value |
 |---|---|
-| Target duration | 45–60 seconds |
+| Allowed duration | 45–60 seconds — **no preferred/default length** (see Duration policy) |
 | CTA | ≤ 3 seconds, always last |
 | Hook | ≤ 4 seconds |
 | Visual change cadence | One meaningful visual event every 2–4 seconds |
 | Minimum visual beats per Short | ≥ 8 |
 | Typography-only runtime cap | ≤ 25 % of total |
+
+### Duration policy (v4.1)
+
+45 s is the floor, not the target; 60 s is the ceiling, not the goal. The Visual
+Director chooses each episode's total from:
+
+- **content complexity** — how many conceptual beats the idea genuinely needs
+- **narration length** — Voice B speaks ≈ 2.5 words/s (163 words ≈ 64 s at speed 1.05)
+- **beat density** — one meaningful visual event every 2–4 s
+- **readability** — every on-screen label stays readable on a phone
+
+It must output `duration_decision` (`total_seconds` + a rationale for all four factors).
+The quality gate flags a missing/incomplete decision, a total that does not match the
+storyboard, or narration pacing outside 2.0–3.0 words/s. The approved EP02 baseline
+remains 45 s.
 
 ---
 
@@ -272,6 +287,8 @@ Available components — choose by what the scene **does**, AFTER creative plann
 | `TokenScene` | Text → token boxes → IDs |
 | `CodeExecutionScene` | Code runs line-by-line with output |
 | `CardStackScene` | Deck fans/sorts/filters |
+| `AgentTraversalScene` | Character traverses 4 labelled zones using tools; task card checks off |
+| `CircularFlowScene` | 4-quadrant rotating loop for a cyclical process |
 | `HubSpokeScene` | Radial hub + spokes |
 | `ClusterScene` | Semantic cluster groupings |
 | `NumberCounterScene` | Large number counting up |
@@ -330,13 +347,15 @@ A QA HARD_FAIL on this check blocks the episode from publishing.
 
 ## Storyboard structure (canonical Short template)
 
+Proportions of the chosen total duration — not fixed timestamps:
+
 ```
-0–3 s     HOOK         — Visually surprise; one punchy phenomenon
-3–8 s     DEMONSTRATION — Show the phenomenon BEFORE explaining
-8–40 s    EXPLANATION  — Multiple beats; diagrams, transforms, comparisons, simulations
-40–50 s   WHY IT MATTERS — Concrete real-world usage beats
-50–55 s   TAKEAWAY     — Compress the whole lesson into one visual moment
-55–58 s   CTA          — Always ≤ 3 seconds; always last
+HOOK            — first; visually surprise; one punchy phenomenon; ≤ 4 s
+DEMONSTRATION   — show the phenomenon BEFORE explaining (next ~10 %)
+EXPLANATION     — multiple beats; diagrams, transforms, comparisons, simulations
+WHY IT MATTERS  — concrete real-world usage beats
+TAKEAWAY        — compress the whole lesson into one visual moment
+CTA             — always ≤ 3 seconds; always last
 ```
 
 Scene durations: 2.0–8.0 s; prefer 2.5–5.0 s.
@@ -346,14 +365,18 @@ Any scene > 4 s MUST have ≥ 2 beats. Any scene > 6 s MUST have ≥ 3 beats.
 
 ## Regression guard — checks every Short must pass
 
-Run `python regression_guard.py` before treating any render as a candidate for publishing.
+Run `python regression_guard.py <video.mp4> <storyboard_or_props.json>` before treating
+any render as a candidate for publishing. The expected scene count comes from that file
+(no hardcoded episode count), and the content test is theme-neutral: a midframe has
+content when ≥ 0.5 % of pixels differ by > 16 luminance levels from the frame's dominant
+background tone — so it works for light and dark Art Director worlds alike.
 
 Every Short must pass:
 
 | Check | Threshold |
 |---|---|
 | Scene count | All storyboard scenes present in render |
-| Scene midpoint visibility | Luminance ≥ 5.0 at scene midframe |
+| Scene midpoint visibility | Visible content vs. the frame's own background (light or dark) |
 | First meaningful frame | Non-background content by frame 0 |
 | Longest empty interval | ≤ 1 s of consecutive background-only frames |
 | Internal/debug labels | None visible |

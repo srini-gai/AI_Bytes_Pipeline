@@ -97,6 +97,9 @@ VALID_COMPONENTS = {
     "CodeExecutionScene",
     "CardStackScene",
     "DataFlowScene",
+    # Creative visual reasoning components (v4)
+    "AgentTraversalScene",
+    "CircularFlowScene",
 }
 
 # ── Quality gate thresholds (unchanged from v3.2) ───────────────────────────
@@ -106,11 +109,29 @@ MAX_TYPOGRAPHY_RATIO = 0.25
 MAX_CONSECUTIVE_SAME_LAYOUT = 2
 MIN_VISUAL_DEMONSTRATIONS = 3
 MIN_VISUAL_FIRST_SCORE = 80
+# Allowed production range. Neither end is a preferred/default length — the
+# planner chooses the total from content complexity, narration length, beat
+# density and readability (see _validate_duration_decision).
 TARGET_MIN_SECONDS = 45.0
 TARGET_MAX_SECONDS = 60.0
 MAX_HOOK_SECONDS = 4.0
 MAX_CTA_SECONDS = 3.0
 MAX_SCENE_SECONDS_WITHOUT_BEATS = 6.0
+
+# Duration decision (v4.1)
+DURATION_RATIONALE_KEYS = (
+    "content_complexity",
+    "narration_length",
+    "beat_density",
+    "readability",
+)
+# Narration pacing sanity band (words per second of storyboard). Voice B
+# (speed 1.05) measured ~2.55 wps: 163 words ≈ 64s.
+MIN_NARRATION_WPS = 2.0
+MAX_NARRATION_WPS = 3.0
+# Pacing is only checked once the storyboard carries real narration
+MIN_WORDS_FOR_PACING_CHECK = 40
+DURATION_SUM_TOLERANCE_S = 0.5
 
 NUMERIC_VIZ_COMPONENTS = {
     "MeterScene", "BarChartScene", "DataScene",
@@ -462,14 +483,23 @@ Describe what happens visually using these action verbs:
 A fade, pulse, glow, or text entrance ALONE does not qualify as a meaningful visual beat.
 
 ══════════════════════════════════════════════════════
-TARGET STRUCTURE (45–60 seconds total)
+DURATION POLICY (allowed 45–60 seconds — no default length)
 ══════════════════════════════════════════════════════
-0–3s      HOOK         — Visually surprise immediately
-3–8s      DEMONSTRATION — Show the phenomenon BEFORE explaining
-8–40s     EXPLANATION   — Multiple beats: diagrams, transformations, comparisons
-40–50s    WHY IT MATTERS — Concrete real-world usage beats
-50–55s    TAKEAWAY      — Compress the lesson into one visual moment
-55–58s    CTA           — Always ≤3 seconds
+45s is the floor, not the target; 60s is the ceiling, not the goal.
+Choose the total duration for THIS episode from:
+  • content complexity — how many conceptual beats the idea genuinely needs
+  • narration length — the voiceover is spoken at ≈2.5 words/second
+  • beat density — one meaningful visual event every 2–4 seconds
+  • readability — every on-screen label stays readable on a phone
+Report the choice in "duration_decision".
+
+STRUCTURE (proportions of the chosen total, not fixed timestamps):
+  HOOK            — first; visually surprise immediately; ≤4s
+  DEMONSTRATION   — show the phenomenon BEFORE explaining (next ~10%)
+  EXPLANATION     — multiple beats: diagrams, transformations, comparisons
+  WHY IT MATTERS  — concrete real-world usage beats
+  TAKEAWAY        — compress the lesson into one visual moment
+  CTA             — always last, ≤3s
 
 ══════════════════════════════════════════════════════
 SCENE SCHEMA
@@ -537,6 +567,15 @@ SEQUENCE / COLLECTION:
   TimelineScene         — horizontal event timeline
   CardStackScene        — deck fans/sorts/filters
   ClusterScene          — semantic cluster groupings
+
+AGENT / PROCESS (v4):
+  AgentTraversalScene   — a character travels left→right through 4 labelled zones,
+                          using a tool per zone; a task card checks off steps.
+                          on_screen_text: [zone1, zone2, zone3, zone4, title];
+                          objects: [tool icon ×3]; data.task_steps: [step ×3]; 5 beats
+  CircularFlowScene     — 4-quadrant rotating loop for a cyclical process.
+                          on_screen_text: [q1, q2, q3, q4, title]; objects: [icon ×4];
+                          data.center_label; 5 beats
 
 DOMAIN SPECIFIC:
   TokenScene            — text → token boxes → IDs
@@ -620,6 +659,15 @@ OUTPUT FORMAT — return ONLY this JSON, no fences
       "fingerprint_comparison": "<how it relates to recent episodes' worlds>"
     },
     "repeat_justification": "<required only if repeating the most recent world>"
+  },
+  "duration_decision": {
+    "total_seconds": <float — must equal the storyboard total>,
+    "rationale": {
+      "content_complexity": "<why the idea needs this much time>",
+      "narration_length": "<narration word count vs. duration>",
+      "beat_density": "<beats per second / cadence>",
+      "readability": "<why labels stay readable at this pace>"
+    }
   },
   "novelty_assessment": {
     "similarity_scores": {"<episode_key>": "<LOW|LOW-MEDIUM|MEDIUM|HIGH>"},
@@ -894,6 +942,55 @@ def _validate_novelty(
     return violations
 
 
+def _validate_duration_decision(decision: object, scenes: list) -> list[str]:
+    """
+    The planner must justify the chosen total duration (45–60s, no default).
+    Returns violation strings; empty list = valid.
+    """
+    if not isinstance(decision, dict) or not decision:
+        return [
+            "DURATION_DECISION_MISSING: explain the chosen total duration "
+            "(content complexity, narration length, beat density, readability)"
+        ]
+
+    violations: list[str] = []
+    rationale = decision.get("rationale")
+    if not isinstance(rationale, dict):
+        violations.append(
+            "DURATION_DECISION_INCOMPLETE: rationale missing — must cover "
+            + ", ".join(DURATION_RATIONALE_KEYS)
+        )
+    else:
+        missing = [k for k in DURATION_RATIONALE_KEYS if not str(rationale.get(k, "")).strip()]
+        if missing:
+            violations.append(f"DURATION_DECISION_INCOMPLETE: rationale missing {', '.join(missing)}")
+
+    total = sum(s.get("duration_seconds", 0) for s in scenes)
+    try:
+        declared = float(decision.get("total_seconds"))
+        if abs(declared - total) > DURATION_SUM_TOLERANCE_S:
+            violations.append(
+                f"DURATION_DECISION_MISMATCH: declared {declared:.1f}s but storyboard totals {total:.1f}s"
+            )
+    except (TypeError, ValueError):
+        violations.append("DURATION_DECISION_INCOMPLETE: total_seconds missing or not a number")
+
+    words = sum(len(str(s.get("narration", "")).split()) for s in scenes)
+    if words >= MIN_WORDS_FOR_PACING_CHECK and total > 0:
+        wps = words / total
+        if wps > MAX_NARRATION_WPS:
+            violations.append(
+                f"DURATION_TOO_SHORT_FOR_NARRATION: {words} words in {total:.1f}s "
+                f"({wps:.2f} w/s > {MAX_NARRATION_WPS}) — lengthen or tighten the script"
+            )
+        elif wps < MIN_NARRATION_WPS:
+            violations.append(
+                f"DURATION_TOO_LONG_FOR_NARRATION: {words} words in {total:.1f}s "
+                f"({wps:.2f} w/s < {MIN_NARRATION_WPS}) — shorten the storyboard"
+            )
+    return violations
+
+
 def _print_storyboard_summary(
     scenes: list,
     episode: int,
@@ -1015,6 +1112,7 @@ def run(
             violations += _validate_art_direction(
                 cached.get("art_direction"), registry, prior_fingerprints
             )
+            violations += _validate_duration_decision(cached.get("duration_decision"), scenes)
             if not violations:
                 complexity = cached.get(
                     "visual_complexity", _compute_visual_complexity(scenes)
@@ -1097,13 +1195,16 @@ def run(
         f"9. Include claim_type in each beat\n"
         f"10. Compute visual_complexity score\n\n"
         f"Constraints:\n"
-        f"- Total duration: 45–60 seconds\n"
+        f"- Total duration: choose within 45–60 seconds from content complexity, "
+        f"narration length, beat density and readability (no default length); "
+        f"report it in duration_decision\n"
         f"- CTA ≤ 3 seconds, HOOK ≤ 4 seconds\n"
         f"- Every scene > 4s needs ≥2 beats, > 6s needs ≥3 beats\n"
         f"- visual_first_score must be ≥80\n"
         f"- Every numeric viz scene must include source_type\n"
         f"- Return the COMPLETE JSON output including visual_thesis, art_direction, "
-        f"novelty_assessment, visual_fingerprint, storyboard, and visual_complexity\n"
+        f"duration_decision, novelty_assessment, visual_fingerprint, storyboard, "
+        f"and visual_complexity\n"
     )
 
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -1151,6 +1252,10 @@ def run(
                 )
             violations.extend(ad_violations)
 
+            # Validate the duration decision (45–60s, chosen per content)
+            duration_decision = data.get("duration_decision")
+            violations.extend(_validate_duration_decision(duration_decision, scenes))
+
             # Validate novelty
             novelty_violations = _validate_novelty(novelty_assessment)
             if novelty_violations:
@@ -1193,6 +1298,7 @@ def run(
             result_data = {
                 "topic": script.get("topic", ""),
                 "art_direction": art_direction,
+                "duration_decision": duration_decision,
                 "visual_thesis": visual_thesis,
                 "novelty_assessment": novelty_assessment,
                 "visual_fingerprint": visual_fingerprint,

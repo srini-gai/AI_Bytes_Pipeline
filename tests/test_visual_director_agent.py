@@ -19,6 +19,10 @@ VALID_AD = {
     "visual_world": "cinematic dark-tech",
     "rationale": RATIONALE,
 }
+DURATION_DECISION = {
+    "total_seconds": 46.0,
+    "rationale": {k: "reason" for k in vda.DURATION_RATIONALE_KEYS},
+}
 SCRIPT = {"topic": "Test Topic", "concept": "c", "hook": "h", "takeaway": "t", "voiceover": "v"}
 
 
@@ -61,6 +65,7 @@ def _response(art_direction: object) -> MagicMock:
     }
     if art_direction is not None:
         payload["art_direction"] = art_direction
+    payload["duration_decision"] = DURATION_DECISION
     msg = MagicMock()
     msg.content = [MagicMock(text=json.dumps(payload))]
     return msg
@@ -270,3 +275,86 @@ def test_reapproval_moves_episode_to_most_recent(env, tmp_path):
     vda.approve_episode(4, 2, source=other)
     vda.approve_episode(3, 2)
     assert list(vda._load_fingerprints())[-1] == "week02_ep03"
+
+
+# ── v4 component registry ────────────────────────────────────────────────────
+
+def test_v4_components_are_valid():
+    assert {"AgentTraversalScene", "CircularFlowScene"} <= vda.VALID_COMPONENTS
+    scenes = _storyboard()
+    scenes[4]["component"] = "AgentTraversalScene"
+    scenes[6]["component"] = "CircularFlowScene"
+    assert not any("invalid component" in v for v in vda._validate_storyboard(scenes, 1))
+
+
+def test_prompt_documents_v4_components():
+    assert "AgentTraversalScene" in vda._SYSTEM_PROMPT
+    assert "CircularFlowScene" in vda._SYSTEM_PROMPT
+
+
+# ── Duration policy (45–60s, no default length) ──────────────────────────────
+
+def test_prompt_has_no_preferred_duration():
+    assert "no default length" in vda._SYSTEM_PROMPT
+    assert "55–58s" not in vda._SYSTEM_PROMPT  # old fixed 58s template removed
+
+
+def test_allowed_range_unchanged():
+    assert (vda.TARGET_MIN_SECONDS, vda.TARGET_MAX_SECONDS) == (45.0, 60.0)
+
+
+def test_duration_decision_required():
+    v = vda._validate_duration_decision(None, _storyboard())
+    assert v and v[0].startswith("DURATION_DECISION_MISSING")
+
+
+def test_duration_decision_rationale_must_cover_all_factors():
+    d = {"total_seconds": 46.0, "rationale": {"content_complexity": "x"}}
+    v = vda._validate_duration_decision(d, _storyboard())
+    assert any("narration_length" in x and "readability" in x for x in v)
+
+
+def test_duration_decision_must_match_storyboard_total():
+    d = {**DURATION_DECISION, "total_seconds": 55.0}
+    assert any("MISMATCH" in x for x in vda._validate_duration_decision(d, _storyboard()))
+
+
+def test_duration_decision_valid():
+    assert vda._validate_duration_decision(DURATION_DECISION, _storyboard()) == []
+
+
+def _with_narration_words(n_words: int) -> list[dict]:
+    scenes = _storyboard()
+    per = n_words // len(scenes)
+    for s in scenes:
+        s["narration"] = " ".join(["word"] * per)
+    return scenes
+
+
+def test_duration_too_short_for_narration_flagged():
+    scenes = _with_narration_words(160)  # 160 words in 46s ≈ 3.5 w/s
+    assert any("TOO_SHORT" in x for x in vda._validate_duration_decision(DURATION_DECISION, scenes))
+
+
+def test_duration_too_long_for_narration_flagged():
+    scenes = _with_narration_words(60)  # 60 words in 46s ≈ 1.3 w/s
+    assert any("TOO_LONG" in x for x in vda._validate_duration_decision(DURATION_DECISION, scenes))
+
+
+def test_duration_fits_narration():
+    scenes = _with_narration_words(110)  # ≈ 2.4 w/s
+    assert vda._validate_duration_decision(DURATION_DECISION, scenes) == []
+
+
+def test_run_retries_when_duration_decision_missing(env):
+    bad = _response(VALID_AD)
+    payload = json.loads(bad.content[0].text)
+    payload.pop("duration_decision")
+    bad.content[0].text = json.dumps(payload)
+    client = _mock_client(bad, _response(VALID_AD))
+    with patch.object(vda.anthropic, "Anthropic", return_value=client):
+        out = vda.run(SCRIPT, episode=3, week=2)
+    assert client.messages.create.call_count == 2
+    assert out["violations"] == []
+    doc = json.loads((env / "week_02" / "ep03" / "ep03_storyboard_EN.json").read_text(encoding="utf-8"))
+    assert doc["duration_decision"]["total_seconds"] == 46.0
