@@ -166,7 +166,14 @@ def test_visual_rerendered_when_storyboard_changes(ep_dir, render_mocks):
 
 # ── Assembly cache ───────────────────────────────────────────────────────────
 
+def _write_render_props(d: Path, narration: str) -> None:
+    (d / "ep02_render_props.json").write_text(json.dumps({
+        "voiceover": narration, "storyboard": [{"narration": narration}],
+    }), encoding="utf-8")
+
+
 def _assembly_inputs(d: Path, voice_hash: str | None, visual_identity: str | None) -> None:
+    _write_render_props(d, NARRATION)
     (d / "ep02_visuals.mp4").write_bytes(b"V" * 600_000)
     (d / "ep02_voice_EN.mp3").write_bytes(b"A" * 1000)
     if voice_hash:
@@ -175,11 +182,18 @@ def _assembly_inputs(d: Path, voice_hash: str | None, visual_identity: str | Non
         (d / "ep02_visuals.meta.json").write_text(json.dumps({"visual_identity": visual_identity}), encoding="utf-8")
 
 
+def _fake_transcribe(audio_path: Path, lang: str) -> list[dict]:
+    """Whisper stand-in: timed words of the narration currently in render props."""
+    props = json.loads((audio_path.parent / "ep02_render_props.json").read_text(encoding="utf-8"))
+    return [{"start": i * 0.4, "end": i * 0.4 + 0.3, "text": w}
+            for i, w in enumerate(props["voiceover"].split())]
+
+
 @pytest.fixture
 def assembly_mocks():
     container = MagicMock(duration=45_000_000)
-    with patch.object(assembly_agent, "_transcribe", return_value=[]), \
-         patch.object(assembly_agent, "_write_srt"), \
+    with patch.object(assembly_agent, "_transcribe", side_effect=_fake_transcribe), \
+\
          patch.object(assembly_agent.av, "open", return_value=container), \
          patch.object(assembly_agent, "_validate_output", return_value=45.0), \
          patch.object(assembly_agent, "_ffmpeg") as ffmpeg:
@@ -218,7 +232,8 @@ def test_final_reassembled_when_an_input_identity_changes(ep_dir, assembly_mocks
     assembly_mocks.reset_mock()
 
     if changed == "voice":
-        (ep_dir / "ep02_voice_hash_EN.txt").write_text(text_hash("new narration"), encoding="utf-8")
+        _write_render_props(ep_dir, "A new narration entirely.")
+        (ep_dir / "ep02_voice_hash_EN.txt").write_text(text_hash("A new narration entirely."), encoding="utf-8")
     else:
         (ep_dir / "ep02_visuals.meta.json").write_text(json.dumps({"visual_identity": "vis999"}), encoding="utf-8")
 
@@ -234,3 +249,58 @@ def test_final_never_reused_when_input_identity_unknown(ep_dir, assembly_mocks):
 
     assembly_agent.run(EP, WK, lang="en")
     assembly_mocks.assert_called_once()
+
+
+# ── Canonical captions (Whisper = timing only) ──────────────────────────────
+
+def _w(text: str, start: float, end: float) -> dict:
+    return {"start": start, "end": end, "text": text}
+
+
+def test_captions_use_canonical_text_not_whisper_recognition():
+    whisper = [_w("Behind", 0.0, 0.3), _w("the", 0.3, 0.4), _w("scenes", 0.4, 0.8),
+               _w("and", 0.8, 1.0), _w("agent", 1.0, 1.3), _w("loops,", 1.3, 1.6)]
+    caps = assembly_agent.align_canonical_captions("Behind the scenes, an agent loops:", whisper)
+    assert [c["text"] for c in caps] == ["Behind", "the", "scenes,", "an", "agent", "loops:"]
+    an = caps[3]
+    assert 0.8 <= an["start"] <= an["end"] <= 1.0  # timed between its neighbours
+
+
+def test_captions_join_split_whisper_tokens_and_drop_dashes():
+    whisper = [_w("a", 0.0, 0.1), _w("multi", 0.1, 0.4), _w("-step", 0.4, 0.7), _w("task", 0.7, 1.0)]
+    caps = assembly_agent.align_canonical_captions("a multi-step — task", whisper)
+    assert [c["text"] for c in caps] == ["a", "multi-step", "task"]
+    assert (caps[1]["start"], caps[1]["end"]) == (0.1, 0.7)
+
+
+def test_captions_are_monotonic():
+    # Whisper missed "two" (5/6 aligned): it is interpolated, order stays monotonic
+    whisper = [_w(t, s, s + 0.4) for t, s in
+               [("one", 0.0), ("three", 1.0), ("four", 1.5), ("five", 2.0), ("six", 2.5)]]
+    caps = assembly_agent.align_canonical_captions("one two three four five six", whisper)
+    assert [c["text"] for c in caps][:3] == ["one", "two", "three"]
+    assert 0.4 <= caps[1]["start"] < caps[1]["end"] <= 1.0
+    assert all(b["start"] >= a["end"] for a, b in zip(caps, caps[1:]))
+
+
+def test_captions_reject_audio_that_does_not_match_canonical():
+    whisper = [_w(w, i, i + 0.5) for i, w in enumerate("this is how prompt engineering works".split())]
+    with pytest.raises(RuntimeError, match="CAPTIONS"):
+        assembly_agent.align_canonical_captions("You ask, it answers. Agents complete.", whisper)
+
+
+def test_assembly_writes_canonical_srt(ep_dir, assembly_mocks):
+    _assembly_inputs(ep_dir, text_hash(NARRATION), "vis123")
+    assembly_agent.run(EP, WK, lang="en")
+    srt = (ep_dir / "ep02_captions_EN.srt").read_text(encoding="utf-8")
+    caption_lines = [line for line in srt.splitlines()
+                     if line and "-->" not in line and not line.isdigit()]
+    assert " ".join(caption_lines) == NARRATION
+
+
+def test_assembly_requires_canonical_narration(ep_dir, assembly_mocks):
+    _assembly_inputs(ep_dir, text_hash(NARRATION), "vis123")
+    (ep_dir / "ep02_render_props.json").unlink()
+    with pytest.raises(RuntimeError, match="canonical narration unavailable"):
+        assembly_agent.run(EP, WK, lang="en")
+    assembly_mocks.assert_not_called()

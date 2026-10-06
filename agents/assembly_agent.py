@@ -5,10 +5,12 @@ Runs once per language per episode.
 Output: ep{NN}_final_{LANG}.mp4  (1080x1920, 45-65s — target 45-60s)
 Also saves: ep{NN}_captions_{LANG}.srt  (for archive / review)
 """
+import difflib
 import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -152,6 +154,99 @@ def _transcribe(audio_path: Path, lang: str) -> list[dict]:
         return words
     finally:
         wav_path.unlink(missing_ok=True)
+
+
+# ── Canonical captions ───────────────────────────────────────────────────────
+# Caption TEXT always comes from the canonical narration (the hashed voiceover
+# that produced the voice). Whisper is used ONLY for word timing: recognition
+# errors such as "and agent" can never replace the canonical "an agent".
+
+# Minimum share of canonical tokens that must align to Whisper words; below this
+# the audio does not plausibly match the canonical text.
+MIN_CAPTION_ALIGNMENT = 0.8
+
+_TOKEN_RE = re.compile(r"[a-z0-9']+")
+
+
+def _caption_tokens(text: str) -> list[str]:
+    return _TOKEN_RE.findall(text.lower().replace("\u2019", "'"))
+
+
+def align_canonical_captions(canonical: str, whisper_words: list[dict]) -> list[dict]:
+    """
+    Time each canonical narration word using Whisper word timestamps.
+
+    Returns [{"start", "end", "text"}] where text is the canonical word exactly
+    as written (punctuation-only tokens such as "—" are dropped). Canonical
+    words Whisper did not recognise get times interpolated between neighbours.
+
+    Raises RuntimeError when less than MIN_CAPTION_ALIGNMENT of the canonical
+    tokens align — the audio does not match the canonical narration.
+    """
+    display = [w for w in canonical.split() if _caption_tokens(w)]
+    if not display:
+        raise RuntimeError("CAPTIONS: canonical narration is empty")
+
+    # Flatten both sides to normalised tokens, remembering their owners
+    c_tokens: list[str] = []
+    c_owner: list[int] = []
+    for i, word in enumerate(display):
+        for t in _caption_tokens(word):
+            c_tokens.append(t)
+            c_owner.append(i)
+    w_tokens: list[str] = []
+    w_owner: list[int] = []
+    for j, w in enumerate(whisper_words):
+        for t in _caption_tokens(str(w.get("text", ""))):
+            w_tokens.append(t)
+            w_owner.append(j)
+
+    matcher = difflib.SequenceMatcher(a=c_tokens, b=w_tokens, autojunk=False)
+    spans: list[list[float] | None] = [None] * len(display)
+    matched = 0
+    for block in matcher.get_matching_blocks():
+        for k in range(block.size):
+            ww = whisper_words[w_owner[block.b + k]]
+            owner = c_owner[block.a + k]
+            span = spans[owner]
+            if span is None:
+                spans[owner] = [float(ww["start"]), float(ww["end"])]
+            else:
+                span[0] = min(span[0], float(ww["start"]))
+                span[1] = max(span[1], float(ww["end"]))
+            matched += 1
+
+    coverage = matched / len(c_tokens)
+    if coverage < MIN_CAPTION_ALIGNMENT:
+        raise RuntimeError(
+            f"CAPTIONS: only {coverage:.0%} of canonical narration aligned to the voice "
+            f"(need {MIN_CAPTION_ALIGNMENT:.0%}) — voice does not match canonical text"
+        )
+
+    # Canonical words Whisper missed: spread each unmatched run evenly between
+    # the surrounding timed words. Times are kept monotonic.
+    captions: list[dict] = []
+    n = len(display)
+    i = 0
+    while i < n:
+        span = spans[i]
+        if span is not None:
+            start = max(span[0], captions[-1]["end"] if captions else 0.0)
+            captions.append({"start": start, "end": max(start, span[1]), "text": display[i]})
+            i += 1
+            continue
+        j = i
+        while j < n and spans[j] is None:
+            j += 1
+        prev_end = captions[-1]["end"] if captions else 0.0
+        next_span = spans[j] if j < n else None
+        next_start = next_span[0] if next_span else prev_end + 0.3 * (j - i)
+        step = max(0.0, next_start - prev_end) / (j - i)
+        for k in range(i, j):
+            t0 = prev_end + step * (k - i)
+            captions.append({"start": t0, "end": t0 + step, "text": display[k]})
+        i = j
+    return captions
 
 
 def _write_srt(words: list[dict], path: Path) -> None:
@@ -298,8 +393,33 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
     t0 = time.monotonic()
     logger.info(f"EP{episode:02d} [{lang.upper()}] starting assembly")
 
-    # Step 1: Transcribe voice -> word timestamps
-    words = _transcribe(voice_path, lang)
+    # Canonical narration (authoritative caption text + three-hash source)
+    render_props_path = ep_dir / f"ep{episode:02d}_render_props{visuals_suffix}.json"
+    if not render_props_path.exists():
+        render_props_path = ep_dir / f"ep{episode:02d}_render_props.json"
+    canonical_text = ""
+    if render_props_path.exists():
+        try:
+            canonical_text = json.loads(
+                render_props_path.read_text(encoding="utf-8")
+            ).get("voiceover", "").strip()
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"EP{episode:02d} [{lang.upper()}] unreadable {render_props_path.name}: {e}")
+    if not canonical_text:
+        raise RuntimeError(
+            f"EP{episode:02d} [{lang.upper()}] CAPTIONS: canonical narration unavailable "
+            f"({render_props_path.name} missing or has no voiceover). Captions are generated "
+            f"from canonical narration only — re-run visual_agent to write render props."
+        )
+
+    # Step 1: Transcribe voice -> word timestamps (timing only), then time the
+    # canonical words with them. Whisper text never becomes caption text.
+    whisper_words = _transcribe(voice_path, lang)
+    words = align_canonical_captions(canonical_text, whisper_words)
+    logger.info(
+        f"EP{episode:02d} [{lang.upper()}] CAPTIONS_SOURCE=CANONICAL "
+        f"({len(words)} canonical words timed from {len(whisper_words)} Whisper words)"
+    )
 
     # Step 2: Save SRT to episode dir
     _write_srt(words, srt_path)
@@ -352,9 +472,6 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
     # ── THREE-HASH CONSISTENCY GUARD ─────────────────────────────────────
     # canonical_script_hash == storyboard_narration_hash == voice_source_hash
     # Prevents stale voice files pairing with newer scripts.
-    render_props_path = ep_dir / f"ep{episode:02d}_render_props{visuals_suffix}.json"
-    if not render_props_path.exists():
-        render_props_path = ep_dir / f"ep{episode:02d}_render_props.json"
 
     if render_props_path.exists() and voice_hash_path.exists():
         try:
