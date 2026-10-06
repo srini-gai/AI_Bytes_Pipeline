@@ -311,18 +311,31 @@ def _validate_output(path: Path, episode: int, lang: str = "en") -> float:
     return duration
 
 
-def run(episode: int, week: int, lang: str = "en") -> dict:
+def run(
+    episode: int,
+    week: int,
+    lang: str = "en",
+    mixed_audio_path: str | Path | None = None,
+) -> dict:
     """
     Assemble final MP4 for one language:
       1. Transcribe voice MP3 with faster-whisper -> word timestamps
       2. Save SRT to episode dir (ep{NN}_captions_{LANG}.srt)
-      3. FFmpeg: replace visuals audio with voice audio (-shortest)
-      4. PyAV: validate 1080x1920 and 58-62s duration
+      3. FFmpeg: mux visuals + audio track
+      4. PyAV: validate 1080x1920 and duration
+
+    When mixed_audio_path is provided, it replaces the voice-only (or
+    voice+env-music) merge: the file is expected to contain voice + SFX +
+    music already mixed and loudness-normalised by audio_mixer. All
+    validation (captions, sync, three-hash) still runs against the
+    original voice MP3.
 
     Args:
-        episode: Episode number 1-5 (Mon–Fri)
-        week:    Week number
-        lang:    "en" or "ta"
+        episode:          Episode number 1-5 (Mon–Fri)
+        week:             Week number
+        lang:             "en" or "ta"
+        mixed_audio_path: Pre-mixed audio from audio_mixer (WAV/MP3).
+                          When set, BACKGROUND_MUSIC_PATH is ignored.
 
     Returns:
         {"success": True, "output_path": str, "duration": float,
@@ -524,32 +537,27 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
             f"missing: {', '.join(missing)}"
         )
 
-    # Step 3: Merge video + voice (+ optional lo-fi music bed at 8% volume)
+    # Step 3: Mux video + audio.
     # NOTE: -shortest REMOVED — never silently truncate voice or visuals.
     # The VOICE_VISUAL_SYNC guard above ensures they are within tolerance.
-    music_str = os.getenv("BACKGROUND_MUSIC_PATH", "")
-    music_path = Path(music_str) if music_str else None
-
-    if music_path and music_path.exists():
-        logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video + music bed")
-        _ffmpeg(
-            "-i", str(visuals_path),
-            "-i", str(voice_path),
-            "-i", str(music_path),
-            "-filter_complex",
-            "[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=first[aout]",
-            "-map", "0:v",
-            "-map", "[aout]",
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            str(output_path),
+    #
+    # When a pre-mixed audio track is provided (from audio_mixer), it
+    # already contains voice + SFX + optional music at the correct
+    # loudness. Otherwise fall back to the legacy voice-only (or
+    # voice + env-var music) path.
+    if mixed_audio_path is not None:
+        mixed = Path(mixed_audio_path)
+        if not mixed.exists():
+            raise RuntimeError(
+                f"EP{episode:02d} [{lang.upper()}] mixed audio not found: {mixed}"
+            )
+        logger.info(
+            f"EP{episode:02d} [{lang.upper()}] muxing video + pre-mixed audio "
+            f"({mixed.name})"
         )
-    else:
-        logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video")
         _ffmpeg(
             "-i", str(visuals_path),
-            "-i", str(voice_path),
+            "-i", str(mixed),
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-c:v", "copy",
@@ -557,18 +565,52 @@ def run(episode: int, week: int, lang: str = "en") -> dict:
             "-b:a", "192k",
             str(output_path),
         )
+    else:
+        music_str = os.getenv("BACKGROUND_MUSIC_PATH", "")
+        music_path = Path(music_str) if music_str else None
+
+        if music_path and music_path.exists():
+            logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video + music bed")
+            _ffmpeg(
+                "-i", str(visuals_path),
+                "-i", str(voice_path),
+                "-i", str(music_path),
+                "-filter_complex",
+                "[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=first[aout]",
+                "-map", "0:v",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                str(output_path),
+            )
+        else:
+            logger.info(f"EP{episode:02d} [{lang.upper()}] merging audio + video")
+            _ffmpeg(
+                "-i", str(visuals_path),
+                "-i", str(voice_path),
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                str(output_path),
+            )
 
     # Step 4: Validate output
     duration = _validate_output(output_path, episode, lang)
     assembly_time = time.monotonic() - t0
 
     # Record the input identities this final was assembled from
-    write_meta(final_meta_path, {
+    meta = {
         "voice_source_hash": voice_identity,
         "visual_identity": visual_identity,
         "duration": round(duration, 2),
         "assembled_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-    })
+    }
+    if mixed_audio_path is not None:
+        meta["mixed_audio"] = Path(mixed_audio_path).name
+    write_meta(final_meta_path, meta)
 
     logger.info(
         f"EP{episode:02d} [{lang.upper()}] assembly complete in {assembly_time:.1f}s "
