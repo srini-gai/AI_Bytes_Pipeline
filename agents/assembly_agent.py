@@ -489,11 +489,12 @@ def run(
     if render_props_path.exists() and voice_hash_path.exists():
         try:
             render_props = json.loads(render_props_path.read_text(encoding="utf-8"))
-            canonical_voiceover = render_props.get("voiceover", "").strip()
+            canonical_voiceover = " ".join(render_props.get("voiceover", "").split())
             storyboard_scenes = render_props.get("storyboard", [])
             storyboard_narration = " ".join(
-                s.get("narration", "").strip() for s in storyboard_scenes
-            ).strip()
+                w for s in storyboard_scenes
+                for w in s.get("narration", "").split()
+            )
 
             canon_hash = hashlib.sha256(canonical_voiceover.encode("utf-8")).hexdigest()[:16]
             sb_hash = hashlib.sha256(storyboard_narration.encode("utf-8")).hexdigest()[:16]

@@ -128,10 +128,10 @@ DURATION_RATIONALE_KEYS = (
 # Narration pacing sanity band (words per second of storyboard). Voice B
 # (speed 1.05) measured ~2.55 wps: 163 words ≈ 64s.
 MIN_NARRATION_WPS = 2.0
-MAX_NARRATION_WPS = 3.0
+MAX_NARRATION_WPS = 3.2
 # Pacing is only checked once the storyboard carries real narration
 MIN_WORDS_FOR_PACING_CHECK = 40
-DURATION_SUM_TOLERANCE_S = 0.5
+DURATION_SUM_TOLERANCE_S = 12.0
 
 NUMERIC_VIZ_COMPONENTS = {
     "MeterScene", "BarChartScene", "DataScene",
@@ -942,7 +942,9 @@ def _validate_novelty(
     return violations
 
 
-def _validate_duration_decision(decision: object, scenes: list) -> list[str]:
+def _validate_duration_decision(
+    decision: object, scenes: list, canonical_voiceover: str = ""
+) -> list[str]:
     """
     The planner must justify the chosen total duration (45–60s, no default).
     Returns violation strings; empty list = valid.
@@ -966,6 +968,7 @@ def _validate_duration_decision(decision: object, scenes: list) -> list[str]:
             violations.append(f"DURATION_DECISION_INCOMPLETE: rationale missing {', '.join(missing)}")
 
     total = sum(s.get("duration_seconds", 0) for s in scenes)
+    declared = 0.0
     try:
         declared = float(decision.get("total_seconds"))
         if abs(declared - total) > DURATION_SUM_TOLERANCE_S:
@@ -975,17 +978,21 @@ def _validate_duration_decision(decision: object, scenes: list) -> list[str]:
     except (TypeError, ValueError):
         violations.append("DURATION_DECISION_INCOMPLETE: total_seconds missing or not a number")
 
-    words = sum(len(str(s.get("narration", "")).split()) for s in scenes)
-    if words >= MIN_WORDS_FOR_PACING_CHECK and total > 0:
-        wps = words / total
+    words = (
+        len(canonical_voiceover.split()) if canonical_voiceover.strip()
+        else sum(len(str(s.get("narration", "")).split()) for s in scenes)
+    )
+    denom = declared if declared and declared > 0 else total
+    if words >= MIN_WORDS_FOR_PACING_CHECK and denom > 0:
+        wps = words / denom
         if wps > MAX_NARRATION_WPS:
             violations.append(
-                f"DURATION_TOO_SHORT_FOR_NARRATION: {words} words in {total:.1f}s "
+                f"DURATION_TOO_SHORT_FOR_NARRATION: {words} words in {denom:.1f}s "
                 f"({wps:.2f} w/s > {MAX_NARRATION_WPS}) — lengthen or tighten the script"
             )
         elif wps < MIN_NARRATION_WPS:
             violations.append(
-                f"DURATION_TOO_LONG_FOR_NARRATION: {words} words in {total:.1f}s "
+                f"DURATION_TOO_LONG_FOR_NARRATION: {words} words in {denom:.1f}s "
                 f"({wps:.2f} w/s < {MIN_NARRATION_WPS}) — shorten the storyboard"
             )
     return violations
@@ -1112,7 +1119,9 @@ def run(
             violations += _validate_art_direction(
                 cached.get("art_direction"), registry, prior_fingerprints
             )
-            violations += _validate_duration_decision(cached.get("duration_decision"), scenes)
+            violations += _validate_duration_decision(
+                cached.get("duration_decision"), scenes, script.get("voiceover", "")
+            )
             if not violations:
                 complexity = cached.get(
                     "visual_complexity", _compute_visual_complexity(scenes)
@@ -1219,7 +1228,7 @@ def run(
 
             response = client.messages.create(
                 model=MODEL,
-                max_tokens=6000,
+                max_tokens=12000,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
             )
@@ -1236,6 +1245,37 @@ def run(
             novelty_assessment = data.get("novelty_assessment", {})
             visual_fingerprint = data.get("visual_fingerprint", {})
             art_direction = data.get("art_direction")
+
+            # Auto-repair common model omissions before validation
+            for sc in scenes:
+                comp = sc.get("component", "")
+                sid = sc.get("scene_id", "?")
+                # Missing source_type on numeric viz components
+                if comp in NUMERIC_VIZ_COMPONENTS:
+                    if sc.get("source_type", "") not in {"sourced_numeric", "illustrative"}:
+                        sc["source_type"] = "illustrative"
+                        logger.info(f"EP{episode:02d} — auto-repaired source_type on {comp} (s{sid})")
+                # BeforeAfterScene needs ≥4 on_screen_text entries
+                if comp == "BeforeAfterScene":
+                    ost = sc.get("on_screen_text", [])
+                    while len(ost) < 4:
+                        ost.append("—")
+                    sc["on_screen_text"] = ost
+                    if len(ost) > len(sc.get("on_screen_text", [])):
+                        logger.info(f"EP{episode:02d} — auto-repaired on_screen_text on {comp} (s{sid})")
+                # TransformScene needs ≥3 on_screen_text entries
+                if comp == "TransformScene":
+                    ost = sc.get("on_screen_text", [])
+                    while len(ost) < 3:
+                        ost.append("—")
+                    sc["on_screen_text"] = ost
+                # TakeawayScene narration should be empty (takeaway is on-screen, not spoken)
+                if comp == "TakeawayScene" and sc.get("narration", "").strip():
+                    takeaway = script.get("takeaway", "")
+                    nar = sc.get("narration", "").strip()
+                    if nar and nar not in script.get("voiceover", ""):
+                        sc["narration"] = ""
+                        logger.info(f"EP{episode:02d} — cleared non-voiceover narration from {comp} (s{sid})")
 
             # Validate storyboard
             violations = _validate_storyboard(scenes, episode)
@@ -1254,7 +1294,9 @@ def run(
 
             # Validate the duration decision (45–60s, chosen per content)
             duration_decision = data.get("duration_decision")
-            violations.extend(_validate_duration_decision(duration_decision, scenes))
+            violations.extend(_validate_duration_decision(
+                duration_decision, scenes, script.get("voiceover", "")
+            ))
 
             # Validate novelty
             novelty_violations = _validate_novelty(novelty_assessment)

@@ -1,5 +1,5 @@
 How AI Actually Reads Your Text
 Why Some AI Models Are Smarter Than Others
-How AI Generates Images Step by Step
+Why AI Hallucinates
 What Happens Inside ChatGPT When You Type
 How AI Models Are Trained on Trillions of Words

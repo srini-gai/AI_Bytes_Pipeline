@@ -562,7 +562,6 @@ def _build_props(
         "title": script.get("title", ""),
         "hook": script.get("hook", ""),
         "concept": script.get("concept", ""),
-        "slides": slides,
         "voiceover": script.get("voiceover", ""),
         "takeaway": script.get("takeaway", ""),
         "tags": script.get("tags", ""),
@@ -572,6 +571,7 @@ def _build_props(
         props["storyboard"] = storyboard
         logger.info(f"Props include storyboard ({len(storyboard)} scenes) — Visual Director mode")
     else:
+        props["slides"] = slides
         # Legacy diagram / data specs only used in non-storyboard mode
         if script.get("diagram_spec"):
             props["diagram_spec"] = script["diagram_spec"]
@@ -583,7 +583,7 @@ def _build_props(
             props["token_spec"] = script["token_spec"]
     if art_direction:
         props["art_direction"] = art_direction
-    if clips:
+    if clips and not art_direction:
         props["clips"] = clips
     if generated_video_clips:
         props["generatedVideoClips"] = generated_video_clips
@@ -884,10 +884,11 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         # ── SCRIPT-HASH CONSISTENCY GUARD ────────────────────────────────────
         # Canonical narration = script.voiceover.  The Visual Director segments
         # that exact text into storyboard[].narration.  Concatenation must match.
-        canonical_voiceover = props.get("voiceover", "").strip()
+        canonical_voiceover = " ".join(props.get("voiceover", "").split())
         storyboard_narration = " ".join(
-            s.get("narration", "").strip() for s in storyboard
-        ).strip()
+            w for s in storyboard
+            for w in s.get("narration", "").split()
+        )
 
         if canonical_voiceover and storyboard_narration:
             canon_hash = hashlib.sha256(canonical_voiceover.encode("utf-8")).hexdigest()[:16]
@@ -918,11 +919,11 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             )
 
         # ── PRE-RENDER TABLE (Step 8) ─────────────────────────────────────────
-        print(f"\n{'─'*72}")
-        print(f"  EP{episode:02d} PRE-RENDER TABLE — STORYBOARD_V3")
-        print(f"{'─'*72}")
+        print(f"\n{'-'*72}")
+        print(f"  EP{episode:02d} PRE-RENDER TABLE - STORYBOARD_V3")
+        print(f"{'-'*72}")
         print(f"  {'Scene':<8} {'Component':<24} {'Duration':>10}  Asset source")
-        print(f"  {'─'*68}")
+        print(f"  {'-'*68}")
         gen_clips_staged = generated_video_clips_staged or {}
         for s in storyboard:
             sid = s.get("scene_id", "?")
@@ -937,9 +938,9 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
                 asset_src = "Remotion dark bg"
             print(f"  s{sid:<7} {comp:<24} {dur:>8.1f}s  {asset_src}")
         total_planned = sum(s.get("duration_seconds", 0) for s in storyboard)
-        print(f"{'─'*72}")
+        print(f"{'-'*72}")
         print(f"  {'TOTAL':<8} {'':<24} {total_planned:>8.1f}s")
-        print(f"{'─'*72}\n")
+        print(f"{'-'*72}\n")
     else:
         logger.info("VISUAL_RENDER_MODE=LEGACY (no storyboard)")
         print("VISUAL_RENDER_MODE=LEGACY")
