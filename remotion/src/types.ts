@@ -289,7 +289,9 @@ export type SceneComponent =
   | 'DataFlowScene'        // Data packets moving through a system diagram
   // ── Visual Director v4 — creative visual reasoning ──────────────────────
   | 'AgentTraversalScene'  // Agent character traverses labeled zones with tools
-  | 'CircularFlowScene';   // Four-quadrant spinning wheel (cyclical process)
+  | 'CircularFlowScene'    // Four-quadrant spinning wheel (cyclical process)
+  // ── Scene Composer v1 — primitive-based composition ─────────────────────
+  | 'ComposedScene';       // Layers multiple primitives via z-index ordering
 
 /** Data payload for NumberCounterScene */
 export interface NumberCounterData {
@@ -363,6 +365,25 @@ export interface Storyboard {
   visual_summary: string;
   visual_complexity: VisualComplexityScore;
   violations: string[];
+}
+
+/** Primitive instance for ComposedScene layering */
+export interface PrimitiveInstance {
+  primitive: string;
+  config: Record<string, unknown>;
+  activeBeat: number;
+  zIndex: number;
+}
+
+/** Spec for ComposedScene — layers primitives by z-index */
+export interface ComposedSceneSpec {
+  type: 'composed';
+  layers: PrimitiveInstance[];
+  camera?: {
+    operation: string;
+    intensity?: number;
+    beatIndex?: number;
+  };
 }
 
 // ─── Generated video clips map (Phase 3B) ────────────────────────────────────

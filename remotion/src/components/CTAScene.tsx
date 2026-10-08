@@ -46,7 +46,7 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme, ar
       {/* Accent gradient fallback — visible even without a video; ensures
           luminance stays above QA threshold during Fade crossfade */}
       <AbsoluteFill style={{
-        background: `radial-gradient(ellipse 900px 1200px at 50% 55%, ${t.accent}22 0%, ${t.accent2}0a 60%, transparent 100%)`,
+        background: `radial-gradient(ellipse 900px 1200px at 50% 55%, ${t.accent}44 0%, ${t.accent2}18 60%, transparent 100%)`,
       }}/>
 
       {/* Full screen Pexels background video */}

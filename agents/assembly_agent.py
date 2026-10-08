@@ -618,6 +618,30 @@ def run(
         f"— duration={duration:.1f}s size={output_path.stat().st_size/1_048_576:.1f}MB"
     )
 
+    # ── TIMELINE QA on assembled final ─────────────────────────────────────
+    sb_path = ep_dir / f"ep{episode:02d}_storyboard_{lang.upper()}.json"
+    if sb_path.exists():
+        from timeline_qa_guard import run_timeline_qa
+        tqa = run_timeline_qa(output_path, sb_path)
+        tqa_verdict = tqa.get("verdict", "SKIP")
+        logger.info(f"EP{episode:02d} [{lang.upper()}] ASSEMBLY_TIMELINE_QA={tqa_verdict}")
+        if tqa_verdict == "FAIL":
+            blanks = tqa.get("blank_span_check", {}).get("blank_spans", [])
+            statics = tqa.get("static_scene_check", {}).get("static_violations", [])
+            details = []
+            for b in blanks:
+                details.append(
+                    f"BLANK {b['start_s']:.1f}-{b['end_s']:.1f}s in {b['scene_id']}"
+                )
+            for sv in statics:
+                details.append(
+                    f"STATIC {sv['window_start_s']:.1f}-{sv['window_end_s']:.1f}s in {sv['scene_id']}"
+                )
+            logger.error(
+                f"EP{episode:02d} [{lang.upper()}] ASSEMBLY_TIMELINE_QA=FAIL: "
+                + "; ".join(details)
+            )
+
     return {
         "success": True,
         "output_path": str(output_path),

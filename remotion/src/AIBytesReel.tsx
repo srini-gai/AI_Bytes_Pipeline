@@ -28,6 +28,7 @@ import {ClusterScene} from './components/ClusterScene';
 import {DialScene} from './components/DialScene';
 import {SketchScene} from './components/SketchScene';
 import {DataScene} from './components/DataScene';
+import {ComposedScene} from './ComposedScene';
 import {TokenScene} from './components/TokenScene';
 
 // New Visual Director components
@@ -449,6 +450,8 @@ function renderStoryboardScene(
           objects={scene.objects}
           accentColor={accent}
           accent2={accent2}
+          durationInFrames={durationInFrames}
+          artDirection={ad}
         />
       );
 
@@ -583,6 +586,15 @@ function renderStoryboardScene(
         />
       );
 
+    // ── Scene Composer v1 — primitive-based composition
+    case 'ComposedScene':
+      return (
+        <ComposedScene
+          scene={scene}
+          artDirection={ad}
+        />
+      );
+
     // ── CTA (always the last scene)
     case 'CTAScene':
       return (
@@ -651,13 +663,19 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
   generatedVideoClips,
   artDirection,
 }) => {
-  // Pre-compute cumulative start frames
+  // Pre-compute cumulative start frames.
+  // For consecutive ComposedScene transitions, extend the earlier scene's
+  // Sequence by CROSSFADE frames so both scenes render simultaneously
+  // during the handoff — a true crossfade instead of a fade-to-black gap.
   let cursor = 0;
-  const scenes = storyboard.map((scene) => {
+  const scenes = storyboard.map((scene, idx) => {
     const startFrame    = cursor;
     const durationFrames = Math.round(scene.duration_seconds * FPS);
+    const nextScene = idx < storyboard.length - 1 ? storyboard[idx + 1] : null;
+    const overlap = (scene.component === 'ComposedScene' && nextScene?.component === 'ComposedScene')
+      ? CROSSFADE : 0;
     cursor += durationFrames;
-    return {scene, startFrame, durationFrames};
+    return {scene, startFrame, durationFrames, overlap};
   });
 
   // Outer background comes from art direction when available
@@ -665,9 +683,9 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
 
   return (
     <AbsoluteFill style={{backgroundColor: bgColor}}>
-      {scenes.map(({scene, startFrame, durationFrames}, i) => (
-        <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames}>
-          <Fade duration={durationFrames} noFadeIn={i === 0}>
+      {scenes.map(({scene, startFrame, durationFrames, overlap}, i) => (
+        <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames + overlap}>
+          <Fade duration={durationFrames + overlap} noFadeIn={i === 0}>
             {renderStoryboardScene(
               scene, theme, durationFrames, topic, hook, takeaway,
               clips, episode, generatedVideoClips, artDirection,

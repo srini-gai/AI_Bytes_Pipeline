@@ -1001,6 +1001,38 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
                 "rendered_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             })
 
+            # ── TIMELINE QA GUARD ──────────────────────────────────────
+            if storyboard:
+                from timeline_qa_guard import run_timeline_qa
+                sb_path = ep_dir / f"ep{episode:02d}_storyboard_{lang.upper()}.json"
+                if sb_path.exists():
+                    tqa = run_timeline_qa(output_path, sb_path)
+                    tqa_verdict = tqa.get("verdict", "SKIP")
+                    logger.info(f"EP{episode:02d} TIMELINE_QA={tqa_verdict}")
+                    print(f"TIMELINE_QA={tqa_verdict}")
+                    if tqa_verdict == "FAIL":
+                        blanks = tqa.get("blank_span_check", {}).get("blank_spans", [])
+                        statics = tqa.get("static_scene_check", {}).get("static_violations", [])
+                        detail_lines = []
+                        for b in blanks:
+                            detail_lines.append(
+                                f"BLANK {b['start_s']:.1f}-{b['end_s']:.1f}s "
+                                f"({b['duration_s']:.1f}s) in {b['scene_id']}"
+                            )
+                        for sv in statics:
+                            detail_lines.append(
+                                f"STATIC {sv['window_start_s']:.1f}-{sv['window_end_s']:.1f}s "
+                                f"({sv['duration_s']:.1f}s) in {sv['scene_id']} ({sv['component']})"
+                            )
+                        raise RuntimeError(
+                            f"EP{episode:02d} TIMELINE_QA=FAIL: "
+                            + "; ".join(detail_lines)
+                        )
+                else:
+                    logger.warning(
+                        f"EP{episode:02d} TIMELINE_QA=SKIP — storyboard file {sb_path.name} not found"
+                    )
+
             result_dict: dict = {
                 "success": True,
                 "output_path": str(output_path),

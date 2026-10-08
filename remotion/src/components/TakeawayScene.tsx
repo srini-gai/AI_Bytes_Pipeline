@@ -200,14 +200,15 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
               justifyContent: 'center',
               whiteSpace: 'nowrap',
             } : {
-              width: 64,
-              height: 56,
-              borderRadius: 10,
-              background: `${color}18`,
-              border: `2px solid ${color}55`,
+              width: 110,
+              height: 80,
+              borderRadius: 14,
+              background: `${color}35`,
+              border: `2.5px solid ${color}88`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              boxShadow: `0 0 18px ${color}22`,
             }}>
               <span style={isLight ? {
                 fontFamily: fontFamily,
@@ -216,9 +217,9 @@ export const TakeawayScene: React.FC<TakeawaySceneProps> = ({
                 color,
               } : {
                 fontFamily: monoFamily,
-                fontSize: 13,
-                fontWeight: 600,
-                color: `${color}aa`,
+                fontSize: 22,
+                fontWeight: 700,
+                color,
               }}>
                 {scatterWords[i]}
               </span>

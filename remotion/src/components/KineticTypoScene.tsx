@@ -1,29 +1,24 @@
 /**
- * KineticTypoScene — HOOK scene (v41 token-native).
+ * KineticTypoScene — HOOK scene (v43 visual-dominance hero typography).
  *
  * 2-beat full-canvas shatter:
- *   Beat A (0–40%): Giant text SLAMS onto canvas from above with bounce
- *   Beat B (40%–100%): Text cracks down center, fragments fly outward;
- *                       subtitle (on_screen_text[1]) emerges from crack
+ *   Beat A (0–35%): Giant text SLAMS onto canvas from above with bounce
+ *   Beat B (45%–100%): Text cracks down center, fragments fly outward;
+ *                       subtitle emerges from crack
  *
- * Props:
- *   text          — the bold word to display (e.g. "WORD")
- *   accentColor   — theme accent hex
- *   glitchColor   — optional second glitch colour (defaults to accent2)
- *   subtitle      — text that emerges during shatter (e.g. "NOT ONE.")
- *   durationInFrames — total frame count for the scene
- *   transparentBg — true when compositing over generated video
- *   subtitleStyle — 'stamp' renders the subtitle as a rejection stamp
- *                   (palette.danger border/text on a surface background)
+ * Hero text is viewport-fitted via browser measurement with a visual
+ * dominance rule: if width-fit produces < 8% frame height, the system
+ * applies scaleX compression or switches to two-line stacked layout.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {ArtDirection} from '../themes';
+import {useHeroTextFit, heroMeasureStyle, HERO_SAFE_AREA} from '../utils/fitHeroText';
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const BG = '#050510';
+const LETTER_SPACING = 4;
 
-// Deterministic pseudo-random from seed
 function seededRand(seed: number): number {
   const x = Math.sin(seed + 1) * 10000;
   return x - Math.floor(x);
@@ -54,19 +49,31 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   const {fps} = useVideoConfig();
   const accent2 = glitchColor ?? ad?.palette.secondary ?? '#34d399';
 
-  // Art-direction-aware colors
   const bgColor = ad?.palette.bg ?? BG;
   const textColor = ad?.palette.text ?? '#ffffff';
   const fontFamily = ad?.typography.font ?? FONT;
   const useGlow = ad?.depth.use_glow ?? true;
 
-  // ── Timing (relative to durationInFrames) ─────────────────────────────────
-  const slamEnd = Math.round(durationInFrames * 0.35);      // ~31f for 88f scene
-  const crackStart = Math.round(durationInFrames * 0.38);   // ~33f
-  const shatterStart = Math.round(durationInFrames * 0.45); // ~40f
-  const subtitleStart = Math.round(durationInFrames * 0.55);// ~48f
+  // ── Viewport-fitted hero typography with dominance rule ────────────────
+  const {fit: heroFit, singleRef, line1Ref, line2Ref} = useHeroTextFit(
+    text,
+    HERO_SAFE_AREA.width * 0.92,
+    HERO_SAFE_AREA.height * 0.35,
+    fontFamily,
+    900,
+    LETTER_SPACING,
+  );
+  const heroFontSize = heroFit.measured ? heroFit.fontSize : 180;
+  const heroScaleX = heroFit.scaleX;
+  const isTwoLine = heroFit.lineCount === 2;
 
-  // ── Beat A: Slam from above ───────────────────────────────────────────────
+  // ── Timing ────────────────────────────────────────────────────────────
+  const slamEnd = Math.round(durationInFrames * 0.35);
+  const crackStart = Math.round(durationInFrames * 0.38);
+  const shatterStart = Math.round(durationInFrames * 0.45);
+  const subtitleStart = Math.round(durationInFrames * 0.55);
+
+  // ── Beat A: Slam from above ───────────────────────────────────────────
   const slamSpring = spring({
     fps,
     frame,
@@ -76,14 +83,13 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
   const slamY = interpolate(slamSpring, [0, 1], [-600, 0]);
   const slamScale = interpolate(slamSpring, [0, 1], [1.4, 1.0]);
 
-  // Impact flash
   const impactFlash = frame >= slamEnd - 4 && frame <= slamEnd + 6
     ? interpolate(frame, [slamEnd - 4, slamEnd, slamEnd + 6], [0, 0.5, 0], {
         extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
       })
     : 0;
 
-  // ── Beat B: Crack and shatter ─────────────────────────────────────────────
+  // ── Beat B: Crack and shatter ─────────────────────────────────────────
   const crackProgress = interpolate(
     frame,
     [crackStart, shatterStart],
@@ -98,7 +104,6 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  // Subtitle emergence
   const subtitleOpacity = interpolate(
     frame,
     [subtitleStart, subtitleStart + 12],
@@ -112,7 +117,6 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  // Scene opacity envelope
   const sceneOpacity = interpolate(
     frame,
     [0, 4, durationInFrames - 4, durationInFrames],
@@ -120,22 +124,30 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
-  // Split text into halves for crack effect
-  const chars = text.split('');
-  const midpoint = Math.ceil(chars.length / 2);
-  const leftChars = chars.slice(0, midpoint);
-  const rightChars = chars.slice(midpoint);
+  // Characters for shatter — respects single vs two-line layout
+  const shatterLines: string[][] = isTwoLine
+    ? [heroFit.lines[0].split(''), heroFit.lines[1].split('')]
+    : [text.replace(/\s+/g, '').split('')];
 
-  // Per-character shatter
-  const renderShatterChar = (char: string, idx: number, side: 'left' | 'right') => {
+  const heroTextStyle: React.CSSProperties = {
+    fontFamily,
+    fontSize: heroFontSize,
+    fontWeight: 900,
+    color: textColor,
+    letterSpacing: LETTER_SPACING,
+    lineHeight: 1,
+    textShadow: useGlow
+      ? `0 0 60px ${accentColor}66, 0 8px 30px rgba(0,0,0,0.8)`
+      : `0 4px 16px rgba(0,0,0,0.12)`,
+  };
+
+  const renderShatterChar = (char: string, globalIdx: number, side: 'left' | 'right') => {
     if (shatterProgress <= 0) return null;
 
-    const globalIdx = side === 'left' ? idx : midpoint + idx;
     const delay = seededRand(globalIdx * 17) * 0.3;
     const charShatter = Math.max(0, Math.min(1, (shatterProgress - delay) / (1 - delay)));
     const eased = charShatter * charShatter;
 
-    // Fragments fly outward from crack center
     const dirX = side === 'left' ? -1 : 1;
     const tx = dirX * (200 + seededRand(globalIdx * 7) * 400) * eased;
     const ty = (seededRand(globalIdx * 13) - 0.3) * 600 * eased;
@@ -144,17 +156,17 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
 
     return (
       <span
-        key={`${side}-${idx}`}
+        key={`${side}-${globalIdx}`}
         style={{
           display: 'inline-block',
-          fontFamily: fontFamily,
-          fontSize: 180,
+          fontFamily,
+          fontSize: heroFontSize,
           fontWeight: 900,
           color: textColor,
-          letterSpacing: 4,
+          letterSpacing: LETTER_SPACING,
           lineHeight: 1,
           opacity,
-          transform: `translate(${tx}px, ${ty}px) rotate(${rot}deg)`,
+          transform: `translate(${tx}px, ${ty}px) rotate(${rot}deg) scaleX(${heroScaleX})`,
           textShadow: useGlow ? `0 0 40px ${accentColor}88` : `0 4px 12px rgba(0,0,0,0.15)`,
           willChange: 'transform',
         }}
@@ -164,8 +176,90 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
     );
   };
 
+  const renderShatterLine = (chars: string[], globalOffset: number) => {
+    const mid = Math.ceil(chars.length / 2);
+    const left = chars.slice(0, mid);
+    const right = chars.slice(mid);
+    return (
+      <div style={{display: 'flex', justifyContent: 'center', gap: `0 ${crackProgress * 20}px`}}>
+        <div style={{display: 'flex'}}>
+          {left.map((c, i) => renderShatterChar(c, globalOffset + i, 'left'))}
+        </div>
+        <div style={{display: 'flex'}}>
+          {right.map((c, i) => renderShatterChar(c, globalOffset + mid + i, 'right'))}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Pre-shatter text rendering ────────────────────────────────────────
+
+  const renderPreShatterText = () => {
+    const baseTransform = `translateY(${slamY}px) scale(${slamScale}) scaleX(${heroScaleX})`;
+
+    if (isTwoLine) {
+      const lineGap = heroFontSize * 0.15;
+      return (
+        <div style={{
+          transform: baseTransform,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: lineGap,
+        }}>
+          {heroFit.lines.map((line, lineIdx) => (
+            <div key={lineIdx} style={{
+              ...heroTextStyle,
+              ...(crackProgress > 0 ? {
+                display: 'flex',
+                gap: `0 ${crackProgress * 20}px`,
+              } : {}),
+            }}>
+              {crackProgress > 0 ? (() => {
+                const lChars = line.split('');
+                const lMid = Math.ceil(lChars.length / 2);
+                return (
+                  <>
+                    <span>{lChars.slice(0, lMid).join('')}</span>
+                    <span>{lChars.slice(lMid).join('')}</span>
+                  </>
+                );
+              })() : line}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Single line
+    return (
+      <div style={{
+        transform: baseTransform,
+        ...heroTextStyle,
+        ...(crackProgress > 0 ? {
+          display: 'flex',
+          gap: `0 ${crackProgress * 20}px`,
+        } : {}),
+      }}>
+        {crackProgress > 0 ? (
+          <>
+            <span>{leftChars.join('')}</span>
+            <span>{rightChars.join('')}</span>
+          </>
+        ) : text}
+      </div>
+    );
+  };
+
+  const measureStyle = heroMeasureStyle(fontFamily, 900, LETTER_SPACING);
+
   return (
     <AbsoluteFill style={{backgroundColor: transparentBg ? 'transparent' : bgColor, opacity: sceneOpacity}}>
+      {/* Hidden measurement spans — always render both line options */}
+      <span ref={singleRef} style={measureStyle}>{text}</span>
+      <span ref={line1Ref} style={measureStyle}>{heroFit.l1Text}</span>
+      <span ref={line2Ref} style={measureStyle}>{heroFit.l2Text}</span>
+
       {/* Impact flash */}
       {impactFlash > 0 && (
         <AbsoluteFill style={{
@@ -174,7 +268,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
         }} />
       )}
 
-      {/* Background accent glow — intensifies at slam moment (dark theme only) */}
+      {/* Background accent glow */}
       {useGlow && (
         <AbsoluteFill style={{
           background: `radial-gradient(ellipse 900px 600px at 50% 48%, ${accentColor}${
@@ -183,7 +277,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
         }} />
       )}
 
-      {/* Crack line down center */}
+      {/* Crack line */}
       {crackProgress > 0 && shatterProgress < 0.8 && (
         <div style={{
           position: 'absolute',
@@ -198,7 +292,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
         }} />
       )}
 
-      {/* Main text — full canvas dominant */}
+      {/* Main text — viewport-fitted hero with visual dominance */}
       <AbsoluteFill style={{
         display: 'flex',
         alignItems: 'center',
@@ -206,49 +300,23 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
         zIndex: 3,
       }}>
         {shatterProgress <= 0 ? (
-          // Pre-shatter: single unit, slamming from above
-          <div style={{
-            transform: `translateY(${slamY}px) scale(${slamScale})`,
-            fontFamily: fontFamily,
-            fontSize: 180,
-            fontWeight: 900,
-            color: textColor,
-            letterSpacing: 4,
-            lineHeight: 1,
-            textShadow: useGlow
-              ? `0 0 60px ${accentColor}66, 0 8px 30px rgba(0,0,0,0.8)`
-              : `0 4px 16px rgba(0,0,0,0.12)`,
-            // Crack gap during crack phase
-            ...(crackProgress > 0 ? {
-              display: 'flex',
-              gap: `0 ${crackProgress * 20}px`,
-            } : {}),
-          }}>
-            {crackProgress > 0 ? (
-              <>
-                <span>{leftChars.join('')}</span>
-                <span>{rightChars.join('')}</span>
-              </>
-            ) : text}
-          </div>
+          renderPreShatterText()
         ) : (
-          // During shatter: per-character fragments
           <div style={{
             display: 'flex',
-            justifyContent: 'center',
-            gap: `0 ${crackProgress * 20}px`,
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: isTwoLine ? heroFontSize * 0.15 : 0,
           }}>
-            <div style={{display: 'flex'}}>
-              {leftChars.map((c, i) => renderShatterChar(c, i, 'left'))}
-            </div>
-            <div style={{display: 'flex'}}>
-              {rightChars.map((c, i) => renderShatterChar(c, i, 'right'))}
-            </div>
+            {shatterLines.map((lineChars, lineIdx) => {
+              const offset = shatterLines.slice(0, lineIdx).reduce((s, l) => s + l.length, 0);
+              return <React.Fragment key={lineIdx}>{renderShatterLine(lineChars, offset)}</React.Fragment>;
+            })}
           </div>
         )}
       </AbsoluteFill>
 
-      {/* Subtitle emerges from crack center */}
+      {/* Subtitle */}
       {subtitle && subtitleOpacity > 0 && (
         <div style={{
           position: 'absolute',
@@ -263,7 +331,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
           {subtitleStyle === 'stamp' ? (
             <span style={{
               display: 'inline-block',
-              fontFamily: fontFamily,
+              fontFamily,
               fontSize: 64,
               fontWeight: 900,
               color: ad?.palette.danger ?? '#ef4444',
@@ -279,7 +347,7 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
             </span>
           ) : (
           <span style={{
-            fontFamily: fontFamily,
+            fontFamily,
             fontSize: 64,
             fontWeight: 900,
             color: accentColor,
