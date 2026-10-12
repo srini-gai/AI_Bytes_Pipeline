@@ -39,9 +39,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from engine.channel_config import load_channel, get_default_channel
+
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
+
+def _channel_fingerprint_key(channel: str | None = None) -> str:
+    """Resolve the fingerprint channel key from channel config or fallback."""
+    if channel is not None:
+        return channel
+    try:
+        cfg = load_channel(get_default_channel())
+        return cfg.visual.fingerprint_channel_key
+    except Exception:
+        return "ai_bytes"
 
 # ── Visual action primitives (v4) ────────────────────────────────────────────
 # These are the building blocks the planner uses to describe what happens
@@ -299,7 +311,7 @@ def compute_family_similarity(
 def _diversity_gate(
     current_plan: dict,
     fingerprints: dict,
-    channel: str = "ai_bytes",
+    channel: str | None = None,
 ) -> dict:
     """
     Pre-render creative-diversity check using COMPONENT FAMILIES.
@@ -320,10 +332,11 @@ def _diversity_gate(
             "reason": "no prior episodes — diversity gate skipped",
         }
 
+    channel = _channel_fingerprint_key(channel)
     # Channel-scoped: filter to same channel
     channel_fps = {
         k: v for k, v in fingerprints.items()
-        if v.get("channel", "ai_bytes") == channel
+        if v.get("channel", channel) == channel
     }
     if not channel_fps:
         return {
@@ -794,16 +807,17 @@ def _save_fingerprint(episode_key: str, fingerprint: dict) -> None:
 
 def _format_fingerprints_for_prompt(
     fingerprints: dict,
-    channel: str = "ai_bytes",
+    channel: str | None = None,
 ) -> str:
     """Format recent fingerprints as context for the novelty guard.
 
     Only includes fingerprints from the same channel (channel-scoped
     creative memory).
     """
+    channel = _channel_fingerprint_key(channel)
     scoped = {
         k: v for k, v in fingerprints.items()
-        if v.get("channel", "ai_bytes") == channel
+        if v.get("channel", channel) == channel
     }
     if not scoped:
         return "No previous episode fingerprints available for this channel."
@@ -2122,7 +2136,7 @@ def approve_episode(
             "scene_count": len(scenes),
             "duration_seconds": round(sum(s.get("duration_seconds", 0) for s in scenes), 2),
             "mode_ratio": {"native": native_count, "generated": gen_count},
-            "channel": "ai_bytes",
+            "channel": _channel_fingerprint_key(),
             "approved_at": datetime.now(timezone.utc).isoformat(),
             "approved_by": approved_by,
             "source": path.name,

@@ -1,0 +1,133 @@
+# ============================================================================
+# Srini on AI — Channel Pack v1
+# ============================================================================
+# Everything that makes this channel THIS channel vs. another channel using
+# the same Engine v1. Domain knowledge (AI/tech education) and global engine
+# rules live outside this file.
+#
+# Loaded by: engine.channel_config.load_channel(channel_id)
+# ============================================================================
+
+id: srini_on_ai
+name: "Srini on AI"
+tagline: "Practical AI, daily."
+format: youtube_shorts
+language_default: en
+languages: [en, ta]
+
+
+# ── Brand ────────────────────────────────────────────────────────────────────
+
+brand:
+  colors:
+    bg: "#050510"
+    accent: "#a78bfa"
+    accent2: "#34d399"
+  logo: "srini-logo.png"            # relative to remotion/public/
+  cta_text: "Follow Srini on AI for practical AI, daily."
+  hashtag: "#SriniOnAI"
+  default_title_pattern: "AI Bytes EP{episode:02d} #Shorts"
+
+
+# ── Voice (ElevenLabs) ───────────────────────────────────────────────────────
+# Voice B settings are LOCKED — never change without explicit approval.
+
+voice:
+  model_id: "eleven_multilingual_v2"
+  output_format: "mp3_44100_128"
+  defaults:
+    stability: 0.42
+    similarity_boost: 0.78
+    style: 0.0
+    speed: 1.05
+    use_speaker_boost: true
+  # env keys for voice_id (never store the ID itself in config)
+  env_voice_id_key: "ELEVENLABS_VOICE_ID"
+  duration_windows:
+    en:
+      min: 40.0
+      max: 66.0
+    ta:
+      min: 40.0
+      max: 65.0
+
+
+# ── Script ───────────────────────────────────────────────────────────────────
+
+script:
+  persona: >-
+    You are a YouTube Shorts scriptwriter for the Srini on AI channel.
+    Srini on AI produces 60-second educational shorts explaining AI concepts
+    to developers and founders.
+  voiceover_word_range: [150, 175]
+  voiceover_target_words: 155
+  tags_always_include: "#SriniOnAI"
+  theme_guide:
+    danger:
+      accent: "#ff3333"
+      accent2: "#ff6600"
+      overlay: "rgba(20,0,0,0.45)"
+      pexels_mood: "dark dramatic red"
+    calm:
+      accent: "#60a5fa"
+      accent2: "#e2e8f0"
+      overlay: "rgba(0,10,30,0.40)"
+      pexels_mood: "soft blue minimal calm"
+    creative:
+      accent: "#f59e0b"
+      accent2: "#fb923c"
+      overlay: "rgba(20,10,0,0.40)"
+      pexels_mood: "warm golden creative"
+    future:
+      accent: "#22d3ee"
+      accent2: "#818cf8"
+      overlay: "rgba(0,10,20,0.45)"
+      pexels_mood: "cyan space futuristic"
+    technical:
+      accent: "#22c55e"
+      accent2: "#4ade80"
+      overlay: "rgba(0,15,5,0.45)"
+      pexels_mood: "green tech dark"
+    energy:
+      accent: "#a78bfa"
+      accent2: "#34d399"
+      overlay: "rgba(5,5,16,0.35)"
+      pexels_mood: "purple neon dark"
+
+
+# ── Visual Director ──────────────────────────────────────────────────────────
+
+visual:
+  remotion_composition_id: "AIBytesReel"
+  default_theme:
+    name: "energy"
+    accent: "#a78bfa"
+    accent2: "#34d399"
+    overlay: "rgba(5,5,16,0.35)"
+    pexels_mood: "purple neon dark"
+  quality_gates:
+    target_min_seconds: 45.0
+    target_max_seconds: 60.0
+    max_hook_seconds: 4.0
+    max_cta_seconds: 3.0
+  narration_pacing:
+    min_wps: 2.0
+    max_wps: 3.2
+  weekly_diversity_guideline:
+    native_motion: "~2/week"
+    hybrid_generated: "~3/week"
+  fingerprint_channel_key: "ai_bytes"
+
+
+# ── Publisher (YouTube) ──────────────────────────────────────────────────────
+
+publisher:
+  category_id: "28"                 # Science & Technology
+  env_keys:
+    en:
+      channel_id: "YOUTUBE_CHANNEL_ID_EN"
+      refresh_token: "YOUTUBE_REFRESH_TOKEN_EN"
+      refresh_token_fallback: "YOUTUBE_REFRESH_TOKEN"
+    ta:
+      channel_id: "YOUTUBE_CHANNEL_ID_TA"
+      refresh_token: "YOUTUBE_REFRESH_TOKEN_TA"

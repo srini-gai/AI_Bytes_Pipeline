@@ -37,6 +37,7 @@ from agents import (
     visual_mode_router,
     voice_agent,
 )
+from engine.channel_config import load_channel, get_default_channel
 
 TOPICS_FILE = Path(__file__).parent / "topics.txt"
 OUTPUT_BASE = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
@@ -508,7 +509,15 @@ def main() -> None:
         "--topics-file",
         help="Path to a topics file (default: topics.txt). Use for language-specific batches.",
     )
+    parser.add_argument(
+        "--channel",
+        default=get_default_channel(),
+        help=f"Channel pack ID (default: {get_default_channel()}). "
+        "Must match a directory under channels/.",
+    )
     args = parser.parse_args()
+
+    channel_cfg = load_channel(args.channel)
 
     week = args.week if args.week is not None else _auto_week()
     langs = (
@@ -518,6 +527,7 @@ def main() -> None:
     )
 
     print(f"\nAI Bytes Pipeline")
+    print(f"  Channel  : {channel_cfg.name} ({channel_cfg.id})")
     print(f"  Date     : {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"  Week     : {week}")
     print(f"  Languages: {', '.join(l.upper() for l in langs)}")

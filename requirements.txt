@@ -20,6 +20,7 @@ google-auth-httplib2>=0.2.0
 
 # Environment / config
 python-dotenv>=1.0.0
+PyYAML>=6.0
 
 # HTTP
 requests>=2.31.0
