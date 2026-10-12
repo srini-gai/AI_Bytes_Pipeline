@@ -70,6 +70,76 @@ def _ffmpeg(*args: str, timeout: int = 300, cwd: str | None = None) -> None:
         )
 
 
+LOUDNORM_TARGET_I = -14.0
+LOUDNORM_TARGET_TP = -1.0
+LOUDNORM_TARGET_LRA = 11.0
+
+
+def _measure_loudness(path: Path) -> dict[str, float]:
+    """Measure integrated loudness, true peak, and LRA of a media file."""
+    cmd = [
+        FFMPEG, "-i", str(path),
+        "-af", f"loudnorm=I={LOUDNORM_TARGET_I}:TP={LOUDNORM_TARGET_TP}"
+               f":LRA={LOUDNORM_TARGET_LRA}:print_format=json",
+        "-f", "null", "-",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    stderr = result.stderr
+    json_start = stderr.rfind("{")
+    json_end = stderr.rfind("}") + 1
+    if json_start < 0 or json_end <= json_start:
+        raise RuntimeError(f"loudnorm measurement produced no JSON:\n{stderr[-1000:]}")
+    data = json.loads(stderr[json_start:json_end])
+    return {
+        "input_i": float(data["input_i"]),
+        "input_tp": float(data["input_tp"]),
+        "input_lra": float(data["input_lra"]),
+        "input_thresh": float(data["input_thresh"]),
+    }
+
+
+def _normalize_loudness(
+    input_path: Path, output_path: Path, episode: int, lang: str
+) -> dict[str, float]:
+    """
+    Two-pass EBU R128 loudness normalization on the final MP4.
+    Pass 1: measure. Pass 2: apply linear normalization with measured values.
+    Returns the post-normalization loudness measurements.
+    """
+    measured = _measure_loudness(input_path)
+    logger.info(
+        f"EP{episode:02d} [{lang.upper()}] LOUDNORM pass-1 measured: "
+        f"I={measured['input_i']:.1f} LUFS  TP={measured['input_tp']:.1f} dBTP  "
+        f"LRA={measured['input_lra']:.1f}"
+    )
+
+    loudnorm_filter = (
+        f"loudnorm=I={LOUDNORM_TARGET_I}:TP={LOUDNORM_TARGET_TP}"
+        f":LRA={LOUDNORM_TARGET_LRA}:linear=true"
+        f":measured_I={measured['input_i']}"
+        f":measured_TP={measured['input_tp']}"
+        f":measured_LRA={measured['input_lra']}"
+        f":measured_thresh={measured['input_thresh']}"
+    )
+
+    _ffmpeg(
+        "-i", str(input_path),
+        "-c:v", "copy",
+        "-af", loudnorm_filter,
+        "-c:a", "aac",
+        "-b:a", "192k",
+        str(output_path),
+    )
+
+    final = _measure_loudness(output_path)
+    logger.info(
+        f"EP{episode:02d} [{lang.upper()}] LOUDNORM result: "
+        f"I={final['input_i']:.1f} LUFS  TP={final['input_tp']:.1f} dBTP  "
+        f"LRA={final['input_lra']:.1f}"
+    )
+    return final
+
+
 
 
 def _ts_srt(secs: float) -> str:
@@ -598,6 +668,26 @@ def run(
                 str(output_path),
             )
 
+    # Step 3b: Loudness normalization (EBU R128, two-pass).
+    pre_norm = output_path.with_suffix(".prenorm.mp4")
+    output_path.rename(pre_norm)
+    try:
+        loudness = _normalize_loudness(pre_norm, output_path, episode, lang)
+    finally:
+        if pre_norm.exists():
+            pre_norm.unlink()
+
+    if loudness["input_i"] < -16.0 or loudness["input_i"] > -12.0:
+        logger.warning(
+            f"EP{episode:02d} [{lang.upper()}] LOUDNESS_QA=WARN — "
+            f"normalized I={loudness['input_i']:.1f} LUFS outside -16...-12 window"
+        )
+    if loudness["input_tp"] > LOUDNORM_TARGET_TP + 0.5:
+        logger.warning(
+            f"EP{episode:02d} [{lang.upper()}] LOUDNESS_QA=WARN — "
+            f"true peak {loudness['input_tp']:.1f} dBTP exceeds ceiling"
+        )
+
     # Step 4: Validate output
     duration = _validate_output(output_path, episode, lang)
     assembly_time = time.monotonic() - t0
@@ -608,6 +698,9 @@ def run(
         "visual_identity": visual_identity,
         "duration": round(duration, 2),
         "assembled_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "loudness_lufs": round(loudness["input_i"], 2),
+        "loudness_tp": round(loudness["input_tp"], 2),
+        "loudness_lra": round(loudness["input_lra"], 2),
     }
     if mixed_audio_path is not None:
         meta["mixed_audio"] = Path(mixed_audio_path).name

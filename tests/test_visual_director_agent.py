@@ -315,7 +315,7 @@ def test_duration_decision_rationale_must_cover_all_factors():
 
 
 def test_duration_decision_must_match_storyboard_total():
-    d = {**DURATION_DECISION, "total_seconds": 55.0}
+    d = {**DURATION_DECISION, "total_seconds": 60.0}
     assert any("MISMATCH" in x for x in vda._validate_duration_decision(d, _storyboard()))
 
 

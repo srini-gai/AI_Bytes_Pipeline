@@ -884,6 +884,11 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         # ── SCRIPT-HASH CONSISTENCY GUARD ────────────────────────────────────
         # Canonical narration = script.voiceover.  The Visual Director segments
         # that exact text into storyboard[].narration.  Concatenation must match.
+        # We normalize by keeping only alphanumeric chars + spaces to tolerate
+        # minor punctuation differences (em-dash vs period, etc.) while still
+        # catching actual content rewrites.
+        import re
+        _hash_normalize = re.compile(r"[^a-zA-Z0-9\s]")
         canonical_voiceover = " ".join(props.get("voiceover", "").split())
         storyboard_narration = " ".join(
             w for s in storyboard
@@ -891,8 +896,10 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
         )
 
         if canonical_voiceover and storyboard_narration:
-            canon_hash = hashlib.sha256(canonical_voiceover.encode("utf-8")).hexdigest()[:16]
-            sb_hash = hashlib.sha256(storyboard_narration.encode("utf-8")).hexdigest()[:16]
+            canon_norm = " ".join(_hash_normalize.sub("", canonical_voiceover).split())
+            sb_norm = " ".join(_hash_normalize.sub("", storyboard_narration).split())
+            canon_hash = hashlib.sha256(canon_norm.encode("utf-8")).hexdigest()[:16]
+            sb_hash = hashlib.sha256(sb_norm.encode("utf-8")).hexdigest()[:16]
 
             if canon_hash != sb_hash:
                 raise RuntimeError(

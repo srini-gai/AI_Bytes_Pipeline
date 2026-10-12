@@ -96,9 +96,9 @@ const Panel: React.FC<{
       <div style={{
         position: 'absolute', inset: 0,
         borderRadius: 24,
-        background: `${color}12`,
-        border: `2px solid ${color}44`,
-        boxShadow: `0 0 60px ${color}18`,
+        background: `${color}20`,
+        border: `3px solid ${color}66`,
+        boxShadow: `0 0 60px ${color}28`,
       }}/>
       <div style={{position: 'relative', padding: `${COL_PADDING + 16}px ${COL_PADDING}px ${COL_PADDING}px`}}>
         <div style={{
@@ -169,9 +169,9 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
 
     return (
       <AbsoluteFill style={{backgroundColor: bgColor}}>
-        {/* Background: left red tint / right green tint */}
+        {/* Background: left/right tinted glow */}
         <AbsoluteFill style={{
-          background: `linear-gradient(90deg, ${leftCol}08 0%, transparent 50%, ${rightCol}08 100%)`,
+          background: `linear-gradient(90deg, ${leftCol}18 0%, transparent 50%, ${rightCol}18 100%)`,
         }}/>
 
         {/* Left panel */}
@@ -183,8 +183,8 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
         }}>
           <div style={{
             position: 'absolute', inset: 0, borderRadius: 24,
-            background: `${leftCol}12`, border: `2px solid ${leftCol}55`,
-            boxShadow: `0 0 60px ${leftCol}15`,
+            background: `${leftCol}22`, border: `3px solid ${leftCol}66`,
+            boxShadow: `0 0 60px ${leftCol}30`,
           }}/>
           <div style={{position: 'relative', padding: '50px 32px 32px'}}>
             <div style={{
@@ -231,8 +231,8 @@ export const SplitCompareScene: React.FC<SplitCompareSceneProps> = ({spec, theme
         }}>
           <div style={{
             position: 'absolute', inset: 0, borderRadius: 24,
-            background: `${rightCol}12`, border: `2px solid ${rightCol}55`,
-            boxShadow: `0 0 60px ${rightCol}15`,
+            background: `${rightCol}22`, border: `3px solid ${rightCol}66`,
+            boxShadow: `0 0 60px ${rightCol}30`,
           }}/>
           <div style={{position: 'relative', padding: '50px 32px 32px'}}>
             <div style={{

@@ -121,9 +121,19 @@ function wrapLabel(label: string, maxCharsPerLine = 14): string[] {
   return line2 ? [line1, line2] : [line1];
 }
 
-export const SketchScene: React.FC<SketchSceneProps> = ({topic, sketchSpec, accentColor}) => {
+export const SketchScene: React.FC<SketchSceneProps> = ({topic, sketchSpec, accentColor, durationInFrames}) => {
   const frame = useCurrentFrame();
   const {nodes, edges, title} = sketchSpec;
+
+  // Scale animation timing to fill the allocated scene duration.
+  const baseTotal = nodes.length * NODE_SLOT + edges.length * EDGE_SLOT;
+  const animTarget = durationInFrames ? Math.floor(durationInFrames * 0.85) : baseTotal;
+  const timeScale = baseTotal > 0 ? animTarget / baseTotal : 1;
+  const scaledNodeSlot = Math.round(NODE_SLOT * timeScale);
+  const scaledEdgeSlot = Math.round(EDGE_SLOT * timeScale);
+  const scaledNodeDraw = Math.round(NODE_DRAW * timeScale);
+  const scaledEdgeDraw = Math.round(EDGE_DRAW * timeScale);
+  const scaledEdgeLabelFade = Math.round(EDGE_LABEL_FADE * timeScale);
 
   // Fit the spec's coordinate space into the vertical canvas.
   const minX = Math.min(...nodes.map((n) => n.x));
@@ -141,10 +151,13 @@ export const SketchScene: React.FC<SketchSceneProps> = ({topic, sketchSpec, acce
   const screenNodes = new Map<string, ScreenNode>();
   nodes.forEach((node) => screenNodes.set(node.id, buildScreenNode(node, offsetX, offsetY, scale)));
 
-  const nodesEndFrame = nodes.length * NODE_SLOT;
+  const nodesEndFrame = nodes.length * scaledNodeSlot;
 
-  const titleOpacity = interpolate(frame, [5, 15], [0, 1], {extrapolateRight: 'clamp'});
+  const titleOpacity = interpolate(frame, [0, 8], [0, 1], {extrapolateRight: 'clamp'});
   const titleText = title ?? topic;
+
+  // Ghost fills: show all node positions as faint filled shapes from frame 0
+  const ghostOpacity = interpolate(frame, [0, 6], [0.08, 0.18], {extrapolateRight: 'clamp'});
 
   return (
     <AbsoluteFill style={{backgroundColor: BG}}>
@@ -153,7 +166,7 @@ export const SketchScene: React.FC<SketchSceneProps> = ({topic, sketchSpec, acce
           position: 'absolute', top: 140, left: 0, right: 0,
           textAlign: 'center',
           opacity: titleOpacity,
-          fontSize: 22, fontWeight: 700,
+          fontSize: 36, fontWeight: 700,
           color: '#ffffff',
           fontFamily: FONT,
           letterSpacing: 0.5,
@@ -173,12 +186,27 @@ export const SketchScene: React.FC<SketchSceneProps> = ({topic, sketchSpec, acce
           </marker>
         </defs>
 
+        {/* Ghost fills — ENTER phase: mark all node positions immediately */}
+        {nodes.map((node) => {
+          const screen = screenNodes.get(node.id);
+          if (!screen) return null;
+          return (
+            <path
+              key={`ghost-${node.id}`}
+              d={screen.pathD}
+              fill={accentColor}
+              opacity={ghostOpacity}
+              stroke="none"
+            />
+          );
+        })}
+
         {edges.map((edge, i) => {
           const from = screenNodes.get(edge.from);
           const to = screenNodes.get(edge.to);
           if (!from || !to) return null;
 
-          const start = nodesEndFrame + i * EDGE_SLOT;
+          const start = nodesEndFrame + i * scaledEdgeSlot;
           return (
             <EdgePath
               key={`${edge.from}-${edge.to}-${i}`}
@@ -186,6 +214,8 @@ export const SketchScene: React.FC<SketchSceneProps> = ({topic, sketchSpec, acce
               from={from}
               to={to}
               startFrame={start}
+              edgeDraw={scaledEdgeDraw}
+              edgeLabelFade={scaledEdgeLabelFade}
               frame={frame}
               accentColor={accentColor}
             />
@@ -195,16 +225,16 @@ export const SketchScene: React.FC<SketchSceneProps> = ({topic, sketchSpec, acce
         {nodes.map((node, i) => {
           const screen = screenNodes.get(node.id);
           if (!screen) return null;
-          const start = i * NODE_SLOT;
+          const start = i * scaledNodeSlot;
           const drawOffset = interpolate(
             frame,
-            [start, start + NODE_DRAW],
+            [start, start + scaledNodeDraw],
             [screen.pathLength, 0],
             {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
           );
           const labelOpacity = interpolate(
             frame,
-            [start + NODE_DRAW, start + NODE_SLOT],
+            [start + scaledNodeDraw, start + scaledNodeSlot],
             [0, 1],
             {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
           );
@@ -250,11 +280,13 @@ interface EdgePathProps {
   from: ScreenNode;
   to: ScreenNode;
   startFrame: number;
+  edgeDraw: number;
+  edgeLabelFade: number;
   frame: number;
   accentColor: string;
 }
 
-const EdgePath: React.FC<EdgePathProps> = ({edge, from, to, startFrame, frame, accentColor}) => {
+const EdgePath: React.FC<EdgePathProps> = ({edge, from, to, startFrame, edgeDraw, edgeLabelFade, frame, accentColor}) => {
   const dx = to.cx - from.cx;
   const dy = to.cy - from.cy;
   const dist = Math.hypot(dx, dy) || 1;
@@ -281,15 +313,15 @@ const EdgePath: React.FC<EdgePathProps> = ({edge, from, to, startFrame, frame, a
 
   const drawOffset = interpolate(
     frame,
-    [startFrame, startFrame + EDGE_DRAW],
+    [startFrame, startFrame + edgeDraw],
     [pathLength, 0],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
-  const complete = frame >= startFrame + EDGE_DRAW;
+  const complete = frame >= startFrame + edgeDraw;
 
   const labelOpacity = interpolate(
     frame,
-    [startFrame + EDGE_DRAW, startFrame + EDGE_DRAW + EDGE_LABEL_FADE],
+    [startFrame + edgeDraw, startFrame + edgeDraw + edgeLabelFade],
     [0, 1],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );

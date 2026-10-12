@@ -300,6 +300,140 @@ def check_static_scenes(
     }
 
 
+# ── Perceptual duplication check ──────────────────────────────────────────
+# Lightweight sampled-frame comparison between non-adjacent scenes.
+# Uses averaged frame fingerprints to flag obvious visual duplicates.
+
+DUPLICATION_SAMPLES_PER_SCENE = 3
+DUPLICATION_GRID_SIZE = 8
+DUPLICATION_GRID_CELLS = DUPLICATION_GRID_SIZE * DUPLICATION_GRID_SIZE  # 64
+DUPLICATION_SIMILARITY_THRESHOLD = 0.92  # 92% normalized correlation = near-identical
+
+def _frame_fingerprint(pixels: bytes) -> list[int]:
+    """Downsample to 8x8 grid of average luminance values with contrast stretch."""
+    grid: list[int] = []
+    cell_w = SAMPLE_W // DUPLICATION_GRID_SIZE
+    cell_h = SAMPLE_H // DUPLICATION_GRID_SIZE
+    for gy in range(DUPLICATION_GRID_SIZE):
+        for gx in range(DUPLICATION_GRID_SIZE):
+            total = 0
+            count = 0
+            for row in range(gy * cell_h, (gy + 1) * cell_h):
+                for col in range(gx * cell_w, (gx + 1) * cell_w):
+                    idx = row * SAMPLE_W + col
+                    if idx < len(pixels):
+                        total += pixels[idx]
+                        count += 1
+            grid.append(total // max(count, 1))
+    lo = min(grid) if grid else 0
+    hi = max(grid) if grid else 255
+    spread = hi - lo
+    if spread < 8:
+        return grid
+    return [round((v - lo) * 255 / spread) for v in grid]
+
+
+def _fingerprint_similarity(fp_a: list[int], fp_b: list[int]) -> float:
+    """Normalized similarity between two grid fingerprints."""
+    if len(fp_a) != len(fp_b) or not fp_a:
+        return 0.0
+    diff_sum = sum(abs(a - b) for a, b in zip(fp_a, fp_b))
+    max_diff = 255 * len(fp_a)
+    return 1.0 - diff_sum / max_diff
+
+
+def check_scene_duplication(
+    video_path: Path,
+    scenes: list[dict],
+) -> dict:
+    """
+    Check for perceptual duplication between non-adjacent scenes.
+    Samples frames from each content scene's middle portion, computes
+    averaged fingerprints, and flags pairs with >92% similarity.
+    """
+    STRUCTURAL = {"HOOK", "TAKEAWAY", "CTA"}
+    cursor = 0.0
+    scene_timings = []
+    for s in scenes:
+        dur = s.get("duration_seconds", 0)
+        if s.get("scene_type") not in STRUCTURAL and dur > 2.0:
+            scene_timings.append({
+                "scene_id": s.get("scene_id", "?"),
+                "component": s.get("component", "?"),
+                "start_s": cursor,
+                "end_s": cursor + dur,
+                "duration_s": dur,
+            })
+        cursor += dur
+
+    if len(scene_timings) < 2:
+        return {"verdict": "PASS", "duplicate_pairs": [], "scenes_checked": 0}
+
+    scene_fingerprints: list[tuple[dict, list[int]]] = []
+    for st in scene_timings:
+        margin = min(0.5, st["duration_s"] * 0.15)
+        sample_start = st["start_s"] + margin
+        sample_end = st["end_s"] - margin
+        span = sample_end - sample_start
+        if span < 0.5:
+            continue
+
+        fps_accum: list[int] = [0] * DUPLICATION_GRID_CELLS
+        count = 0
+        for si in range(DUPLICATION_SAMPLES_PER_SCENE):
+            t = sample_start + span * (si + 0.5) / DUPLICATION_SAMPLES_PER_SCENE
+            px = _extract_frame(video_path, t)
+            if px:
+                fp = _frame_fingerprint(px)
+                for k in range(DUPLICATION_GRID_CELLS):
+                    fps_accum[k] += fp[k]
+                count += 1
+
+        if count > 0:
+            avg_fp = [v // count for v in fps_accum]
+            scene_fingerprints.append((st, avg_fp))
+
+    duplicate_pairs = []
+    for i in range(len(scene_fingerprints)):
+        for j in range(i + 1, len(scene_fingerprints)):
+            st_a, fp_a = scene_fingerprints[i]
+            st_b, fp_b = scene_fingerprints[j]
+            # Skip adjacent scenes (only flag non-adjacent)
+            a_idx = next((k for k, s in enumerate(scenes) if s.get("scene_id") == st_a["scene_id"]), -1)
+            b_idx = next((k for k, s in enumerate(scenes) if s.get("scene_id") == st_b["scene_id"]), -1)
+            if abs(a_idx - b_idx) <= 1:
+                continue
+
+            sim = _fingerprint_similarity(fp_a, fp_b)
+            if sim >= DUPLICATION_SIMILARITY_THRESHOLD:
+                sid_a = st_a["scene_id"]
+                sid_b = st_b["scene_id"]
+                a_str = f"s{sid_a:02d}" if isinstance(sid_a, int) else str(sid_a)
+                b_str = f"s{sid_b:02d}" if isinstance(sid_b, int) else str(sid_b)
+                duplicate_pairs.append({
+                    "scene_a": a_str,
+                    "scene_b": b_str,
+                    "component_a": st_a["component"],
+                    "component_b": st_b["component"],
+                    "similarity": round(sim, 3),
+                })
+
+    verdict = "FAIL" if duplicate_pairs else "PASS"
+    if duplicate_pairs:
+        for dp in duplicate_pairs:
+            logger.error(
+                f"  DUPLICATE: {dp['scene_a']} ({dp['component_a']}) vs "
+                f"{dp['scene_b']} ({dp['component_b']}) — "
+                f"{dp['similarity']:.0%} perceptual similarity"
+            )
+
+    return {
+        "verdict": verdict,
+        "duplicate_pairs": duplicate_pairs,
+        "scenes_checked": len(scene_fingerprints),
+    }
+
+
 # ── Combined guard ───────────────────────────────────────────────────────
 
 def run_timeline_qa(
@@ -324,11 +458,14 @@ def run_timeline_qa(
 
     blank_report = check_blank_spans(video_path, is_dark, total_dur, scenes)
     static_report = check_static_scenes(video_path, scenes)
+    duplication_report = check_scene_duplication(video_path, scenes)
 
     overall = "PASS"
     if blank_report["verdict"] == "FAIL":
         overall = "FAIL"
     if static_report["verdict"] == "FAIL":
+        overall = "FAIL"
+    if duplication_report["verdict"] == "FAIL":
         overall = "FAIL"
 
     report = {
@@ -337,16 +474,19 @@ def run_timeline_qa(
         "verdict": overall,
         "blank_span_check": blank_report,
         "static_scene_check": static_report,
+        "duplication_check": duplication_report,
     }
 
     if overall == "PASS":
-        logger.info("TIMELINE_QA=PASS — no blank spans or static violations")
+        logger.info("TIMELINE_QA=PASS — no blank spans, static violations, or duplicates")
     else:
         blanks = blank_report.get("blank_spans", [])
         statics = static_report.get("static_violations", [])
+        dupes = duplication_report.get("duplicate_pairs", [])
         logger.error(
             f"TIMELINE_QA=FAIL — "
-            f"{len(blanks)} blank span(s), {len(statics)} static violation(s)"
+            f"{len(blanks)} blank span(s), {len(statics)} static violation(s), "
+            f"{len(dupes)} duplicate pair(s)"
         )
         for b in blanks:
             logger.error(
@@ -357,6 +497,11 @@ def run_timeline_qa(
             logger.error(
                 f"  STATIC: {sv['window_start_s']:.1f}–{sv['window_end_s']:.1f}s "
                 f"({sv['duration_s']:.1f}s) in {sv['scene_id']} ({sv['component']})"
+            )
+        for dp in dupes:
+            logger.error(
+                f"  DUPLICATE: {dp['scene_a']} vs {dp['scene_b']} "
+                f"({dp['similarity']:.0%})"
             )
 
     return report

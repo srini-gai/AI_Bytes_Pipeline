@@ -199,6 +199,26 @@ export interface TransformSceneData {
   task_card?: TaskCardSpec;
 }
 
+/** Data payload for AssetScene (hybrid hero visual) */
+export interface AssetSceneData {
+  /** Path to asset file relative to remotion/public/ */
+  src: string;
+  /** 'video' or 'image' */
+  media_type: 'video' | 'image';
+  /** Motion effect */
+  motion?: 'push' | 'pan_left' | 'pan_right' | 'parallax' | 'zoom_center' | 'crop_left' | 'crop_right' | 'none';
+  /** Overlay label text */
+  label?: string;
+  /** Label position */
+  label_position?: 'bottom' | 'top' | 'center';
+  /** Secondary label */
+  subtitle?: string;
+  /** Video clip duration in seconds (freezes on last frame when scene is longer) */
+  video_duration_s?: number;
+  /** Path to extracted last frame of video (tail-fill when video < scene) */
+  endframe_src?: string;
+}
+
 /** Optional scene.data for KineticTypoScene */
 export interface KineticTypoSceneData {
   /** 'stamp' renders the subtitle as a rejection stamp in palette.danger */
@@ -291,7 +311,9 @@ export type SceneComponent =
   | 'AgentTraversalScene'  // Agent character traverses labeled zones with tools
   | 'CircularFlowScene'    // Four-quadrant spinning wheel (cyclical process)
   // ── Scene Composer v1 — primitive-based composition ─────────────────────
-  | 'ComposedScene';       // Layers multiple primitives via z-index ordering
+  | 'ComposedScene'        // Layers multiple primitives via z-index ordering
+  // ── Hybrid asset-based scenes ──────────────────────────────────────────
+  | 'AssetScene';          // Hero image or video with editorial motion + overlay
 
 /** Data payload for NumberCounterScene */
 export interface NumberCounterData {

@@ -232,6 +232,8 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
     }
 
     // Single line
+    const chars = text.split('');
+    const mid = Math.ceil(chars.length / 2);
     return (
       <div style={{
         transform: baseTransform,
@@ -243,8 +245,8 @@ export const KineticTypoScene: React.FC<KineticTypoSceneProps> = ({
       }}>
         {crackProgress > 0 ? (
           <>
-            <span>{leftChars.join('')}</span>
-            <span>{rightChars.join('')}</span>
+            <span>{chars.slice(0, mid).join('')}</span>
+            <span>{chars.slice(mid).join('')}</span>
           </>
         ) : text}
       </div>

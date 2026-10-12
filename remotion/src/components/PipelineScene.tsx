@@ -24,7 +24,8 @@ interface PipelineSceneProps {
   objects: string[];
   accentColor?: string;
   accent2?: string;
-  carryFrom?: string; // 'grounded answer text'
+  carryFrom?: string;
+  durationInFrames?: number;
 }
 
 interface PNode {
@@ -93,9 +94,18 @@ export const PipelineScene: React.FC<PipelineSceneProps> = ({
     >
       <AbsoluteFill
         style={{
-          background: `radial-gradient(ellipse 1000px 1200px at 50% 55%, ${accentColor}0a 0%, transparent 70%)`,
+          background: `radial-gradient(ellipse 1000px 1200px at 50% 55%, ${accentColor}22 0%, transparent 70%)`,
         }}
       />
+
+      {/* Structural anchor — visible on dark backgrounds at downscale */}
+      <div style={{
+        position: 'absolute', left: 40, top: 320,
+        width: 1000, height: 1300,
+        border: `2px solid ${accentColor}18`,
+        borderRadius: 24,
+        background: `linear-gradient(180deg, ${accentColor}08 0%, transparent 50%)`,
+      }} />
 
       <svg viewBox="0 0 1080 1920" width={1080} height={1920}
         style={{position: 'absolute', inset: 0}}>
@@ -121,9 +131,9 @@ export const PipelineScene: React.FC<PipelineSceneProps> = ({
           return (
             <g key={`${fromId}-${toId}`}>
               <line x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={lineColor} strokeWidth={3}
+                stroke={lineColor} strokeWidth={5}
                 strokeDasharray="0"
-                opacity={0.7 + glowP * 0.3}/>
+                opacity={0.8 + glowP * 0.2}/>
               {/* Arrow head if edge complete */}
               {edgeP > 0.9 && (
                 <circle cx={toNode.x - ux * toNode.r} cy={toNode.y - uy * toNode.r}
@@ -138,7 +148,7 @@ export const PipelineScene: React.FC<PipelineSceneProps> = ({
           const nodeP = smoothstep(P[node.beat]);
           if (nodeP < 0.01) return null;
           const glow = nodeP * (1 + glowP * 0.4);
-          const fillAlpha = Math.round(nodeP * 0x18).toString(16).padStart(2, '0');
+          const fillAlpha = Math.round(nodeP * 0x38).toString(16).padStart(2, '0');
           const strokeAlpha = Math.round(nodeP * 0xff).toString(16).padStart(2, '0');
 
           return (

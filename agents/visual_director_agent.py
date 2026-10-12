@@ -100,6 +100,8 @@ VALID_COMPONENTS = {
     # Creative visual reasoning components (v4)
     "AgentTraversalScene",
     "CircularFlowScene",
+    # Asset-based (fal.ai generated)
+    "AssetScene",
 }
 
 # ── Quality gate thresholds (unchanged from v3.2) ───────────────────────────
@@ -148,6 +150,413 @@ CAMERA_MOVES = {
     "slow-push-in", "zoom-in", "zoom-out", "pan-left", "pan-right",
     "pan-follow", "reveal", "static", "focus-shift", "track-object",
 }
+
+# ── Component family classification (diversity gate) ─────────────────────────
+# Maps each renderer component to a perceptual family so the diversity gate
+# compares VISUAL GRAMMAR, not exact component names.  Families follow the
+# user-specified taxonomy; components not listed fall to "OTHER".
+
+COMPONENT_FAMILIES: dict[str, str] = {
+    # TYPOGRAPHY — text-centric kinetic reveals
+    "KineticTypoScene": "TYPOGRAPHY",
+    # FLOW / PIPELINE — linear or cyclical process animations
+    "FlowScene": "FLOW_PIPELINE",
+    "PipelineScene": "FLOW_PIPELINE",
+    "DataFlowScene": "FLOW_PIPELINE",
+    "CircularFlowScene": "FLOW_PIPELINE",
+    "AgentTraversalScene": "FLOW_PIPELINE",
+    # DIAGRAM — node-edge / architecture / layer views
+    "SketchScene": "DIAGRAM",
+    "NetworkBuildScene": "DIAGRAM",
+    "HubSpokeScene": "DIAGRAM",
+    "LayerRevealScene": "DIAGRAM",
+    # TRANSFORMATION — A morphs into B
+    "TransformScene": "TRANSFORMATION",
+    "BeforeAfterScene": "TRANSFORMATION",
+    # COMPARISON — side-by-side or split views
+    "SplitCompareScene": "COMPARISON",
+    # SEQUENCE / COLLECTION
+    "CardStackScene": "SEQUENCE",
+    "ClusterScene": "SEQUENCE",
+    "TimelineScene": "SEQUENCE",
+    # DATA — numeric / chart visualisations
+    "DataScene": "DATA",
+    "NumberCounterScene": "DATA",
+    "MeterScene": "DATA",
+    "GraphGrowthScene": "DATA",
+    "BarChartScene": "DATA",
+    "DialScene": "DATA",
+    # DOMAIN — topic-specific animated primitives
+    "TokenScene": "DOMAIN",
+    "TokenStreamScene": "DOMAIN",
+    "ContextWindowScene": "DOMAIN",
+    "DocumentRetrievalScene": "DOMAIN",
+    "CodeExecutionScene": "DOMAIN",
+    # GENERATED — fal.ai editorial / video assets
+    "AssetScene": "GENERATED_EDITORIAL",
+    # STRUCTURAL terminals
+    "TakeawayScene": "TAKEAWAY",
+    "CTAScene": "CTA",
+    # Composed (Scene Composer output)
+    "ComposedScene": "COMPOSED",
+}
+
+# The canonical ordering of families for display / comparison
+FAMILY_ORDER = [
+    "TYPOGRAPHY", "FLOW_PIPELINE", "DIAGRAM", "TRANSFORMATION",
+    "COMPARISON", "SEQUENCE", "DATA", "DOMAIN",
+    "GENERATED_EDITORIAL", "GENERATED_VIDEO",
+    "COMPOSED", "TAKEAWAY", "CTA", "OTHER",
+]
+
+
+def classify_component_families(component_sequence: list[str]) -> list[str]:
+    """Map a component sequence to its family sequence."""
+    return [COMPONENT_FAMILIES.get(c, "OTHER") for c in component_sequence]
+
+
+def compute_family_distribution(families: list[str]) -> dict[str, float]:
+    """Return {family: fraction} for a family sequence, excluding TAKEAWAY/CTA."""
+    content_families = [f for f in families if f not in {"TAKEAWAY", "CTA"}]
+    if not content_families:
+        return {}
+    from collections import Counter
+    counts = Counter(content_families)
+    total = len(content_families)
+    return {fam: round(counts[fam] / total, 3) for fam in sorted(counts)}
+
+
+def compute_family_similarity(
+    current_families: list[str],
+    recent_families: list[str],
+) -> dict:
+    """
+    Compute a similarity score between two episodes' component-family sequences.
+
+    Returns:
+        {
+          "jaccard": float (0–1, family SET overlap),
+          "distribution_distance": float (0–1, L1 distance of family fractions),
+          "order_similarity": float (0–1, bigram overlap),
+          "mode_match": bool (set later by caller based on N/G ratio),
+          "overall": str ("LOW" | "MEDIUM" | "HIGH"),
+          "detail": str
+        }
+    """
+    cur = [f for f in current_families if f not in {"TAKEAWAY", "CTA"}]
+    rec = [f for f in recent_families if f not in {"TAKEAWAY", "CTA"}]
+
+    if not cur or not rec:
+        return {
+            "jaccard": 0.0, "distribution_distance": 1.0,
+            "order_similarity": 0.0, "mode_match": False,
+            "overall": "LOW", "detail": "no content families to compare",
+        }
+
+    # Jaccard on family sets
+    cur_set, rec_set = set(cur), set(rec)
+    jaccard = len(cur_set & rec_set) / len(cur_set | rec_set) if (cur_set | rec_set) else 0.0
+
+    # Distribution distance (L1 / 2, normalised to 0–1)
+    cur_dist = compute_family_distribution(current_families)
+    rec_dist = compute_family_distribution(recent_families)
+    all_fams = set(cur_dist) | set(rec_dist)
+    l1 = sum(abs(cur_dist.get(f, 0) - rec_dist.get(f, 0)) for f in all_fams)
+    dist_distance = round(min(l1 / 2, 1.0), 3)
+
+    # Order similarity: bigram overlap
+    def bigrams(seq: list[str]) -> set[tuple[str, str]]:
+        return {(seq[i], seq[i + 1]) for i in range(len(seq) - 1)}
+    cur_bi, rec_bi = bigrams(cur), bigrams(rec)
+    order_sim = (
+        len(cur_bi & rec_bi) / len(cur_bi | rec_bi)
+        if (cur_bi | rec_bi) else 0.0
+    )
+
+    # Overall rating
+    score = jaccard * 0.4 + (1 - dist_distance) * 0.3 + order_sim * 0.3
+    if score >= 0.70:
+        overall = "HIGH"
+    elif score >= 0.45:
+        overall = "MEDIUM"
+    else:
+        overall = "LOW"
+
+    detail = (
+        f"jaccard={jaccard:.2f}, dist_distance={dist_distance:.2f}, "
+        f"order_sim={order_sim:.2f}, composite={score:.2f}"
+    )
+    return {
+        "jaccard": round(jaccard, 3),
+        "distribution_distance": dist_distance,
+        "order_similarity": round(order_sim, 3),
+        "mode_match": False,
+        "overall": overall,
+        "detail": detail,
+    }
+
+
+def _diversity_gate(
+    current_plan: dict,
+    fingerprints: dict,
+    channel: str = "ai_bytes",
+) -> dict:
+    """
+    Pre-render creative-diversity check using COMPONENT FAMILIES.
+
+    Compares the current plan against the MOST RECENT approved episode
+    (same channel). Returns a gate result:
+      {"pass": bool, "similarity": dict, "recent_key": str, "reason": str}
+
+    Gate FAILS (pass=False) when:
+      - Component-family similarity is HIGH, AND
+      - Both episodes are strongly NATIVE-dominant (≤1 GENERATED scene each)
+
+    The caller should trigger ONE bounded re-plan, not an endless retry loop.
+    """
+    if not fingerprints:
+        return {
+            "pass": True, "similarity": {}, "recent_key": "",
+            "reason": "no prior episodes — diversity gate skipped",
+        }
+
+    # Channel-scoped: filter to same channel
+    channel_fps = {
+        k: v for k, v in fingerprints.items()
+        if v.get("channel", "ai_bytes") == channel
+    }
+    if not channel_fps:
+        return {
+            "pass": True, "similarity": {}, "recent_key": "",
+            "reason": "no prior episodes in this channel",
+        }
+
+    # Most recent approved episode
+    recent_key = list(channel_fps.keys())[-1]
+    recent_fp = channel_fps[recent_key]
+
+    # Current plan families
+    scenes = current_plan.get("storyboard", [])
+    cur_components = [s.get("component", "") for s in scenes]
+    cur_families = classify_component_families(cur_components)
+
+    # Recent episode families
+    rec_components = recent_fp.get("component_sequence", [])
+    rec_families_stored = recent_fp.get("component_families", [])
+    rec_families = rec_families_stored or classify_component_families(rec_components)
+
+    similarity = compute_family_similarity(cur_families, rec_families)
+
+    # Check mode dominance
+    cur_native = sum(1 for s in scenes if s.get("visual_mode") == "NATIVE")
+    cur_generated = sum(1 for s in scenes if s.get("visual_mode") == "GENERATED")
+    cur_native_dominant = cur_generated <= 1
+
+    rec_native_dominant = True
+    rec_mode_data = recent_fp.get("mode_ratio")
+    if isinstance(rec_mode_data, dict):
+        rec_native_dominant = rec_mode_data.get("generated", 0) <= 1
+    else:
+        rec_comps = recent_fp.get("component_sequence", [])
+        rec_native_dominant = sum(1 for c in rec_comps if c == "AssetScene") <= 1
+
+    both_native_dominant = cur_native_dominant and rec_native_dominant
+    similarity["mode_match"] = both_native_dominant
+
+    # Gate logic:
+    # When both episodes are strongly NATIVE-dominant, mode can't provide
+    # novelty, so the family similarity threshold is lower (MEDIUM triggers).
+    # When mode mix differs, only HIGH similarity triggers the gate.
+    gate_pass = True
+    reason = "diversity sufficient"
+    composite = float(similarity["detail"].split("composite=")[1]) if "composite=" in similarity["detail"] else 0.0
+
+    if both_native_dominant and similarity["overall"] in {"MEDIUM", "HIGH"}:
+        gate_pass = False
+        reason = (
+            f"{similarity['overall']} family similarity to {recent_key} "
+            f"({similarity['detail']}) with BOTH episodes NATIVE-dominant — "
+            f"consecutive NATIVE-heavy episodes need more family diversity or "
+            f"consider GENERATED beats where semantically appropriate"
+        )
+    elif similarity["overall"] == "HIGH" and not both_native_dominant:
+        reason = (
+            f"HIGH family similarity to {recent_key} but mode mix differs — "
+            f"diversity gate passes with advisory"
+        )
+
+    return {
+        "pass": gate_pass,
+        "similarity": similarity,
+        "recent_key": recent_key,
+        "current_families": cur_families,
+        "recent_families": rec_families,
+        "current_mode_ratio": {"native": cur_native, "generated": cur_generated},
+        "reason": reason,
+    }
+
+# ── Intra-episode repetition guard ────────────────────────────────────────────
+# Flags visual repetition WITHIN a single episode: same component reused with
+# near-identical visual configuration, A→B→A return patterns, or long unchanged
+# semantic composition.  Different text alone does NOT make a scene novel.
+
+def _intra_episode_repetition_gate(scenes: list[dict]) -> dict:
+    """
+    Detect visual repetition within a single episode's storyboard.
+
+    Returns:
+        {
+            "pass": bool,
+            "violations": list[str],
+            "detail": dict,
+        }
+    """
+    violations: list[str] = []
+    detail: dict = {}
+
+    # Exclude structural scenes from repetition analysis
+    STRUCTURAL = {"HOOK", "TAKEAWAY", "CTA"}
+    content_scenes = [
+        (i, s) for i, s in enumerate(scenes)
+        if s.get("scene_type") not in STRUCTURAL
+    ]
+
+    if len(content_scenes) < 3:
+        return {"pass": True, "violations": [], "detail": {}}
+
+    # ── Check 1: Same component reused with near-identical configuration ──
+    # Group content scenes by component name
+    comp_groups: dict[str, list[tuple[int, dict]]] = {}
+    for idx, scene in content_scenes:
+        comp = scene.get("component", "")
+        comp_groups.setdefault(comp, []).append((idx, scene))
+
+    for comp, group in comp_groups.items():
+        if len(group) < 2:
+            continue
+        for a_pos in range(len(group)):
+            for b_pos in range(a_pos + 1, len(group)):
+                idx_a, scene_a = group[a_pos]
+                idx_b, scene_b = group[b_pos]
+                sim = _scene_config_similarity(scene_a, scene_b)
+                if sim >= 0.70:
+                    violations.append(
+                        f"INTRA_REPEAT: s{idx_a + 1:02d} and s{idx_b + 1:02d} both use "
+                        f"{comp} with {sim:.0%} config similarity — reuse requires "
+                        f"genuinely different visual state and semantic treatment"
+                    )
+                    detail[f"s{idx_a + 1:02d}_vs_s{idx_b + 1:02d}"] = {
+                        "component": comp,
+                        "similarity": round(sim, 3),
+                    }
+
+    # ── Check 2: A→B→A return pattern (non-adjacent same family) ──────────
+    families = [
+        COMPONENT_FAMILIES.get(s.get("component", ""), "OTHER")
+        for s in scenes
+    ]
+    content_families = [
+        (i, families[i]) for i, s in enumerate(scenes)
+        if s.get("scene_type") not in STRUCTURAL
+    ]
+    for pos in range(len(content_families)):
+        idx_a, fam_a = content_families[pos]
+        for later in range(pos + 2, len(content_families)):
+            idx_b, fam_b = content_families[later]
+            if fam_a == fam_b and idx_b - idx_a >= 2:
+                scene_a = scenes[idx_a]
+                scene_b = scenes[idx_b]
+                sim = _scene_config_similarity(scene_a, scene_b)
+                if sim >= 0.55:
+                    key = f"s{idx_a + 1:02d}_vs_s{idx_b + 1:02d}"
+                    if key not in detail:
+                        violations.append(
+                            f"ABA_PATTERN: s{idx_a + 1:02d} ({fam_a}) returns at "
+                            f"s{idx_b + 1:02d} with {sim:.0%} similarity — "
+                            f"the returning scene must be meaningfully transformed"
+                        )
+                        detail[key] = {
+                            "pattern": "ABA",
+                            "family": fam_a,
+                            "similarity": round(sim, 3),
+                        }
+
+    # ── Check 3: Family concentration — >2 scenes from same family ────────
+    from collections import Counter
+    fam_counts = Counter(f for _, f in content_families)
+    for fam, count in fam_counts.items():
+        if count > 2:
+            violations.append(
+                f"FAMILY_CONCENTRATION: {count} content scenes use family "
+                f"{fam} — consider different visual approaches for variety"
+            )
+            detail[f"concentration_{fam}"] = count
+
+    gate_pass = len(violations) == 0
+    return {"pass": gate_pass, "violations": violations, "detail": detail}
+
+
+def _scene_config_similarity(a: dict, b: dict) -> float:
+    """
+    Compute visual-configuration similarity between two scenes (0.0–1.0).
+    Text content is ignored; structural visual properties are compared.
+    """
+    score = 0.0
+    weights = 0.0
+
+    # Same component = base similarity
+    if a.get("component") == b.get("component"):
+        score += 0.3
+    weights += 0.3
+
+    # Same scene_type
+    if a.get("scene_type") == b.get("scene_type"):
+        score += 0.15
+    weights += 0.15
+
+    # Object count similarity (visual density)
+    objs_a = len(a.get("objects", []))
+    objs_b = len(b.get("objects", []))
+    if objs_a > 0 or objs_b > 0:
+        obj_sim = 1.0 - abs(objs_a - objs_b) / max(objs_a, objs_b, 1)
+        score += 0.15 * obj_sim
+    else:
+        score += 0.15
+    weights += 0.15
+
+    # Beat count similarity (animation structure)
+    beats_a = len(a.get("beats", []))
+    beats_b = len(b.get("beats", []))
+    if beats_a > 0 or beats_b > 0:
+        beat_sim = 1.0 - abs(beats_a - beats_b) / max(beats_a, beats_b, 1)
+        score += 0.10 * beat_sim
+    else:
+        score += 0.10
+    weights += 0.10
+
+    # Data structure similarity (for DataScene, TokenScene, etc.)
+    data_a = a.get("data", {})
+    data_b = b.get("data", {})
+    if isinstance(data_a, dict) and isinstance(data_b, dict):
+        data_type_match = data_a.get("type") == data_b.get("type") if (data_a.get("type") or data_b.get("type")) else True
+        data_keys_a = set(data_a.keys()) if data_a else set()
+        data_keys_b = set(data_b.keys()) if data_b else set()
+        key_overlap = len(data_keys_a & data_keys_b) / max(len(data_keys_a | data_keys_b), 1)
+        data_sim = 0.5 * (1.0 if data_type_match else 0.0) + 0.5 * key_overlap
+        score += 0.15 * data_sim
+    else:
+        score += 0.15
+    weights += 0.15
+
+    # Animation style similarity
+    anim_a = a.get("animation", "")
+    anim_b = b.get("animation", "")
+    if anim_a == anim_b and anim_a:
+        score += 0.15
+    weights += 0.15
+
+    return score / weights if weights > 0 else 0.0
+
 
 # ── Art Director (v4) ───────────────────────────────────────────────────────
 # The registry of renderable visual worlds lives in remotion/src/themes.ts
@@ -383,12 +792,26 @@ def _save_fingerprint(episode_key: str, fingerprint: dict) -> None:
     logger.info(f"Fingerprint saved: {episode_key} -> {FINGERPRINT_PATH}")
 
 
-def _format_fingerprints_for_prompt(fingerprints: dict) -> str:
-    """Format recent fingerprints as context for the novelty guard."""
-    if not fingerprints:
-        return "No previous episode fingerprints available."
-    lines = ["Recent episode visual fingerprints (compare your plan against these):"]
-    for key, fp in fingerprints.items():
+def _format_fingerprints_for_prompt(
+    fingerprints: dict,
+    channel: str = "ai_bytes",
+) -> str:
+    """Format recent fingerprints as context for the novelty guard.
+
+    Only includes fingerprints from the same channel (channel-scoped
+    creative memory).
+    """
+    scoped = {
+        k: v for k, v in fingerprints.items()
+        if v.get("channel", "ai_bytes") == channel
+    }
+    if not scoped:
+        return "No previous episode fingerprints available for this channel."
+    lines = [
+        "Recent episode visual fingerprints — SAME CHANNEL "
+        "(compare your plan against these for DIVERSITY):"
+    ]
+    for key, fp in scoped.items():
         lines.append(f"\n--- {key} ({fp.get('topic', 'unknown')}) ---")
         lines.append(f"  Visual thesis: {fp.get('visual_thesis', 'N/A')}")
         lines.append(f"  Continuity object: {fp.get('continuity_object_type', 'N/A')}")
@@ -404,7 +827,16 @@ def _format_fingerprints_for_prompt(fingerprints: dict) -> str:
             )
         comps = fp.get("component_sequence", [])
         if comps:
-            lines.append(f"  Component sequence: {' → '.join(comps)}")
+            lines.append(f"  Component sequence: {' -> '.join(comps)}")
+        families = fp.get("component_families") or classify_component_families(comps)
+        if families:
+            lines.append(f"  Component FAMILIES: {' -> '.join(families)}")
+        mode = fp.get("mode_ratio")
+        if isinstance(mode, dict):
+            lines.append(
+                f"  Mode ratio: NATIVE={mode.get('native', '?')} "
+                f"GENERATED={mode.get('generated', '?')}"
+            )
     return "\n".join(lines)
 
 
@@ -434,10 +866,22 @@ You must follow this planning order. Do NOT start from component selection:
   5. Continuity Object — carry one object through scenes as chapters of one journey
   6. Visual Grammar — what to use, what to deliberately avoid
   7. Art Director — explicitly select the episode's visual world (see ART DIRECTOR)
-  8. Novelty Guard — compare against recent episode fingerprints, alter if too similar
-  9. Scene Plan — duration, pacing, structure
-  10. Component Mapping — ONLY NOW choose implementation components
-  11. Renderability — can current components render each beat?
+  8. Modality Intent — for each beat, decide what it SEMANTICALLY needs: process flow,
+     data diagram, editorial metaphor, conceptual imagery, code walkthrough, comparison.
+     This is about WHAT the beat communicates, not which component renders it.
+  9. Diversity Context — compare your modality intent and family pattern against the
+     RECENT EPISODE FINGERPRINTS below. The fingerprints show each prior episode's
+     COMPONENT FAMILIES (TYPOGRAPHY, FLOW_PIPELINE, DIAGRAM, TRANSFORMATION, COMPARISON,
+     SEQUENCE, DATA, DOMAIN, GENERATED_EDITORIAL, TAKEAWAY, CTA). If your plan produces
+     an excessively similar family sequence to the most recent approved episode, alter
+     your approach — different families, different modality choices, different metaphors.
+     Visual novelty is a real planning objective; the viewer watches these consecutively.
+  10. Visual Mode — for each beat, decide NATIVE or GENERATED (see VISUAL MODE).
+      Informed by modality intent AND diversity context. Do NOT let component
+      availability determine visual mode — decide what the beat NEEDS first.
+  11. Scene Plan — duration, pacing, structure
+  12. Component Mapping — ONLY NOW choose implementation components
+  13. Renderability — can current components render each beat?
 
 ══════════════════════════════════════════════════════
 ART DIRECTOR (v4 — mandatory, no default)
@@ -502,11 +946,33 @@ STRUCTURE (proportions of the chosen total, not fixed timestamps):
   CTA             — always last, ≤3s
 
 ══════════════════════════════════════════════════════
+VISUAL MODE — per-beat production decision (required)
+══════════════════════════════════════════════════════
+Every scene must declare "visual_mode": "NATIVE" or "GENERATED".
+Choose based on semantic need — what the CONCEPT requires, not convenience.
+
+NATIVE — Remotion component renders the visual entirely from code.
+  Choose for: process flow, graph, counter, comparison, pipeline, timeline,
+  data viz, architecture diagram, code execution, typography emphasis, CTA.
+
+GENERATED — An externally generated image/video asset via fal.ai (AssetScene).
+  Choose for: editorial metaphor, environment, person, conceptual imagery,
+  real-world analogy, artistic interpretation.
+
+Rules:
+  - visual_mode is PER SCENE — choose independently for each beat
+  - HYBRID is NOT a valid beat-level mode — it is episode-level only
+  - GENERATED requires component = AssetScene
+  - NATIVE requires a Remotion component (not AssetScene)
+  - The router validates your choices after planning
+
+══════════════════════════════════════════════════════
 SCENE SCHEMA
 ══════════════════════════════════════════════════════
 Each scene must be a JSON object with EXACTLY these keys:
 {
   "scene_id": <integer, 1-based>,
+  "visual_mode": "<NATIVE | GENERATED>",
   "duration_seconds": <float, 2.0–8.0 — prefer 2.5–5.0>,
   "narration": "<voiceover spoken during this scene>",
   "scene_type": "<HOOK|DEMONSTRATION|TRANSFORMATION|FLOW|COMPARISON|DIAGRAM|DATA|ZOOM|SIMULATION|METAPHOR|TAKEAWAY|CTA>",
@@ -576,6 +1042,11 @@ AGENT / PROCESS (v4):
   CircularFlowScene     — 4-quadrant rotating loop for a cyclical process.
                           on_screen_text: [q1, q2, q3, q4, title]; objects: [icon ×4];
                           data.center_label; 5 beats
+
+GENERATED ASSET (visual_mode = GENERATED only):
+  AssetScene            — displays a fal.ai-generated image/video asset;
+                          use for editorial metaphor, environment, conceptual imagery;
+                          requires data.src (asset path) set by the asset pipeline
 
 DOMAIN SPECIFIC:
   TokenScene            — text → token boxes → IDs
@@ -769,10 +1240,15 @@ def _compute_visual_complexity(scenes: list) -> dict:
     }
 
 
-def _validate_storyboard(scenes: list, episode: int) -> list[str]:
+def _validate_storyboard(
+    scenes: list, episode: int, voice_duration: float | None = None,
+) -> list[str]:
     """
     Run the quality gate. Returns a list of violation strings.
     Empty list = storyboard passes.
+
+    When voice_duration is locked, the generic duration range check is skipped
+    because VOICE_DURATION_MISMATCH (±2s around voice) is the authoritative gate.
     """
     violations: list[str] = []
 
@@ -781,7 +1257,7 @@ def _validate_storyboard(scenes: list, episode: int) -> list[str]:
 
     # ── Total duration ────────────────────────────────────────────────────────
     total = sum(s.get("duration_seconds", 0) for s in scenes)
-    if not (TARGET_MIN_SECONDS <= total <= TARGET_MAX_SECONDS):
+    if voice_duration is None and not (TARGET_MIN_SECONDS <= total <= TARGET_MAX_SECONDS):
         violations.append(
             f"Total duration {total:.1f}s outside {TARGET_MIN_SECONDS}–{TARGET_MAX_SECONDS}s"
         )
@@ -899,6 +1375,12 @@ def _validate_storyboard(scenes: list, episode: int) -> list[str]:
                 f"Scenes {i + 1}–{i + MAX_CONSECUTIVE_SAME_LAYOUT + 1}: "
                 f"3 consecutive '{window_comps[0]}' — vary composition"
             )
+
+    # ── Intra-episode repetition gate ──────────────────────────────────────────
+    intra_result = _intra_episode_repetition_gate(scenes)
+    if not intra_result["pass"]:
+        for v in intra_result["violations"]:
+            violations.append(v)
 
     # ── Visual-first score gate ───────────────────────────────────────────────
     complexity = _compute_visual_complexity(scenes)
@@ -1063,16 +1545,20 @@ def run(
     week: int,
     lang: str = "en",
     dry_run: bool = False,
+    voice_duration: float | None = None,
 ) -> dict:
     """
     Generate a v4 visual storyboard (creative visual reasoning) from a script JSON.
 
     Args:
-        script:   Script dict from script_agent
-        episode:  Episode number
-        week:     Week number
-        lang:     Language code
-        dry_run:  If True, logs storyboard summary without saving
+        script:         Script dict from script_agent
+        episode:        Episode number
+        week:           Week number
+        lang:           Language code
+        dry_run:        If True, logs storyboard summary without saving
+        voice_duration: Measured Voice B duration in seconds. When provided,
+                        scene durations must sum to this value (±2s) instead
+                        of an LLM-estimated duration.
 
     Returns:
         {
@@ -1115,7 +1601,7 @@ def run(
         try:
             cached = json.loads(output_path.read_text(encoding="utf-8"))
             scenes = cached.get("storyboard", [])
-            violations = _validate_storyboard(scenes, episode)
+            violations = _validate_storyboard(scenes, episode, voice_duration)
             violations += _validate_art_direction(
                 cached.get("art_direction"), registry, prior_fingerprints
             )
@@ -1190,7 +1676,7 @@ def run(
         f"══════════════════════════════════════════════════════\n"
         f"INSTRUCTIONS\n"
         f"══════════════════════════════════════════════════════\n"
-        f"Follow the v4 Creative Visual Reasoning pipeline:\n"
+        f"Follow the v4.2 Creative Visual Reasoning pipeline:\n"
         f"1. First think: what visual story makes this concept understandable muted?\n"
         f"2. Define your Visual Thesis before choosing any components\n"
         f"3. Classify every claim as FACTUAL_EXACT / ILLUSTRATIVE / VISUAL_METAPHOR\n"
@@ -1199,26 +1685,61 @@ def run(
         f"6. Art Director: explicitly select art_direction from the registered worlds, "
         f"justified by topic semantics, visual thesis, continuity object, attention "
         f"pattern and recent fingerprints (no default world)\n"
-        f"7. Check novelty against the fingerprints above — alter if too similar\n"
-        f"8. ONLY THEN map to implementation components\n"
-        f"9. Include claim_type in each beat\n"
-        f"10. Compute visual_complexity score\n\n"
+        f"7. Modality Intent: for each beat, decide what it SEMANTICALLY NEEDS "
+        f"(process flow, diagram, editorial metaphor, data viz, code walkthrough, "
+        f"comparison, etc.) — before choosing any component\n"
+        f"8. Diversity Context: compare your modality intent and family pattern against "
+        f"the recent episode fingerprints. The fingerprints show COMPONENT FAMILIES. "
+        f"If your plan is excessively similar to the most recent approved episode, "
+        f"alter your approach for visual novelty. Viewers watch these consecutively.\n"
+        f"9. Visual Mode: decide NATIVE or GENERATED per beat based on semantic need "
+        f"AND diversity context. Do NOT let component availability determine mode.\n"
+        f"10. ONLY THEN map to implementation components (GENERATED -> AssetScene, "
+        f"NATIVE -> Remotion component)\n"
+        f"11. Include claim_type in each beat\n"
+        f"12. Compute visual_complexity score\n\n"
         f"Constraints:\n"
-        f"- Total duration: choose within 45–60 seconds from content complexity, "
-        f"narration length, beat density and readability (no default length); "
-        f"report it in duration_decision\n"
+        + (
+            f"- LOCKED VOICE DURATION: {voice_duration:.1f}s. Scene durations MUST sum "
+            f"to within ±5s of {voice_duration:.1f}s. Target exactly {voice_duration:.1f}s. "
+            f"This is the measured Voice B duration — do not estimate or override. "
+            f"Report it in duration_decision.\n"
+            f"  DURATION BUDGET: HOOK ~3s + CTA ~3s = 6s fixed. "
+            f"Remaining {voice_duration - 6.0:.1f}s for DEMONSTRATION scenes. "
+            f"With 7 DEMONSTRATION scenes = ~{(voice_duration - 6.0) / 7:.1f}s each. "
+            f"With 8 = ~{(voice_duration - 6.0) / 8:.1f}s each. "
+            f"VERIFY: add up all scene durations before outputting.\n"
+            if voice_duration is not None
+            else
+            f"- Total duration: choose within 45–60 seconds from content complexity, "
+            f"narration length, beat density and readability (no default length); "
+            f"report it in duration_decision\n"
+        ) +
         f"- CTA ≤ 3 seconds, HOOK ≤ 4 seconds\n"
         f"- Every scene > 4s needs ≥2 beats, > 6s needs ≥3 beats\n"
         f"- visual_first_score must be ≥80\n"
         f"- Every numeric viz scene must include source_type\n"
         f"- Return the COMPLETE JSON output including visual_thesis, art_direction, "
         f"duration_decision, novelty_assessment, visual_fingerprint, storyboard, "
-        f"and visual_complexity\n"
+        f"and visual_complexity\n\n"
+        f"CRITICAL: Your ENTIRE response must be a single valid JSON object. "
+        f"No markdown, no explanation, no code fences. Start with {{ and end with }}.\n"
     )
 
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     last_error: Exception | None = None
     violations: list[str] = []
+    diversity_replan_done = False
+    retry_counts: dict[str, int] = {
+        "EMPTY_RESPONSE": 0,
+        "JSON_PARSE": 0,
+        "SCHEMA": 0,
+        "DURATION": 0,
+        "CONTENT_GATE": 0,
+        "DIVERSITY": 0,
+        "RATE_LIMIT": 0,
+        "API_ERROR": 0,
+    }
 
     for attempt in range(1, 4):
         try:
@@ -1228,12 +1749,25 @@ def run(
 
             response = client.messages.create(
                 model=MODEL,
-                max_tokens=12000,
+                max_tokens=16000,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
             )
 
-            raw = response.content[0].text
+            raw = response.content[0].text if response.content else ""
+
+            logger.info(
+                f"EP{episode:02d} — response: {len(raw)} chars, "
+                f"stop_reason={response.stop_reason}"
+            )
+
+            if not raw.strip() or len(raw.strip()) < 10:
+                retry_counts["EMPTY_RESPONSE"] += 1
+                raise ValueError(
+                    f"EMPTY_RESPONSE: Claude returned {len(raw)} chars "
+                    f"(stop_reason={response.stop_reason})"
+                )
+
             data = _parse_json(raw)
 
             scenes = data.get("storyboard")
@@ -1278,7 +1812,7 @@ def run(
                         logger.info(f"EP{episode:02d} — cleared non-voiceover narration from {comp} (s{sid})")
 
             # Validate storyboard
-            violations = _validate_storyboard(scenes, episode)
+            violations = _validate_storyboard(scenes, episode, voice_duration)
 
             # Validate the Art Director decision — no default world, ever
             ad_violations = _validate_art_direction(
@@ -1292,27 +1826,108 @@ def run(
                 )
             violations.extend(ad_violations)
 
-            # Validate the duration decision (45–60s, chosen per content)
+            # Validate the duration decision
             duration_decision = data.get("duration_decision")
-            violations.extend(_validate_duration_decision(
-                duration_decision, scenes, script.get("voiceover", "")
-            ))
+            if voice_duration is not None:
+                scene_sum = sum(s.get("duration_seconds", 0) for s in scenes)
+                if abs(scene_sum - voice_duration) > 5.0:
+                    violations.append(
+                        f"VOICE_DURATION_MISMATCH: scenes total {scene_sum:.1f}s "
+                        f"but locked voice is {voice_duration:.1f}s (±5s tolerance)"
+                    )
+            else:
+                violations.extend(_validate_duration_decision(
+                    duration_decision, scenes, script.get("voiceover", "")
+                ))
 
             # Validate novelty
             novelty_violations = _validate_novelty(novelty_assessment)
             if novelty_violations:
                 violations.extend(novelty_violations)
 
+            # ── Diversity gate (v4.2) — component-family similarity ──────────
+            # Runs BEFORE paid asset generation. ONE bounded re-plan on failure,
+            # not an endless retry loop.
+            diversity_result = _diversity_gate(data, prior_fingerprints)
+            if not diversity_result["pass"]:
+                if not diversity_replan_done:
+                    diversity_replan_done = True
+                    retry_counts["DIVERSITY"] += 1
+                    violations.append(
+                        f"DIVERSITY_GATE_FAIL: {diversity_result['reason']}"
+                    )
+                    logger.warning(
+                        f"EP{episode:02d} — diversity gate FAILED: "
+                        f"{diversity_result['reason']} — triggering ONE re-plan"
+                    )
+                else:
+                    logger.info(
+                        f"EP{episode:02d} — diversity gate still shows similarity "
+                        f"after re-plan, but second re-plan suppressed (bounded)"
+                    )
+
             if violations:
+                for v in violations:
+                    if "VOICE_DURATION_MISMATCH" in v or "DURATION" in v:
+                        retry_counts["DURATION"] += 1
+                    elif "DIVERSITY_GATE" in v:
+                        pass  # already counted above
+                    elif "ART_DIRECTION" in v or "NOVELTY" in v:
+                        retry_counts["CONTENT_GATE"] += 1
+                    else:
+                        retry_counts["SCHEMA"] += 1
+
                 logger.warning(
                     f"EP{episode:02d} — v4 quality gate failed (attempt {attempt}): "
                     f"{'; '.join(violations[:4])}"
                 )
                 if attempt < 3:
+                    fix_hints = ""
+                    if voice_duration is not None and any("VOICE_DURATION_MISMATCH" in v for v in violations):
+                        scene_sum = sum(s.get("duration_seconds", 0) for s in scenes)
+                        delta = voice_duration - scene_sum
+                        fix_hints += (
+                            f"\n\nDURATION FIX: Your scenes total {scene_sum:.1f}s but the "
+                            f"locked voice is {voice_duration:.1f}s. You need to "
+                            f"{'ADD' if delta > 0 else 'REMOVE'} ~{abs(delta):.1f}s. "
+                            f"Distribute this across DEMONSTRATION scenes (not HOOK/CTA). "
+                            f"Target each DEMONSTRATION scene at 6-8s."
+                        )
+                    if any("DIVERSITY_GATE_FAIL" in v for v in violations):
+                        recent_key = diversity_result.get("recent_key", "?")
+                        cur_fam = diversity_result.get("current_families", [])
+                        rec_fam = diversity_result.get("recent_families", [])
+                        fix_hints += (
+                            f"\n\nDIVERSITY FIX: Your component-family sequence "
+                            f"{' -> '.join(cur_fam)} is too similar to {recent_key}'s "
+                            f"{' -> '.join(rec_fam)}. Change your visual approach: "
+                            f"use different families (e.g. GENERATED_EDITORIAL for "
+                            f"editorial metaphors via AssetScene, or families like "
+                            f"SEQUENCE/DATA/COMPARISON that the recent episode did not "
+                            f"use). Do NOT just rename components within the same family. "
+                            f"The viewer watches these episodes consecutively — visual "
+                            f"novelty matters."
+                        )
+                    intra_violations = [v for v in violations if v.startswith(("INTRA_REPEAT:", "ABA_PATTERN:", "FAMILY_CONCENTRATION:"))]
+                    if intra_violations:
+                        fix_hints += (
+                            f"\n\nINTRA-EPISODE REPETITION FIX: Your storyboard has "
+                            f"visual repetition WITHIN the episode:\n"
+                            + "\n".join(f"- {v}" for v in intra_violations)
+                            + "\n\nDifferent TEXT alone does NOT make a scene novel. "
+                            f"Zoom/pan/color changes alone do NOT make a repeated "
+                            f"composition novel. You MUST use genuinely different "
+                            f"visual treatments: different component families, different "
+                            f"animation structures, different semantic metaphors. "
+                            f"Consider using GENERATED/editorial treatment (AssetScene) "
+                            f"for conceptual/metaphorical scenes instead of repeating "
+                            f"the same domain-specific component."
+                        )
                     user_msg_retry = (
                         user_msg
                         + f"\n\nYour previous storyboard FAILED the quality gate:\n"
                         + "\n".join(f"- {v}" for v in violations)
+                        + fix_hints
                         + "\n\nFix these issues. Keep the v4 creative reasoning pipeline."
                     )
                     user_msg = user_msg_retry
@@ -1326,8 +1941,12 @@ def run(
                         f"after 3 attempts: {'; '.join(remaining_ad)}"
                     )
                 logger.error(
-                    f"EP{episode:02d} — storyboard still has violations after 3 attempts; "
-                    f"proceeding with warnings"
+                    f"EP{episode:02d} — storyboard failed quality gate after 3 attempts "
+                    f"(retry_counts={retry_counts}): {'; '.join(violations)}"
+                )
+                raise RuntimeError(
+                    f"EP{episode:02d} visual_director_agent quality gate failed "
+                    f"after 3 attempts: {'; '.join(violations[:3])}"
                 )
 
             # Normalise scene IDs
@@ -1344,6 +1963,7 @@ def run(
                 "visual_thesis": visual_thesis,
                 "novelty_assessment": novelty_assessment,
                 "visual_fingerprint": visual_fingerprint,
+                "diversity_gate": diversity_result,
                 "storyboard": scenes,
                 "total_duration_seconds": data.get(
                     "total_duration_seconds",
@@ -1379,17 +1999,33 @@ def run(
                 "visual_fingerprint": visual_fingerprint,
                 "art_direction": art_direction,
                 "novelty_assessment": novelty_assessment,
+                "diversity_gate": diversity_result,
                 "violations": violations,
+                "retry_counts": retry_counts,
                 "skipped": False,
             }
 
         except ArtDirectionError:
             raise
 
-        except (json.JSONDecodeError, ValueError) as e:
+        except json.JSONDecodeError as e:
+            retry_counts["JSON_PARSE"] += 1
             last_error = e
             logger.warning(
-                f"EP{episode:02d} — Visual Director v4 attempt {attempt} bad output: {e}"
+                f"EP{episode:02d} — Visual Director attempt {attempt} "
+                f"JSON_PARSE: {e} (retry_counts={retry_counts})"
+            )
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+
+        except ValueError as e:
+            category = "EMPTY_RESPONSE" if "EMPTY_RESPONSE" in str(e) else "SCHEMA"
+            if category != "EMPTY_RESPONSE":
+                retry_counts[category] += 1
+            last_error = e
+            logger.warning(
+                f"EP{episode:02d} — Visual Director attempt {attempt} "
+                f"{category}: {e} (retry_counts={retry_counts})"
             )
             if attempt < 3:
                 time.sleep(2 ** attempt)
@@ -1400,21 +2036,28 @@ def run(
             ) from e
 
         except anthropic.RateLimitError as e:
+            retry_counts["RATE_LIMIT"] += 1
             last_error = e
-            logger.warning(f"EP{episode:02d} — Visual Director rate limited")
+            logger.warning(
+                f"EP{episode:02d} — Visual Director attempt {attempt} "
+                f"RATE_LIMIT (retry_counts={retry_counts})"
+            )
             if attempt < 3:
                 time.sleep(60)
 
         except Exception as e:
+            retry_counts["API_ERROR"] += 1
             last_error = e
             logger.error(
-                f"EP{episode:02d} — Visual Director v4 attempt {attempt} error: {e}"
+                f"EP{episode:02d} — Visual Director attempt {attempt} "
+                f"API_ERROR: {e} (retry_counts={retry_counts})"
             )
             if attempt < 3:
                 time.sleep(2 ** attempt)
 
     raise RuntimeError(
-        f"EP{episode:02d} visual_director_agent failed after 3 attempts: {last_error}"
+        f"EP{episode:02d} visual_director_agent failed after 3 attempts "
+        f"(retry_counts={retry_counts}): {last_error}"
     )
 
 
@@ -1467,13 +2110,19 @@ def approve_episode(
         ad["light_or_dark"] = meta["light_or_dark"]
 
         fingerprint = dict(doc.get("visual_fingerprint") or {})
+        comp_seq = [s.get("component", "") for s in scenes]
+        native_count = sum(1 for s in scenes if s.get("visual_mode") == "NATIVE")
+        gen_count = sum(1 for s in scenes if s.get("visual_mode") == "GENERATED")
         fingerprint.update({
             "topic": doc.get("topic", fingerprint.get("topic", "")),
             "art_direction": ad,
-            "component_sequence": [s.get("component", "") for s in scenes],
+            "component_sequence": comp_seq,
+            "component_families": classify_component_families(comp_seq),
             "scene_type_sequence": [s.get("scene_type", "") for s in scenes],
             "scene_count": len(scenes),
             "duration_seconds": round(sum(s.get("duration_seconds", 0) for s in scenes), 2),
+            "mode_ratio": {"native": native_count, "generated": gen_count},
+            "channel": "ai_bytes",
             "approved_at": datetime.now(timezone.utc).isoformat(),
             "approved_by": approved_by,
             "source": path.name,

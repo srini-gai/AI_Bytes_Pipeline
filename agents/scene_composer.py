@@ -33,10 +33,39 @@ PRIMITIVE_ACTIONS: dict[str, set[str]] = {
 }
 
 SCENE_ACTIONS: dict[str, set[str]] = {
-    'KineticTypoScene':  {'enter', 'reveal', 'hold', 'explode'},
-    'TokenStreamScene':  {'generate', 'stamp', 'transform', 'reveal', 'hide', 'enter', 'exit', 'hold', 'connect', 'travel', 'fill'},
-    'CTAScene':          {'enter', 'reveal', 'hold'},
-    'ComposedScene':     VISUAL_ACTIONS,
+    'KineticTypoScene':      {'enter', 'reveal', 'hold', 'explode'},
+    'TokenStreamScene':      {'generate', 'stamp', 'transform', 'reveal', 'hide', 'enter', 'exit', 'hold', 'connect', 'travel', 'fill'},
+    'CTAScene':              {'enter', 'reveal', 'hold'},
+    'ComposedScene':         VISUAL_ACTIONS,
+    'CircularFlowScene':     {'fill', 'connect', 'reveal', 'enter', 'exit', 'collapse', 'hold'},
+    'AgentTraversalScene':   {'travel', 'enter', 'exit', 'connect', 'transform', 'reveal', 'hold'},
+    'SketchScene':           {'reveal', 'enter', 'hold', 'connect', 'generate'},
+    'SplitCompareScene':     {'split', 'compare', 'reveal', 'enter', 'hold'},
+    'TransformScene':        {'transform', 'reveal', 'enter', 'exit', 'hold'},
+    'FlowScene':             {'connect', 'reveal', 'fill', 'enter', 'travel', 'hold'},
+    'DialScene':             {'fill', 'reveal', 'hold', 'drain'},
+    'TakeawayScene':         {'reveal', 'hold', 'enter'},
+    'BeforeAfterScene':      {'split', 'compare', 'reveal', 'transform', 'hold'},
+    'PipelineScene':         {'connect', 'travel', 'reveal', 'enter', 'fill', 'hold'},
+    'TimelineScene':         {'reveal', 'enter', 'hold', 'travel'},
+    'LayerRevealScene':      {'reveal', 'enter', 'hold'},
+    'HubSpokeScene':         {'connect', 'reveal', 'enter', 'hold'},
+    'DataFlowScene':         {'connect', 'travel', 'reveal', 'enter', 'fill', 'hold'},
+    'NetworkBuildScene':     {'connect', 'enter', 'reveal', 'hold'},
+    'GraphGrowthScene':      {'fill', 'reveal', 'hold', 'generate'},
+    'MeterScene':            {'fill', 'reveal', 'hold'},
+    'NumberCounterScene':    {'fill', 'reveal', 'hold', 'generate'},
+    'BarChartScene':         {'fill', 'reveal', 'hold', 'compare'},
+    'DataScene':             {'reveal', 'fill', 'hold'},
+    'CardStackScene':        {'reveal', 'enter', 'hold', 'exit'},
+    'ClusterScene':          {'enter', 'reveal', 'hold', 'connect'},
+    'CodeExecutionScene':    {'generate', 'reveal', 'hold', 'enter'},
+    'ContextWindowScene':    {'fill', 'reveal', 'hold'},
+    'DocumentRetrievalScene':{'travel', 'reveal', 'enter', 'hold', 'connect'},
+    'SlideScene':            {'reveal', 'hold', 'enter'},
+    'ConceptScene':          {'reveal', 'hold', 'enter'},
+    'HookScene':             {'enter', 'reveal', 'hold'},
+    'TokenScene':            {'generate', 'reveal', 'hold', 'enter'},
 }
 
 EP03_RECOMPOSITION: dict[int, dict[str, Any]] = {
@@ -665,11 +694,36 @@ def validate_beat_coverage(storyboard: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _auto_recompose_to_composed(scene: dict[str, Any]) -> dict[str, Any]:
+    """Convert a scene to ComposedScene when its original component lacks actions.
+
+    Preserves all beat/narration/timing data — only swaps the component field
+    and adds a minimal ComposedScene data stub so the renderer picks it up.
+    """
+    new_scene = {**scene}
+    original = scene.get("component", "Unknown")
+    new_scene["component"] = "ComposedScene"
+    if new_scene.get("data") is None:
+        new_scene["data"] = {}
+    new_scene["data"]["_recomposed_from"] = original
+    logger.info(
+        f"Auto-recompose: S{scene.get('scene_id', '?'):02d} "
+        f"{original} → ComposedScene (missing actions)"
+    )
+    return new_scene
+
+
 def recompose_storyboard(storyboard: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Apply EP03 recomposition: replace S03-S08 components with ComposedScene."""
+    """Recompose scenes to achieve 100% beat coverage.
+
+    1. EP03 explicit recomposition rules (backward compat).
+    2. Generic fallback: any scene whose component can't cover all beat
+       actions is auto-recomposed to ComposedScene.
+    """
     recomposed = []
     for scene in storyboard:
         sid = scene["scene_id"]
+
         if sid in EP03_RECOMPOSITION:
             new_scene = {**scene}
             recomp = EP03_RECOMPOSITION[sid]
@@ -686,8 +740,20 @@ def recompose_storyboard(storyboard: list[dict[str, Any]]) -> list[dict[str, Any
                         beats[idx] = {**beats[idx], "camera": cam}
                 new_scene["beats"] = beats
             recomposed.append(new_scene)
+            continue
+
+        component = scene.get("component", "")
+        supported = SCENE_ACTIONS.get(component, set())
+        beats = scene.get("beats", [])
+        all_required: set[str] = set()
+        for beat in beats:
+            all_required |= extract_actions_from_beat(beat)
+
+        if all_required - supported:
+            recomposed.append(_auto_recompose_to_composed(scene))
         else:
             recomposed.append(scene)
+
     return recomposed
 
 

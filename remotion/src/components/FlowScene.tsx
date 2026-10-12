@@ -12,22 +12,27 @@ const ARROW_H = 68;
 interface FlowSceneProps {
   spec: FlowSpec;
   theme?: SceneTheme;
+  durationInFrames?: number;
 }
 
-export const FlowScene: React.FC<FlowSceneProps> = ({spec, theme}) => {
+export const FlowScene: React.FC<FlowSceneProps> = ({spec, theme, durationInFrames}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = theme ?? DEFAULT_THEME;
   const {steps} = spec;
   const n = steps.length;
 
-  const STEPS_START = 28;
-  const stepInterval = Math.floor(180 / n);
+  const STEPS_START = 10;
+  const animBudget = durationInFrames ? durationInFrames - STEPS_START : 180;
+  const stepInterval = Math.floor(animBudget / n);
   const totalH = n * CIRCLE + (n - 1) * ARROW_H;
   const containerW = 700;
 
-  const titleOpacity = interpolate(frame, [0, 18], [0, 1], {extrapolateRight: 'clamp'});
-  const titleY = interpolate(frame, [0, 18], [16, 0], {extrapolateRight: 'clamp'});
+  const titleOpacity = interpolate(frame, [0, 8], [0, 1], {extrapolateRight: 'clamp'});
+  const titleY = interpolate(frame, [0, 8], [16, 0], {extrapolateRight: 'clamp'});
+
+  // Ghost circles: ENTER phase — show all step positions immediately
+  const ghostOpacity = interpolate(frame, [0, 6], [0.1, 0.2], {extrapolateRight: 'clamp'});
 
   return (
     <AbsoluteFill style={{backgroundColor: '#050510'}}>
@@ -46,7 +51,7 @@ export const FlowScene: React.FC<FlowSceneProps> = ({spec, theme}) => {
           opacity: titleOpacity,
           transform: `translateY(${titleY}px)`,
           zIndex: 2,
-          fontSize: 24, letterSpacing: 6,
+          fontSize: 36, letterSpacing: 6,
           textTransform: 'uppercase' as const,
           color: t.accent, fontFamily: FONT, fontWeight: 700,
           textShadow: `0 0 20px ${t.accent}88`,
@@ -66,6 +71,24 @@ export const FlowScene: React.FC<FlowSceneProps> = ({spec, theme}) => {
           zIndex: 2,
         }}
       >
+        {/* Ghost circles: ENTER phase — mark all step positions */}
+        {steps.map((_, i) => {
+          const circleTop = i * (CIRCLE + ARROW_H);
+          return (
+            <div
+              key={`ghost-${i}`}
+              style={{
+                position: 'absolute',
+                left: 0, top: circleTop,
+                width: CIRCLE, height: CIRCLE,
+                borderRadius: '50%',
+                background: `${t.accent}`,
+                opacity: ghostOpacity,
+              }}
+            />
+          );
+        })}
+
         {steps.map((step, i) => {
           const stepStart = STEPS_START + i * stepInterval;
           const stepOpacity = interpolate(frame, [stepStart, stepStart + 16], [0, 1], {extrapolateRight: 'clamp'});

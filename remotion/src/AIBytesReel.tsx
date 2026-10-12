@@ -56,6 +56,9 @@ import {CardStackScene} from './components/CardStackScene';
 import {AgentTraversalScene} from './components/AgentTraversalScene';
 import {CircularFlowScene} from './components/CircularFlowScene';
 
+// Hybrid asset-based scenes
+import {AssetScene} from './components/AssetScene';
+
 import {GeneratedVideoBackground} from './components/GeneratedVideoBackground';
 
 import type {
@@ -72,6 +75,7 @@ import type {
   Theme,
   TokenSpec,
   TransformSceneData,
+  AssetSceneData,
 } from './types';
 
 import {getArtDirection, artDirectionToTheme} from './themes';
@@ -326,6 +330,7 @@ function renderStoryboardScene(
             })),
           }}
           theme={t}
+          durationInFrames={durationInFrames}
         />
       );
 
@@ -463,6 +468,7 @@ function renderStoryboardScene(
           objects={scene.objects}
           accentColor={accent}
           accent2={accent2}
+          durationInFrames={durationInFrames}
         />
       );
 
@@ -586,6 +592,31 @@ function renderStoryboardScene(
         />
       );
 
+    // ── Hybrid asset-based scene (hero image/video with editorial motion)
+    case 'AssetScene': {
+      const assetData = scene.data as AssetSceneData | undefined;
+      if (!assetData?.src) {
+        throw new Error(
+          `[PRODUCTION GUARD] AssetScene (${scene.scene_id}): scene.data.src is missing.`
+        );
+      }
+      return (
+        <AssetScene
+          src={assetData.src}
+          mediaType={assetData.media_type ?? 'image'}
+          motion={assetData.motion ?? 'push'}
+          label={assetData.label ?? scene.on_screen_text[0]}
+          labelPosition={assetData.label_position ?? 'bottom'}
+          subtitle={assetData.subtitle}
+          durationInFrames={durationInFrames}
+          artDirection={ad}
+          accentColor={accent}
+          videoDurationS={assetData.video_duration_s}
+          endframeSrc={assetData.endframe_src}
+        />
+      );
+    }
+
     // ── Scene Composer v1 — primitive-based composition
     case 'ComposedScene':
       return (
@@ -672,8 +703,7 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
     const startFrame    = cursor;
     const durationFrames = Math.round(scene.duration_seconds * FPS);
     const nextScene = idx < storyboard.length - 1 ? storyboard[idx + 1] : null;
-    const overlap = (scene.component === 'ComposedScene' && nextScene?.component === 'ComposedScene')
-      ? CROSSFADE : 0;
+    const overlap = nextScene ? CROSSFADE : 0;
     cursor += durationFrames;
     return {scene, startFrame, durationFrames, overlap};
   });

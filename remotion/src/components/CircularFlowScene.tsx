@@ -127,8 +127,11 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
   );
   const rotation = rotationProgress * 360 * 0.4; // ~0.4 full rotations over scene duration
 
-  // Scene entrance
-  const sceneOpacity = interpolate(frame, [0, 8], [0, 1], {extrapolateRight: 'clamp'});
+  // Scene entrance — fast ramp so structural elements are immediately visible
+  const sceneOpacity = interpolate(frame, [0, 6], [0, 1], {extrapolateRight: 'clamp'});
+
+  // Structural visibility: rings/hub always present, beats animate highlights
+  const structureOpacity = Math.max(sceneOpacity, b[0].progress);
 
   // Full cycle glow (beat 4)
   const cycleGlow = b[4].progress;
@@ -155,22 +158,29 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
         {/* ── Rotating group ── */}
         <g transform={`translate(${CENTER_X}, ${CENTER_Y}) rotate(${rotation})`}>
 
-          {/* Outer ring */}
+          {/* Background disc — visible anchor on dark themes */}
+          <circle
+            cx={0} cy={0} r={WHEEL_R + 20}
+            fill={accentColor ?? ACCENT}
+            opacity={structureOpacity * 0.04}
+          />
+
+          {/* Outer ring — always visible structurally */}
           <circle
             cx={0} cy={0} r={WHEEL_R}
             fill="none"
-            stroke={cycleGlow > 0 ? accent2 : borderColor}
-            strokeWidth={cycleGlow > 0 ? 3 : 2}
-            opacity={b[0].progress * (cycleGlow > 0 ? 0.6 + 0.4 * cycleGlow : 0.5)}
+            stroke={cycleGlow > 0 ? accent2 : (accentColor ?? ACCENT)}
+            strokeWidth={cycleGlow > 0 ? 4 : 3}
+            opacity={structureOpacity * (cycleGlow > 0 ? 0.8 + 0.2 * cycleGlow : 0.6)}
           />
 
           {/* Inner ring */}
           <circle
             cx={0} cy={0} r={WHEEL_R * 0.6}
             fill="none"
-            stroke={borderColor}
-            strokeWidth={1}
-            opacity={b[0].progress * 0.6}
+            stroke={accentColor ?? ACCENT}
+            strokeWidth={2}
+            opacity={structureOpacity * 0.5}
           />
 
           {/* ── Quadrant sectors ── */}
@@ -201,7 +211,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
               'Z',
             ].join(' ');
 
-            const fillOpacity = isActive ? 0.25 : isComplete ? 0.15 : 0.05;
+            const fillOpacity = isActive ? 0.30 : isComplete ? 0.18 : 0.10;
 
             // Icon position
             const iconAngle = QUADRANT_ANGLES[i];
@@ -215,15 +225,17 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
             // Counter-rotate text so it stays upright
             const counterRotation = -rotation;
 
+            const groupOpacity = Math.max(structureOpacity * 0.6, b[0].progress);
+
             return (
-              <g key={`q-${i}`} opacity={b[0].progress}>
+              <g key={`q-${i}`} opacity={groupOpacity}>
                 {/* Sector fill */}
                 <path
                   d={sectorPath}
                   fill={qColor}
                   opacity={fillOpacity}
-                  stroke={isActive ? qColor : borderColor}
-                  strokeWidth={isActive ? 2 : 0.5}
+                  stroke={isActive ? qColor : (qColors[i] ?? Q_COLORS[i])}
+                  strokeWidth={isActive ? 2.5 : 1}
                 />
 
                 {/* Active pulse ring */}
@@ -307,14 +319,15 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
             );
           })}
 
-          {/* ── Center hub ── */}
+          {/* ── Center hub — always structurally visible ── */}
           <circle
             cx={0} cy={0} r={HUB_R}
-            fill={ad?.palette.surface ?? 'rgba(255,255,255,0.06)'}
-            stroke={cycleGlow > 0 ? accent2 : borderColor}
-            strokeWidth={cycleGlow > 0 ? 2 : 1}
+            fill={ad?.palette.surface ?? 'rgba(255,255,255,0.10)'}
+            stroke={cycleGlow > 0 ? accent2 : (accentColor ?? ACCENT)}
+            strokeWidth={cycleGlow > 0 ? 3 : 2}
+            opacity={structureOpacity}
           />
-          <g transform={`rotate(${-rotation})`}>
+          <g transform={`rotate(${-rotation})`} opacity={structureOpacity}>
             <text
               x={0} y={0}
               textAnchor="middle"
@@ -322,7 +335,7 @@ export const CircularFlowScene: React.FC<CircularFlowSceneProps> = ({
               fontSize={16}
               fontWeight={700}
               letterSpacing={2}
-              fill={cycleGlow > 0 ? accent2 : mutedColor}
+              fill={cycleGlow > 0 ? accent2 : (accentColor ?? ACCENT)}
             >
               {centerLabel}
             </text>

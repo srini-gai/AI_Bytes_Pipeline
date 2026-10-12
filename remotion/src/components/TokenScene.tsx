@@ -61,7 +61,7 @@ export const TokenScene: React.FC<TokenSceneProps> = ({
   const sceneOpacity = interpolate(
     frame,
     [0, 6, durationInFrames - 6, durationInFrames],
-    [0, 1, 1, 0.3],
+    [0, 1, 1, 0.6],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
 
@@ -190,9 +190,22 @@ export const TokenScene: React.FC<TokenSceneProps> = ({
 
   return (
     <AbsoluteFill style={{backgroundColor: BG, opacity: sceneOpacity}}>
-      {/* Ambient glow */}
+      {/* Ambient glow — increased for dark-theme QA visibility */}
       <AbsoluteFill style={{
-        background: `radial-gradient(ellipse 1000px 700px at 50% 50%, ${accentColor}10 0%, transparent 60%)`,
+        background: `radial-gradient(ellipse 1000px 700px at 50% 50%, ${accentColor}22 0%, transparent 60%)`,
+      }} />
+
+      {/* Structural anchor — visible throughout scene on dark backgrounds */}
+      <div style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        width: 600,
+        height: 600,
+        transform: 'translate(-50%, -50%)',
+        borderRadius: '50%',
+        background: `radial-gradient(circle, ${accentColor}0a 0%, transparent 70%)`,
+        border: `2px solid ${accentColor}18`,
       }} />
 
       {/* ── Beat A: Typewriter sentence ─────────────────────────────── */}
@@ -321,10 +334,10 @@ export const TokenScene: React.FC<TokenSceneProps> = ({
                   backfaceVisibility: 'hidden',
                   padding: '24px 48px',
                   borderRadius: 20,
-                  background: isFlipped ? 'transparent' : `${color}30`,
-                  border: isFlipped ? 'none' : `3px solid ${color}88`,
+                  background: isFlipped ? 'transparent' : `${color}40`,
+                  border: isFlipped ? 'none' : `3px solid ${color}aa`,
                   boxShadow: boxGlow > 0 && !isFlipped
-                    ? `0 0 ${40 + boxGlow * 40}px ${color}44, inset 0 0 20px ${color}11`
+                    ? `0 0 ${40 + boxGlow * 40}px ${color}55, inset 0 0 20px ${color}18`
                     : 'none',
                   display: isFlipped ? 'none' : 'block',
                 }}>

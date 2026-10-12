@@ -62,8 +62,17 @@ export const DataScene: React.FC<DataSceneProps> = ({dataSpec, accentColor, dura
   return (
     <AbsoluteFill style={{backgroundColor: BG}}>
       <AbsoluteFill
-        style={{background: `radial-gradient(ellipse 800px 500px at 50% 60%, ${accentColor}14 0%, transparent 70%)`}}
+        style={{background: `radial-gradient(ellipse 800px 500px at 50% 60%, ${accentColor}22 0%, transparent 70%)`}}
       />
+
+      {/* Structural grid — visible anchor on dark themes */}
+      <div style={{
+        position: 'absolute', left: TRAIN_LEFT - 10, top: 380,
+        width: 960, height: 1200,
+        border: `1px solid ${accentColor}12`,
+        borderRadius: 24,
+        background: `linear-gradient(180deg, ${accentColor}06 0%, transparent 60%)`,
+      }} />
 
       <div
         style={{
@@ -179,9 +188,9 @@ const TokenTrainBars: React.FC<TokenTrainBarsProps> = ({spec, accentColor, frame
                     width: TRAIN_BLOCK_W,
                     height: TRAIN_BLOCK_H,
                     borderRadius: 10,
-                    background: isVisible ? `${color}25` : 'transparent',
-                    border: isVisible ? `2px solid ${color}88` : '2px solid transparent',
-                    boxShadow: isVisible ? `0 0 12px ${color}33` : 'none',
+                    background: isVisible ? `${color}38` : 'transparent',
+                    border: isVisible ? `3px solid ${color}aa` : '3px solid transparent',
+                    boxShadow: isVisible ? `0 0 16px ${color}44` : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -349,9 +358,9 @@ const ComparisonColumn: React.FC<ComparisonColumnProps> = ({bar, centerX, color,
       <div style={{
         position: 'absolute', left: centerX - COMPARISON_COL_W / 2, top: COMPARISON_BASE_Y - barH,
         width: COMPARISON_COL_W, height: barH,
-        background: `linear-gradient(to top, ${color}, ${color}aa)`,
+        background: `linear-gradient(to top, ${color}, ${color}cc)`,
         borderRadius: '16px 16px 0 0',
-        boxShadow: `0 0 30px ${color}66`,
+        boxShadow: `0 0 40px ${color}77`,
         zIndex: 2,
       }} />
 

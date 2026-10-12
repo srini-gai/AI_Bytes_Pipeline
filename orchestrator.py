@@ -8,6 +8,7 @@ Usage:
     python orchestrator.py --lang en                        # all episodes, English only
     python orchestrator.py --episode 3 --lang ta            # single episode, Tamil only
     python orchestrator.py --dry-run                        # script + voice only, skip visual/assembly/publish
+    python orchestrator.py --publish                        # full run including YouTube upload (default: no publish)
     python orchestrator.py --week 2                         # override week number
     python orchestrator.py --lang ta --topics-file topics_ta.txt  # Tamil batch with separate topics file
 """
@@ -33,6 +34,7 @@ from agents import (
     script_agent,
     visual_agent,
     visual_director_agent,
+    visual_mode_router,
     voice_agent,
 )
 
@@ -133,7 +135,8 @@ def _validate_config(langs: list[str]) -> list[str]:
 
 
 def _run_episode(
-    episode: int, week: int, topic: str, langs: list[str], dry_run: bool
+    episode: int, week: int, topic: str, langs: list[str],
+    dry_run: bool, publish: bool = False,
 ) -> dict:
     """
     Run the full pipeline for one episode across all requested languages.
@@ -172,46 +175,10 @@ def _run_episode(
             logger.error(f"EP{episode:02d} {msg}")
             print(f"  FAIL {msg}")
 
-    # ── Phase 2.5: Visual Director — storyboard (per lang) ────────────────────
-    # Runs before voice so the dry-run storyboard table is printed before TTS.
-    storyboards: dict[str, list] = {}
-    for lang in langs:
-        if lang not in scripts:
-            continue
-        print(f"\n[EP{episode:02d}][{lang.upper()}] Building visual storyboard...")
-        try:
-            out = visual_director_agent.run(
-                scripts[lang],
-                episode=episode,
-                week=week,
-                lang=lang,
-                dry_run=dry_run,
-            )
-            if out.get("skipped"):
-                print(f"  SKIP Storyboard already on disk ({len(out.get('storyboard', []))} scenes)")
-            elif out.get("violations"):
-                # Storyboard generated but with soft violations logged
-                n = len(out["storyboard"])
-                dur = out.get("total_duration", 0)
-                print(f"  WARN Storyboard {n} scenes / {dur:.1f}s (violations: {', '.join(out['violations'][:2])})")
-            else:
-                n = len(out["storyboard"])
-                dur = out.get("total_duration", 0)
-                print(f"  OK   Storyboard -> {out['output_path']} ({n} scenes, {dur:.1f}s)")
-            storyboards[lang] = out["storyboard"]
-            logger.info(
-                f"EP{episode:02d} [{lang.upper()}] storyboard done "
-                f"({len(out.get('storyboard', []))} scenes) -> {out.get('output_path', '')}"
-            )
-        except Exception as e:
-            msg = f"visual_director_agent [{lang.upper()}]: {e}"
-            result["errors"].append(msg)
-            logger.error(f"EP{episode:02d} {msg}")
-            print(f"  WARN {msg} — will fall back to legacy rendering")
-            # Non-fatal: pipeline continues without storyboard (legacy mode)
-
-    # ── Phase 3: Voice (per lang) ──────────────────────────────────────────────
-    voice_durations: dict[str, float] = {}   # lang -> seconds; used in timing report
+    # ── Phase 2.5: Voice (per lang) — runs BEFORE visual director ──────────────
+    # Voice duration is measured first so the Visual Director can plan scene
+    # durations to match the actual narration timeline.
+    voice_durations: dict[str, float] = {}
     for lang in langs:
         if lang not in scripts:
             continue
@@ -230,8 +197,118 @@ def _run_episode(
             result["errors"].append(msg)
             logger.error(f"EP{episode:02d} {msg}")
             print(f"  FAIL {msg}")
-            # Drop this lang so downstream phases don't attempt it
             scripts.pop(lang, None)
+
+    # ── Phase 2.6: Duration gate ─────────────────────────────────────────────
+    for lang in list(voice_durations.keys()):
+        dur = voice_durations[lang]
+        if dur < 45.0:
+            logger.warning(
+                f"EP{episode:02d} [{lang.upper()}] voice {dur:.1f}s < 45s — "
+                f"narration may need expansion (proceeding as-is)"
+            )
+            print(f"  WARN Voice {dur:.1f}s < 45s minimum — narration may be too short")
+        elif dur > 60.0:
+            logger.error(
+                f"EP{episode:02d} [{lang.upper()}] voice {dur:.1f}s > 60s — "
+                f"narration too long for Shorts format"
+            )
+            print(f"  FAIL Voice {dur:.1f}s > 60s — narration too long, needs rewrite")
+            msg = f"duration_gate [{lang.upper()}]: voice {dur:.1f}s exceeds 60s limit"
+            result["errors"].append(msg)
+            scripts.pop(lang, None)
+            voice_durations.pop(lang)
+        else:
+            print(f"  GATE Voice {dur:.1f}s — PASS (45–60s window)")
+            logger.info(f"EP{episode:02d} [{lang.upper()}] duration gate PASS: {dur:.1f}s")
+
+    # ── Phase 3: Visual Director — storyboard (per lang) ─────────────────────
+    # Receives locked voice duration so scene sums match the measured timeline.
+    storyboards: dict[str, list] = {}
+    for lang in langs:
+        if lang not in scripts:
+            continue
+        locked_dur = voice_durations.get(lang)
+        print(f"\n[EP{episode:02d}][{lang.upper()}] Building visual storyboard"
+              + (f" (locked to {locked_dur:.1f}s voice)..." if locked_dur else "..."))
+        try:
+            out = visual_director_agent.run(
+                scripts[lang],
+                episode=episode,
+                week=week,
+                lang=lang,
+                dry_run=dry_run,
+                voice_duration=locked_dur,
+            )
+            if out.get("skipped"):
+                print(f"  SKIP Storyboard already on disk ({len(out.get('storyboard', []))} scenes)")
+            elif out.get("violations"):
+                n = len(out["storyboard"])
+                dur = out.get("total_duration", 0)
+                print(f"  WARN Storyboard {n} scenes / {dur:.1f}s (violations: {', '.join(out['violations'][:2])})")
+            else:
+                n = len(out["storyboard"])
+                dur = out.get("total_duration", 0)
+                print(f"  OK   Storyboard -> {out['output_path']} ({n} scenes, {dur:.1f}s)")
+            storyboards[lang] = out["storyboard"]
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] storyboard done "
+                f"({len(out.get('storyboard', []))} scenes) -> {out.get('output_path', '')}"
+            )
+        except Exception as e:
+            msg = f"visual_director_agent [{lang.upper()}]: {e}"
+            result["errors"].append(msg)
+            logger.error(f"EP{episode:02d} {msg}")
+            print(f"  WARN {msg} — will fall back to legacy rendering")
+
+    # ── Phase 3.5: Visual mode routing validation (per lang) ──────────────────
+    # New manifests with planner-declared visual_mode: routing issues are a
+    # HARD pre-render gate. Old manifests without visual_mode: infer mode via
+    # classify_beat() and pass through (backward compatible).
+    for lang in langs:
+        if lang not in storyboards:
+            continue
+        ep_dir = OUTPUT_BASE / f"week_{week:02d}" / f"ep{episode:02d}"
+        sb_path = ep_dir / f"ep{episode:02d}_storyboard_{lang.upper()}.json"
+        if not sb_path.exists():
+            continue
+        try:
+            routing = visual_mode_router.route_storyboard(sb_path, dry_run=dry_run)
+            mode = routing["episode_mode"]
+            n_native = routing["native_beats"]
+            n_gen = routing["generated_beats"]
+            issues = routing.get("routing_issues", [])
+            is_new_manifest = visual_mode_router.has_planner_declared_modes(
+                storyboards[lang]
+            )
+            print(f"\n[EP{episode:02d}][{lang.upper()}] Visual routing: {mode} "
+                  f"({n_native} native, {n_gen} generated)"
+                  f"{' [strict]' if is_new_manifest else ' [compat]'}")
+            if issues and is_new_manifest:
+                for issue in issues:
+                    print(f"  FAIL routing: {issue}")
+                msg = (
+                    f"visual_mode_router [{lang.upper()}]: routing gate BLOCKED — "
+                    f"{'; '.join(issues)}"
+                )
+                result["errors"].append(msg)
+                logger.error(f"EP{episode:02d} {msg}")
+                storyboards.pop(lang, None)
+            elif issues:
+                for issue in issues:
+                    print(f"  WARN routing: {issue}")
+                logger.warning(
+                    f"EP{episode:02d} [{lang.upper()}] routing issues (compat mode): "
+                    f"{'; '.join(issues)}"
+                )
+            else:
+                logger.info(
+                    f"EP{episode:02d} [{lang.upper()}] routing validated: {mode} "
+                    f"({n_native}N/{n_gen}G)"
+                )
+        except Exception as e:
+            logger.warning(f"EP{episode:02d} [{lang.upper()}] routing validation skipped: {e}")
+            print(f"  WARN routing validation skipped: {e}")
 
     # Dry-run ends after voice
     if dry_run:
@@ -331,26 +408,31 @@ def _run_episode(
                 print(f"  FAIL {msg}")
 
     # ── Phase 7: Publish (per lang) ────────────────────────────────────────────
-    for lang in langs:
-        if lang not in scripts:
-            continue
-        if lang not in result["langs"]:
-            continue  # assembly failed or was skipped
-        print(f"\n[EP{episode:02d}][{lang.upper()}] Publishing to YouTube...")
-        try:
-            out = publisher_agent.run(scripts[lang], episode, week, lang=lang)
-            if out.get("skipped"):
-                print(f"  SKIP Already published -> {out['video_url']}")
-            else:
-                sched = out.get("scheduled_publish") or "immediately"
-                print(f"  OK   Published -> {out['video_url']} (scheduled: {sched})")
-            logger.info(f"EP{episode:02d} [{lang.upper()}] published -> {out.get('video_url', '')}")
-            result["langs"].setdefault(lang, {})["video_url"] = out["video_url"]
-        except Exception as e:
-            msg = f"publisher_agent [{lang.upper()}]: {e}"
-            result["errors"].append(msg)
-            logger.error(f"EP{episode:02d} {msg}")
-            print(f"  FAIL {msg}")
+    # Publishing requires explicit opt-in via --publish flag.
+    if not publish:
+        print(f"\n[EP{episode:02d}] Publishing SKIPPED (--publish not set)")
+        logger.info(f"EP{episode:02d} publish skipped — requires explicit --publish flag")
+    else:
+        for lang in langs:
+            if lang not in scripts:
+                continue
+            if lang not in result["langs"]:
+                continue  # assembly failed or was skipped
+            print(f"\n[EP{episode:02d}][{lang.upper()}] Publishing to YouTube...")
+            try:
+                out = publisher_agent.run(scripts[lang], episode, week, lang=lang)
+                if out.get("skipped"):
+                    print(f"  SKIP Already published -> {out['video_url']}")
+                else:
+                    sched = out.get("scheduled_publish") or "immediately"
+                    print(f"  OK   Published -> {out['video_url']} (scheduled: {sched})")
+                logger.info(f"EP{episode:02d} [{lang.upper()}] published -> {out.get('video_url', '')}")
+                result["langs"].setdefault(lang, {})["video_url"] = out["video_url"]
+            except Exception as e:
+                msg = f"publisher_agent [{lang.upper()}]: {e}"
+                result["errors"].append(msg)
+                logger.error(f"EP{episode:02d} {msg}")
+                print(f"  FAIL {msg}")
 
     return result
 
@@ -417,6 +499,12 @@ def main() -> None:
         help="Run script + voice only; skip visual, assembly, and publish",
     )
     parser.add_argument(
+        "--publish",
+        action="store_true",
+        default=False,
+        help="Enable YouTube publishing. Without this flag the pipeline stops after QA (default: off).",
+    )
+    parser.add_argument(
         "--topics-file",
         help="Path to a topics file (default: topics.txt). Use for language-specific batches.",
     )
@@ -435,22 +523,26 @@ def main() -> None:
     print(f"  Languages: {', '.join(l.upper() for l in langs)}")
     if args.dry_run:
         print(f"  Mode     : DRY RUN (script + voice only)")
+    elif not args.publish:
+        print(f"  Mode     : PREVIEW (render + assembly + QA — no publish)")
+    else:
+        print(f"  Mode     : FULL (render + assembly + QA + publish)")
     logger.info(
         f"Pipeline starting — week={week} langs={langs} "
-        f"dry_run={args.dry_run} episode={args.episode}"
+        f"dry_run={args.dry_run} publish={args.publish} episode={args.episode}"
     )
 
-    # Config validation — hard-stop on any issue for a full run
+    # Config validation — hard-stop only when publishing
     issues = _validate_config(langs)
     if issues:
         print("\nConfiguration issues:")
         for issue in issues:
             print(f"  WARN {issue}")
-        if not args.dry_run:
-            print("\nFix the above issues in .env before running the pipeline.")
+        if args.publish:
+            print("\nFix the above issues in .env before publishing.")
             sys.exit(1)
         else:
-            print("\n(Dry run — continuing despite issues)\n")
+            print("\n(Not publishing — continuing despite issues)\n")
 
     topics_path = Path(args.topics_file) if args.topics_file else None
     topics = _load_topics(topics_path)
@@ -474,7 +566,7 @@ def main() -> None:
 
     for episode, topic in episodes:
         try:
-            result = _run_episode(episode, week, topic, langs, dry_run=args.dry_run)
+            result = _run_episode(episode, week, topic, langs, dry_run=args.dry_run, publish=args.publish)
             all_results.append(result)
             if result["errors"]:
                 failed_episodes.append((episode, topic))
@@ -499,7 +591,7 @@ def main() -> None:
         for episode, topic in failed_episodes:
             all_results = [r for r in all_results if r["episode"] != episode]
             try:
-                result = _run_episode(episode, week, topic, langs, dry_run=False)
+                result = _run_episode(episode, week, topic, langs, dry_run=False, publish=args.publish)
                 all_results.append(result)
                 status = "succeeded" if not result["errors"] else "still has errors"
                 logger.info(f"EP{episode:02d} retry {status}")

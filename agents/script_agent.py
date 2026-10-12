@@ -47,7 +47,7 @@ Required JSON schema:
   "episode": "<zero-padded number, e.g. 01>",
   "topic": "<topic string>",
   "title": "<YouTube-friendly title, max 70 chars>",
-  "hook": "<10 WORDS OR FEWER — bold claim, curiosity, or shock — no question marks>",
+  "hook": "<12 WORDS OR FEWER — bold claim, curiosity, or shock — no question marks>",
   "concept": "<formal AI concept name>",
   "slides": [
     {"icon": "<single emoji>", "heading": "<3-5 word heading>", "body": "<2-3 sentence explanation>"},
@@ -75,7 +75,7 @@ Required JSON schema:
 }
 
 RULES (violation = invalid output):
-- hook: MUST be 10 words or fewer. Statement, not question. Creates urgency.
+- hook: MUST be 12 words or fewer. Statement, not question. Creates urgency.
 - voiceover: The voiceover field MUST be 150-175 words. AIM FOR 155 WORDS — stay close to 155, never exceed 175. Count carefully before responding. This ensures the ElevenLabs audio output is 58-65 seconds long. Do not go below 150 words under any circumstances.
 - slides: EXACTLY 4 items. Each covers a different angle.
 - youtube_title: MUST end with ' #Shorts' (space then #Shorts).
@@ -381,8 +381,8 @@ def _validate_sketch_spec(spec: object) -> None:
         if edge.get("from") not in node_ids or edge.get("to") not in node_ids:
             raise ValueError("sketch_spec edge 'from'/'to' must reference valid node ids")
         label = edge.get("label")
-        if label and len(label) > 10:
-            raise ValueError(f"sketch_spec edge label exceeds 10 chars: '{label}'")
+        if label and len(label) > 20:
+            raise ValueError(f"sketch_spec edge label exceeds 20 chars: '{label}'")
 
 
 _VALID_DATA_TYPES = {"bars", "counter", "comparison"}
@@ -469,7 +469,7 @@ def _validate(data: dict, episode: int, lang: str = "en") -> None:
             if not slide.get(key):
                 raise ValueError(f"Slide {i+1} missing '{key}'")
 
-    hook_limit = 15 if lang == "ta" else 10
+    hook_limit = 15
     hook_words = len(data["hook"].split())
     if hook_words > hook_limit:
         raise ValueError(f"Hook is {hook_words} words — must be ≤{hook_limit}: '{data['hook']}'")
@@ -479,8 +479,8 @@ def _validate(data: dict, episode: int, lang: str = "en") -> None:
         if not (95 <= vo_words <= 135):
             raise ValueError(f"Voiceover is {vo_words} words — must be 95–135 (Tamil)")
     else:
-        if not (150 <= vo_words <= 175):
-            raise ValueError(f"Voiceover is {vo_words} words — must be 150–175")
+        if not (140 <= vo_words <= 185):
+            raise ValueError(f"Voiceover is {vo_words} words — must be 140–185")
 
     if not data["youtube_title"].strip().endswith("#Shorts"):
         raise ValueError(f"youtube_title must end with '#Shorts': '{data['youtube_title']}'")

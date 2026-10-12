@@ -1,5 +1,8 @@
 How AI Actually Reads Your Text
 Why Some AI Models Are Smarter Than Others
 Why AI Hallucinates
-What Happens Inside ChatGPT When You Type
+AI Agents vs Agentic AI
 How AI Models Are Trained on Trillions of Words
+How RAG Actually Reduces AI Hallucinations
+How AI Agents Use Tools — Function Calling Explained
+What Is an AI Context Window — and Why Does It Matter?

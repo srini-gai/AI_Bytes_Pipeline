@@ -188,6 +188,26 @@ export const TransformScene: React.FC<TransformSceneProps> = ({
             />
           )}
 
+          {/* Ghost cards: ENTER phase — mark all item positions immediately */}
+          {items.map((item, i) => {
+            const x = i * (CARD_W + CARD_GAP);
+            const ghostAlpha = interpolate(frame, [0, 6], [0.06, 0.14], {extrapolateRight: 'clamp'});
+            return (
+              <div
+                key={`ghost-${i}`}
+                style={{
+                  position: 'absolute',
+                  left: x,
+                  width: CARD_W,
+                  height: 180,
+                  borderRadius: 16,
+                  backgroundColor: item.color,
+                  opacity: ghostAlpha,
+                }}
+              />
+            );
+          })}
+
           {/* Transform item cards */}
           {items.map((item, i) => {
             const p = letterProgress[i];
