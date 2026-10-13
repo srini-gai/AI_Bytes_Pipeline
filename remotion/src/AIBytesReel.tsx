@@ -171,6 +171,9 @@ function renderStoryboardScene(
   episode: string,
   generatedVideoClips?: GeneratedVideoClipsMap,
   ad?: ArtDirection,
+  channelName?: string,
+  logoPath?: string,
+  ctaText?: string,
 ): React.ReactNode {
   // When an ArtDirection manifest is available, derive colors from it.
   // Otherwise fall back to the legacy Theme object for backward compatibility.
@@ -634,6 +637,7 @@ function renderStoryboardScene(
           videoSrc={clips?.cta}
           theme={t}
           artDirection={ad}
+          ctaText={ctaText}
         />
       );
 
@@ -651,6 +655,8 @@ function renderStoryboardScene(
           emoji={scene.objects[0] ?? '🧠'}
           episode={episode}
           topic={topic}
+          channelName={channelName}
+          logoPath={logoPath}
         />
       );
 
@@ -681,6 +687,9 @@ interface StoryboardProps {
   generatedVideoClips?: GeneratedVideoClipsMap;
   /** Art direction manifest for this episode. */
   artDirection?: ArtDirection;
+  channelName?: string;
+  logoPath?: string;
+  ctaText?: string;
 }
 
 const StoryboardReel: React.FC<StoryboardProps> = ({
@@ -693,6 +702,9 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
   clips,
   generatedVideoClips,
   artDirection,
+  channelName,
+  logoPath,
+  ctaText,
 }) => {
   // Pre-compute cumulative start frames.
   // For consecutive ComposedScene transitions, extend the earlier scene's
@@ -719,6 +731,7 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
             {renderStoryboardScene(
               scene, theme, durationFrames, topic, hook, takeaway,
               clips, episode, generatedVideoClips, artDirection,
+              channelName, logoPath, ctaText,
             )}
           </Fade>
         </Sequence>
@@ -746,6 +759,9 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
     storyboard,
     generatedVideoClips,
     art_direction,
+    channelName,
+    logoPath,
+    ctaText,
   } = props;
 
   // Resolve art direction manifest. When an art_direction id is provided,
@@ -767,6 +783,9 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
         clips={clips}
         generatedVideoClips={generatedVideoClips}
         artDirection={ad}
+        channelName={channelName}
+        logoPath={logoPath}
+        ctaText={ctaText}
       />
     );
   }
@@ -787,6 +806,8 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
             emoji={slides[0]?.icon ?? '🧠'}
             episode={episode}
             topic={topic}
+            channelName={channelName}
+            logoPath={logoPath}
           />
         </Fade>
       </Sequence>
@@ -824,7 +845,7 @@ export const AIBytesReel: React.FC<AIBytesReelProps> = (props) => {
       {/* CTA: 50–60s */}
       <Sequence from={CTA_START} durationInFrames={CTA_DURATION}>
         <Fade duration={CTA_DURATION}>
-          <CTAScene takeaway={takeaway} videoSrc={clips?.cta} theme={t} />
+          <CTAScene takeaway={takeaway} videoSrc={clips?.cta} theme={t} ctaText={ctaText} />
         </Fade>
       </Sequence>
     </AbsoluteFill>

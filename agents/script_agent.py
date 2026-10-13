@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from engine.channel_config import load_channel, get_default_channel
+
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
@@ -36,8 +38,7 @@ HOOK_FORMULAS = [
 ]
 
 _SYSTEM_PROMPT_BASE = """\
-You are a YouTube Shorts scriptwriter for the Srini on AI channel.
-Srini on AI produces 60-second educational shorts explaining AI concepts to developers and founders.
+{{CHANNEL_PERSONA}}
 
 Your task: write a complete, structured script for the given topic as a single raw JSON object.
 Output ONLY the JSON — no markdown, no code fences, no explanation before or after.
@@ -86,15 +87,7 @@ RULES (violation = invalid output):
 - When diagram_type is token, generate a token_spec (see DIAGRAM GUIDE) with a sentence, 2-12 tokens, and (if provided) a weights array matching tokens length.
 - Output raw JSON only — no ```json fences, no preamble.
 
-Choose diagram_type="token" when the topic involves:
-- Tokenization, tokens, context window, vocabulary, embeddings, text processing, or NLP — anything about how raw text gets split/counted/represented as discrete units.
-This takes priority over "sketch" whenever the concept is best shown as one example sentence breaking apart into token boxes, rather than a multi-component pipeline diagram.
-
-DIAGRAM TYPE ROUTING — choose diagram_type="sketch" when the topic involves:
-- A process with 3-6 distinct steps that connect to each other (not just a linear list — steps that branch, merge, or feed into a shared destination).
-- Any topic containing words: training, backpropagation, gradient, attention, transformer, neural network, RLHF.
-- Whenever a flow diagram would benefit from showing data transformations between named components (e.g. text -> tokens -> embeddings -> model), prefer "sketch" over "flow" so the transformation between each node is visible.
-Do not default to "flow", "hub_spoke", or the other types out of habit — check this routing list first. Only fall back to the other diagram types when none of the above conditions apply.
+{{DOMAIN_CONTENT_GUIDANCE}}
 
 Choose diagram_type="data" when the topic involves:
 - Statistics, benchmark numbers, or performance metrics (accuracy %, latency, cost, throughput, token counts).
@@ -174,53 +167,48 @@ sketch_spec = {
 }
 
 THEME GUIDE — pick based on the topic's emotional feel:
-- danger   : problems, errors, hallucinations, risks        → accent=#ff3333, accent2=#ff6600, overlay=rgba(20,0,0,0.45),    pexels_mood="dark dramatic red"
-- calm     : organisation, productivity, clarity, memory    → accent=#60a5fa, accent2=#e2e8f0, overlay=rgba(0,10,30,0.40),   pexels_mood="soft blue minimal calm"
-- creative : prompting, ideas, writing, generation          → accent=#f59e0b, accent2=#fb923c, overlay=rgba(20,10,0,0.40),   pexels_mood="warm golden creative"
-- future   : agents, automation, next-gen AI, robotics      → accent=#22d3ee, accent2=#818cf8, overlay=rgba(0,10,20,0.45),   pexels_mood="cyan space futuristic"
-- technical: databases, architecture, code, vectors, search → accent=#22c55e, accent2=#4ade80, overlay=rgba(0,15,5,0.45),    pexels_mood="green tech dark"
-- energy   : general AI concepts, exciting breakthroughs    → accent=#a78bfa, accent2=#34d399, overlay=rgba(5,5,16,0.35),    pexels_mood="purple neon dark"
+- danger   → accent=#ff3333, accent2=#ff6600, overlay=rgba(20,0,0,0.45),    pexels_mood="dark dramatic red"
+- calm     → accent=#60a5fa, accent2=#e2e8f0, overlay=rgba(0,10,30,0.40),   pexels_mood="soft blue minimal calm"
+- creative → accent=#f59e0b, accent2=#fb923c, overlay=rgba(20,10,0,0.40),   pexels_mood="warm golden creative"
+- future   → accent=#22d3ee, accent2=#818cf8, overlay=rgba(0,10,20,0.45),   pexels_mood="cyan space futuristic"
+- technical→ accent=#22c55e, accent2=#4ade80, overlay=rgba(0,15,5,0.45),    pexels_mood="green tech dark"
+- energy   → accent=#a78bfa, accent2=#34d399, overlay=rgba(5,5,16,0.35),    pexels_mood="purple neon dark"
 
 DIAGRAM GUIDE — pick type by topic, then output ONLY the fields shown for that type:
 
-hub_spoke   → MCP Protocol, AI Agents
+hub_spoke — radial center + connected nodes
   {"type":"hub_spoke","hub":"<center node label>","spokes":["<node>","<node>","<node>","<node>"]}
   (4-6 spokes; each is a short label for a connected capability or client)
 
-cluster     → Embeddings
+cluster — semantic groupings
   {"type":"cluster","groups":[{"label":"<group name>","items":["<item>","<item>","<item>"]},{"label":"<group name>","items":["<item>","<item>","<item>"]}]}
   (2-3 groups of semantically similar words/concepts)
 
-split_compare → Hallucination
-  {"type":"split_compare","left":{"label":"<what AI says>","points":["<point>","<point>"]},"right":{"label":"<reality>","points":["<point>","<point>"]},"verdict":"<one-line conclusion about the gap>"}
+split_compare — two-sided contrast with verdict
+  {"type":"split_compare","left":{"label":"<side A>","points":["<point>","<point>"]},"right":{"label":"<side B>","points":["<point>","<point>"]},"verdict":"<one-line conclusion about the gap>"}
 
-dial        → Temperature parameter
+dial — parameter/setting on a scale
   {"type":"dial","label":"<parameter name>","min_label":"<low end description>","max_label":"<high end description>","ticks":[{"value":0.0,"description":"<what this setting does>"},{"value":0.7,"description":"<what this setting does>"},{"value":1.0,"description":"<what this setting does>"}]}
 
-bar_chart   → Few-shot prompting, LLM evaluation
+bar_chart — ranked category comparison
   {"type":"bar_chart","title":"<chart title>","bars":[{"label":"<category>","value":<0-100>},{"label":"<category>","value":<0-100>},...]}
   (3-5 bars; values are relative 0-100 scores/percentages)
 
-side_by_side → Local LLMs, Fine-tuning vs RAG
+side_by_side — neutral two-option comparison
   {"type":"side_by_side","left":{"label":"<option A>","points":["<point>","<point>","<point>"]},"right":{"label":"<option B>","points":["<point>","<point>","<point>"]}}
   (neutral comparison — no verdict)
 
-flow        → RAG, Chain of Thought, Second Brain
+flow — linear step-by-step process
   {"type":"flow","steps":[{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"},{"icon":"<emoji>","label":"<step name>"}]}
   (3-5 steps in execution order)
 
-sketch      → Training, Backpropagation, Attention, Transformers, Neural networks, RLHF,
-              and any multi-step process (3-6 steps) whose components transform data as it
-              passes between them. See DIAGRAM TYPE ROUTING above. (For tokenization/text-
-              splitting specifically, use "token" instead — see below.)
+sketch — multi-node flow with data transformations between components
   diagram_spec: {"type":"sketch"}
   ALSO output a top-level "sketch_spec" object:
   {"nodes":[{"id":"<short id>","label":"<node label, under 20 chars>","x":<number>,"y":<number>,"shape":"rect|circle|diamond","width":<number>,"height":<number>},...],"edges":[{"from":"<id>","to":"<id>","label":"<optional, under 10 chars>"},...],"title":"<optional diagram title>"}
   (3-6 nodes placed on a canvas roughly 720 wide x 500 tall; edges reference node ids and show the flow between them)
 
-data        → Stats, benchmark numbers, performance metrics, before/after or old-way/new-way
-              comparisons, or a single hero number worth building a scene around.
-              See DIAGRAM TYPE ROUTING above for sub-type selection.
+data — statistics, benchmarks, before/after comparisons, or a single hero number
   diagram_spec: {"type":"data"}
   ALSO output a top-level "data_spec" object, matching the chosen sub-type:
   bars       → {"type":"bars","title":"<chart title>","unit":"<optional, e.g. %>","bars":[{"label":"<category>","value":<number>,"maxValue":<number>,"color":"<optional hex>"},...]}  (2-5 bars)
@@ -252,9 +240,32 @@ _TAMIL_SYSTEM_SUFFIX = (
 
 
 def _build_system_prompt(lang: str) -> str:
+    cfg = load_channel(get_default_channel())
+    lo, hi = cfg.script.voiceover_word_range
+    target = cfg.script.voiceover_target_words
+    prompt = _SYSTEM_PROMPT_BASE
+    prompt = prompt.replace(
+        "for the Srini on AI channel", f"for the {cfg.name} channel"
+    )
+    prompt = prompt.replace("{{CHANNEL_PERSONA}}", cfg.script.persona)
+    prompt = prompt.replace(
+        "Follow Srini on AI for practical AI, daily.", cfg.brand.cta_text
+    )
+    prompt = prompt.replace(
+        "always include #SriniOnAI", f"always include {cfg.brand.hashtag}"
+    )
+    prompt = prompt.replace(
+        "150-175 words. AIM FOR 155 WORDS — stay close to 155, never exceed 175",
+        f"{lo}-{hi} words. AIM FOR {target} WORDS — stay close to {target}, never exceed {hi}",
+    )
+    prompt = prompt.replace(
+        "Do not go below 150 words", f"Do not go below {lo} words"
+    )
+    domain_guidance = cfg.domain.content_guidance.strip() if cfg.domain.content_guidance else ""
+    prompt = prompt.replace("{{DOMAIN_CONTENT_GUIDANCE}}", domain_guidance)
     if lang == "ta":
-        return _SYSTEM_PROMPT_BASE + _TAMIL_SYSTEM_SUFFIX
-    return _SYSTEM_PROMPT_BASE
+        return prompt + _TAMIL_SYSTEM_SUFFIX
+    return prompt
 
 
 def _episode_dir(episode: int, week: int) -> Path:

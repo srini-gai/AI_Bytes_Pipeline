@@ -175,7 +175,7 @@ def test_run_episode_happy_path(
     mock_assembly.run.return_value = {"output_path": "/out/ep01_final_EN.mp4", "size_mb": 80.0, "duration": 60.0, "skipped": False}
     mock_publisher.run.return_value = {"video_url": "https://youtube.com/watch?v=abc", "video_id": "abc", "skipped": False, "scheduled_publish": "2026-05-12T02:30:00Z"}
 
-    result = orchestrator._run_episode(1, 1, "RAG", ["en"], dry_run=False)
+    result = orchestrator._run_episode(1, 1, "RAG", ["en"], dry_run=False, publish=True)
 
     assert result["errors"] == []
     assert "en" in result["langs"]
@@ -326,7 +326,7 @@ def test_run_episode_publish_skipped_if_already_uploaded(
         "scheduled_publish": "",
     }
 
-    result = orchestrator._run_episode(1, 1, "RAG", ["en"], dry_run=False)
+    result = orchestrator._run_episode(1, 1, "RAG", ["en"], dry_run=False, publish=True)
 
     assert result["errors"] == []
     assert result["langs"]["en"]["video_url"] == "https://youtube.com/watch?v=existing"

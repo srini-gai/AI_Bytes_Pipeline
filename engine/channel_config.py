@@ -86,6 +86,14 @@ class PublisherConfig:
 
 
 @dataclass(frozen=True)
+class DomainConfig:
+    id: str
+    description: str
+    content_guidance: str
+    visual_guidance: str
+
+
+@dataclass(frozen=True)
 class ChannelConfig:
     id: str
     name: str
@@ -98,6 +106,7 @@ class ChannelConfig:
     script: ScriptConfig
     visual: VisualConfig
     publisher: PublisherConfig
+    domain: DomainConfig
 
     _raw: dict = field(default_factory=dict, repr=False, compare=False)
 
@@ -170,6 +179,15 @@ def _parse_publisher(raw: dict) -> PublisherConfig:
     )
 
 
+def _parse_domain(raw: dict) -> DomainConfig:
+    return DomainConfig(
+        id=raw.get("id", "general"),
+        description=raw.get("description", ""),
+        content_guidance=raw.get("content_guidance", ""),
+        visual_guidance=raw.get("visual_guidance", ""),
+    )
+
+
 def load_channel(channel_id: str = _DEFAULT_CHANNEL) -> ChannelConfig:
     """Load a channel pack from channels/<channel_id>/channel.yaml."""
     if channel_id in _cache:
@@ -198,6 +216,7 @@ def load_channel(channel_id: str = _DEFAULT_CHANNEL) -> ChannelConfig:
         script=_parse_script(raw.get("script", {})),
         visual=_parse_visual(raw.get("visual", {})),
         publisher=_parse_publisher(raw.get("publisher", {})),
+        domain=_parse_domain(raw.get("domain", {})),
         _raw=raw,
     )
     _cache[channel_id] = cfg

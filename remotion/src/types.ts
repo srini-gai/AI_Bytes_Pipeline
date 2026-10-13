@@ -452,4 +452,10 @@ export interface AIBytesReelProps {
    * which keep the legacy `theme` path.
    */
   art_direction?: string;
+  /** Channel brand name — rendered in HookScene top bar. */
+  channelName?: string;
+  /** Logo filename relative to remotion/public/ — rendered in HookScene avatar. */
+  logoPath?: string;
+  /** CTA button text — rendered in CTAScene pill button. */
+  ctaText?: string;
 }

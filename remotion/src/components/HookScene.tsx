@@ -23,6 +23,10 @@ interface HookSceneProps {
   topic?: string;
   /** Category override — if provided, shown instead of auto-derived tag */
   category?: string;
+  /** Channel brand name — displayed in top bar */
+  channelName?: string;
+  /** Logo filename relative to remotion/public/ — displayed in top bar avatar */
+  logoPath?: string;
 }
 
 // Frames 0–4: static thumbnail frame (full hook visible, no animation)
@@ -43,7 +47,7 @@ function deriveCategory(topic: string | undefined): string {
   return words.join(' ');
 }
 
-export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoji = '🧠', episode, topic, category}) => {
+export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoji = '🧠', episode, topic, category, channelName, logoPath}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = theme ?? DEFAULT_THEME;
@@ -88,7 +92,7 @@ export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoj
       />
 
       {/* ───────────────────────────────────────────────────────────────────────
-          OPTION B TOP BAR — Srini on AI branding
+          TOP BAR — channel branding
           Contains: avatar circle · channel name · episode category tag
           ─────────────────────────────────────────────────────────────────── */}
       <div
@@ -125,15 +129,14 @@ export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoj
             padding: '52px 52px 0 52px',
           }}
         >
-          {/* ── Avatar: circular Srini logo with cyan/purple gradient ring ── */}
+          {/* ── Avatar: circular logo with gradient ring (hidden when no logo) ── */}
+          {logoPath && (
           <div
             style={{
               width: 88,
               height: 88,
               borderRadius: '50%',
               flexShrink: 0,
-              /* Gradient ring: use a slightly larger wrapper with the gradient background,
-                 then the inner circle clips to a white 3px border effect */
               background: 'linear-gradient(135deg, #22d3ee 0%, #818cf8 50%, #c084fc 100%)',
               padding: 3,
               boxSizing: 'border-box',
@@ -153,8 +156,8 @@ export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoj
               }}
             >
               <img
-                src={staticFile('srini-logo.png')}
-                alt="Srini on AI"
+                src={staticFile(logoPath)}
+                alt={channelName ?? ''}
                 style={{
                   width: '100%',
                   height: '100%',
@@ -164,6 +167,7 @@ export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoj
               />
             </div>
           </div>
+          )}
 
           {/* ── Channel name + category tag column ── */}
           <div
@@ -174,6 +178,7 @@ export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoj
             }}
           >
             {/* Channel name */}
+            {channelName && (
             <div
               style={{
                 color: '#ffffff',
@@ -185,8 +190,9 @@ export const HookScene: React.FC<HookSceneProps> = ({hook, videoSrc, theme, emoj
                 textShadow: '0 2px 12px rgba(0,0,0,0.8)',
               }}
             >
-              Srini on AI
+              {channelName}
             </div>
+            )}
 
             {/* Episode category tag pill */}
             <div

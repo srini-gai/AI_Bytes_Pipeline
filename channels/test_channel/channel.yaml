@@ -1,0 +1,88 @@
+# Synthetic test channel — used ONLY in automated tests to prove runtime selection.
+# Do NOT render or publish episodes with this channel.
+
+id: test_channel
+name: "Test Channel"
+tagline: "For automated testing only."
+format: youtube_shorts
+language_default: en
+languages: [en]
+
+brand:
+  colors:
+    bg: "#111111"
+    accent: "#ff0000"
+    accent2: "#00ff00"
+  logo: "test-logo.png"
+  cta_text: "Follow Test Channel for testing."
+  hashtag: "#TestChannel"
+  default_title_pattern: "Test EP{episode:02d} #Shorts"
+
+voice:
+  model_id: "eleven_multilingual_v2"
+  output_format: "mp3_44100_128"
+  defaults:
+    stability: 0.50
+    similarity_boost: 0.80
+    style: 0.1
+    speed: 1.10
+    use_speaker_boost: false
+  env_voice_id_key: "ELEVENLABS_VOICE_ID"
+  duration_windows:
+    en:
+      min: 35.0
+      max: 70.0
+
+script:
+  persona: >-
+    You are a YouTube Shorts scriptwriter for the Test Channel.
+    Test Channel produces 60-second educational shorts for testing.
+  voiceover_word_range: [140, 180]
+  voiceover_target_words: 160
+  tags_always_include: "#TestChannel"
+  theme_guide:
+    energy:
+      accent: "#ff0000"
+      accent2: "#00ff00"
+      overlay: "rgba(17,17,17,0.35)"
+      pexels_mood: "red green test"
+
+visual:
+  remotion_composition_id: "TestReel"
+  default_theme:
+    name: "energy"
+    accent: "#ff0000"
+    accent2: "#00ff00"
+    overlay: "rgba(17,17,17,0.35)"
+    pexels_mood: "red green test"
+  quality_gates:
+    target_min_seconds: 40.0
+    target_max_seconds: 65.0
+    max_hook_seconds: 5.0
+    max_cta_seconds: 4.0
+  narration_pacing:
+    min_wps: 1.8
+    max_wps: 3.5
+  weekly_diversity_guideline:
+    native_motion: "~3/week"
+    hybrid_generated: "~2/week"
+  fingerprint_channel_key: "test_channel"
+
+domain:
+  id: general_education
+  description: >-
+    General educational content for automated testing.
+    No AI or technology domain assumptions.
+  content_guidance: |
+    No domain-specific topic routing.
+    Choose diagram types based on the topic's structural needs only.
+  visual_guidance: |
+    No domain-specific visual components preferred.
+    Standard diagram and flow components apply.
+
+publisher:
+  category_id: "27"
+  env_keys:
+    en:
+      channel_id: "YOUTUBE_CHANNEL_ID_TEST"
+      refresh_token: "YOUTUBE_REFRESH_TOKEN_TEST"

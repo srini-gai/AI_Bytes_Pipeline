@@ -11,18 +11,9 @@ from agents.cache_identity import quarantine_stale, text_hash
 
 load_dotenv()
 
+from engine.channel_config import load_channel, get_default_channel
+
 logger = logging.getLogger(__name__)
-
-MODEL_ID = "eleven_multilingual_v2"
-OUTPUT_FORMAT = "mp3_44100_128"
-
-# ── Duration windows ──────────────────────────────────────────────────────────
-# Voice-only targets — slightly narrower than the global 45–60s visual window
-# to leave headroom for assembly sync and caption timing.
-MIN_DURATION = 40.0   # en — absolute floor
-MAX_DURATION = 66.0   # en — updated: 163-word narration at speed=1.05 runs ~64s; assembly -shortest clips at visuals length
-TA_MIN_DURATION = 40.0
-TA_MAX_DURATION = 65.0
 
 # ── Voice settings — loaded from .env, with safe production defaults ──────────
 # To change delivery style, set these in .env (no code change needed):
@@ -33,13 +24,9 @@ TA_MAX_DURATION = 65.0
 #   ELEVENLABS_SPEAKER_BOOST  — true/false
 
 def _voice_settings() -> VoiceSettings:
-    """Build VoiceSettings from environment, falling back to production defaults.
+    """Build VoiceSettings from channel config, overridable via .env."""
+    cfg = load_channel(get_default_channel()).voice
 
-    Production defaults match the 'Creator / Recommended' variant (Test B):
-        stability=0.42, similarity_boost=0.78, style=0, speed=1.05, speaker_boost=True
-
-    These can be overridden at any time via .env without a code change.
-    """
     def _float(key: str, default: float) -> float:
         try:
             return float(os.getenv(key, str(default)))
@@ -56,11 +43,11 @@ def _voice_settings() -> VoiceSettings:
         return default
 
     return VoiceSettings(
-        stability=_float("ELEVENLABS_STABILITY", 0.42),
-        similarity_boost=_float("ELEVENLABS_SIMILARITY", 0.78),
-        style=_float("ELEVENLABS_STYLE", 0.0),
-        speed=_float("ELEVENLABS_SPEED", 1.05),
-        use_speaker_boost=_bool("ELEVENLABS_SPEAKER_BOOST", True),
+        stability=_float("ELEVENLABS_STABILITY", cfg.stability),
+        similarity_boost=_float("ELEVENLABS_SIMILARITY", cfg.similarity_boost),
+        style=_float("ELEVENLABS_STYLE", cfg.style),
+        speed=_float("ELEVENLABS_SPEED", cfg.speed),
+        use_speaker_boost=_bool("ELEVENLABS_SPEAKER_BOOST", cfg.use_speaker_boost),
     )
 
 
@@ -130,8 +117,10 @@ def _mp3_duration(path: Path) -> float:
 
 def _validate_duration(path: Path, lang: str = "en") -> float:
     """Check MP3 duration is within the lang-appropriate window. Returns duration."""
-    lo = TA_MIN_DURATION if lang == "ta" else MIN_DURATION
-    hi = TA_MAX_DURATION if lang == "ta" else MAX_DURATION
+    cfg = load_channel(get_default_channel()).voice
+    dw = cfg.duration_windows.get(lang) or cfg.duration_windows.get("en")
+    lo = dw.min if dw else 40.0
+    hi = dw.max if dw else 66.0
     duration = _mp3_duration(path)
     if duration < lo or duration > hi:
         raise ValueError(
@@ -221,11 +210,12 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
                 f"EP{episode:02d} [{lang.upper()}] — ElevenLabs TTS call (attempt {attempt}/3)"
             )
 
+            cfg = load_channel(get_default_channel()).voice
             audio_chunks = client.text_to_speech.convert(
                 voice_id=voice_id,
                 text=voiceover,
-                model_id=MODEL_ID,
-                output_format=OUTPUT_FORMAT,
+                model_id=cfg.model_id,
+                output_format=cfg.output_format,
                 voice_settings=settings,
             )
 

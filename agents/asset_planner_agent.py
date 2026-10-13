@@ -28,6 +28,7 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 
 from agents.providers.base import AssetSource, GenerationType, make_cache_key
+from engine.channel_config import load_channel, get_default_channel
 
 load_dotenv()
 
@@ -429,7 +430,7 @@ def _overlay_content(scene: dict) -> list[str]:
     overlays = list(on_screen)  # all on-screen text is always Remotion
 
     if scene_type == "HOOK":
-        overlays.append("Srini on AI branding")
+        overlays.append(f"{load_channel(get_default_channel()).name} branding")
     if scene_type == "CTA":
         overlays.extend(["channel name", "follow button"])
 

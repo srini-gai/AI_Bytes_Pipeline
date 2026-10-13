@@ -25,10 +25,11 @@ from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
 
+from engine.channel_config import load_channel, get_default_channel
+
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-CATEGORY_ID = "28"          # Science & Technology
 CHUNK_SIZE = 4 * 1024 * 1024   # 4 MB resumable upload chunks
 
 CREDENTIALS_DIR = Path(__file__).parent.parent / "credentials"
@@ -63,13 +64,11 @@ def _build_credentials_from_env(lang: str = "en") -> Credentials | None:
       lang='en' → YOUTUBE_REFRESH_TOKEN_EN, fallback to YOUTUBE_REFRESH_TOKEN
     Returns None if no usable token is found.
     """
-    if lang == "ta":
-        refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN_TA", "")
-    else:
-        refresh_token = (
-            os.getenv("YOUTUBE_REFRESH_TOKEN_EN", "")
-            or os.getenv("YOUTUBE_REFRESH_TOKEN", "")
-        )
+    pub_cfg = load_channel(get_default_channel()).publisher
+    lang_keys = pub_cfg.env_keys.get(lang, pub_cfg.env_keys.get("en", {}))
+    token_key = lang_keys.get("refresh_token", f"YOUTUBE_REFRESH_TOKEN_{lang.upper()}")
+    fallback_key = lang_keys.get("refresh_token_fallback", "")
+    refresh_token = os.getenv(token_key, "") or (os.getenv(fallback_key, "") if fallback_key else "")
 
     client_id     = os.getenv("YOUTUBE_CLIENT_ID", "")
     client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "")
@@ -260,13 +259,11 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             "Run assembly_agent first."
         )
 
-    # Validate channel is configured — explicit per-lang to prevent cross-channel uploads
-    if lang == "ta":
-        channel_id = os.getenv("YOUTUBE_CHANNEL_ID_TA", "")
-        channel_id_key = "YOUTUBE_CHANNEL_ID_TA"
-    else:
-        channel_id = os.getenv("YOUTUBE_CHANNEL_ID_EN", "")
-        channel_id_key = "YOUTUBE_CHANNEL_ID_EN"
+    # Validate channel is configured — env keys from channel config
+    pub_cfg = load_channel(get_default_channel()).publisher
+    lang_keys = pub_cfg.env_keys.get(lang, pub_cfg.env_keys.get("en", {}))
+    channel_id_key = lang_keys.get("channel_id", f"YOUTUBE_CHANNEL_ID_{lang.upper()}")
+    channel_id = os.getenv(channel_id_key, "")
     if not channel_id or "your-" in channel_id:
         raise RuntimeError(
             f"{channel_id_key} not set in .env — cannot publish [{lang.upper()}]."
@@ -274,7 +271,8 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
 
     # Build video metadata from script
     scheduled_publish = script.get("scheduled_publish", "")
-    title       = script.get("youtube_title", f"AI Bytes EP{episode:02d} #Shorts")
+    brand = load_channel(get_default_channel()).brand
+    title       = script.get("youtube_title", brand.default_title_pattern.format(episode=episode))
     description = script.get("youtube_description", "")
     tags        = _parse_tags(script.get("tags", "#AIBytes"))
 
@@ -287,7 +285,7 @@ def run(script: dict, episode: int, week: int, lang: str = "en") -> dict:
             "title": title,
             "description": description,
             "tags": tags,
-            "categoryId": CATEGORY_ID,
+            "categoryId": load_channel(get_default_channel()).publisher.category_id,
             "defaultLanguage": lang,
             "defaultAudioLanguage": lang,
         },

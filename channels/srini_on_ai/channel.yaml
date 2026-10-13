@@ -119,6 +119,67 @@ visual:
   fingerprint_channel_key: "ai_bytes"
 
 
+# ── Domain (content subject matter) ──────────────────────────────────────────
+# Separates AI/tech-specific guidance from the generic engine capabilities.
+# Another channel in a different domain would have different guidance here,
+# ensuring no AI-specific content assumptions leak into non-AI channels.
+
+domain:
+  id: ai_technology
+  description: >-
+    AI and machine learning concepts explained to developers and founders.
+  content_guidance: |
+    DOMAIN-SPECIFIC TOPIC ROUTING:
+    Choose diagram_type="token" when the topic involves:
+    - Tokenization, tokens, context window, vocabulary, embeddings, text processing, or NLP —
+      anything about how raw text gets split/counted/represented as discrete units.
+    This takes priority over "sketch" whenever the concept is best shown as one example
+    sentence breaking apart into token boxes, rather than a multi-component pipeline diagram.
+
+    Choose diagram_type="sketch" when the topic involves:
+    - A process with 3-6 distinct steps that connect to each other (not just a linear list —
+      steps that branch, merge, or feed into a shared destination).
+    - Any topic containing words: training, backpropagation, gradient, attention, transformer,
+      neural network, RLHF.
+    - Whenever a flow diagram would benefit from showing data transformations between named
+      components (e.g. text -> tokens -> embeddings -> model), prefer "sketch" over "flow" so
+      the transformation between each node is visible.
+    Do not default to "flow", "hub_spoke", or the other types out of habit — check this routing
+    list first. Only fall back to the other diagram types when none of the above conditions apply.
+
+    DOMAIN-SPECIFIC DIAGRAM ASSOCIATIONS:
+    hub_spoke   → MCP Protocol, AI Agents
+    cluster     → Embeddings
+    split_compare → Hallucination
+    dial        → Temperature parameter
+    bar_chart   → Few-shot prompting, LLM evaluation
+    side_by_side → Local LLMs, Fine-tuning vs RAG
+    flow        → RAG, Chain of Thought, Second Brain
+    sketch      → Training, Backpropagation, Attention, Transformers, Neural networks, RLHF
+    token       → Tokenization, context window, vocabulary, embeddings, NLP
+
+    DOMAIN-SPECIFIC THEME ASSOCIATIONS:
+    - danger:    problems, errors, hallucinations, risks
+    - calm:      organisation, productivity, clarity, memory
+    - creative:  prompting, ideas, writing, generation
+    - future:    agents, automation, next-gen AI, robotics
+    - technical: databases, architecture, code, vectors, search
+    - energy:    general AI concepts, exciting breakthroughs
+  visual_guidance: |
+    DOMAIN-SPECIFIC VISUAL RULES:
+    - Avoid default humanoid/robot imagery for every AI topic — vary visual metaphors.
+    - AI-specific domain components available: TokenScene (text→token boxes→IDs),
+      TokenStreamScene (tokens generate left-to-right), ContextWindowScene (rectangle fills
+      with chunks), DocumentRetrievalScene (card fan→relevant items travel),
+      CodeExecutionScene (code runs line-by-line).
+    - Use these domain components when the AI concept semantically requires them, not as
+      defaults for all topics.
+    - Technical AI processes (training loops, inference pipelines, attention mechanisms) benefit
+      from NATIVE mode with FlowScene/PipelineScene/DataFlowScene.
+    - Abstract AI concepts (intelligence, creativity, emergence) benefit from GENERATED mode
+      with editorial metaphor imagery.
+
+
 # ── Publisher (YouTube) ──────────────────────────────────────────────────────
 
 publisher:

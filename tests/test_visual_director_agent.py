@@ -300,7 +300,7 @@ def test_prompt_has_no_preferred_duration():
 
 
 def test_allowed_range_unchanged():
-    assert (vda.TARGET_MIN_SECONDS, vda.TARGET_MAX_SECONDS) == (45.0, 60.0)
+    assert (vda._target_min_seconds(), vda._target_max_seconds()) == (45.0, 60.0)
 
 
 def test_duration_decision_required():

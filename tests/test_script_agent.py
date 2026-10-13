@@ -125,14 +125,14 @@ def test_validate_rejects_wrong_slide_count():
 
 
 def test_validate_rejects_long_hook():
-    bad = {**MINIMAL_SCRIPT, "hook": "one two three four five six seven eight nine ten eleven"}
-    with pytest.raises(ValueError, match="10"):
+    bad = {**MINIMAL_SCRIPT, "hook": "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"}
+    with pytest.raises(ValueError, match="15"):
         script_agent._validate(bad, 1)
 
 
 def test_validate_rejects_short_voiceover():
     bad = {**MINIMAL_SCRIPT, "voiceover": "Too short."}
-    with pytest.raises(ValueError, match="150"):
+    with pytest.raises(ValueError, match="140"):
         script_agent._validate(bad, 1)
 
 
@@ -419,8 +419,7 @@ def test_system_prompt_data_routing_mentions_subtypes():
 def test_system_prompt_diagram_guide_lists_data_type():
     prompt = script_agent._build_system_prompt("en")
     assert "DIAGRAM GUIDE" in prompt
-    idx = prompt.index("DIAGRAM GUIDE")
-    assert "data        →" in prompt[idx:]
+    assert 'diagram_type="data"' in prompt
 
 
 def test_validate_diagram_spec_accepts_data_type():
@@ -552,8 +551,8 @@ def test_system_prompt_sketch_no_longer_lists_tokenization_keyword():
     """Tokenization now routes to 'token', not 'sketch' — the sketch routing
     bullet list must not claim it as a sketch trigger anymore."""
     prompt = script_agent._build_system_prompt("en")
-    routing_start = prompt.index('DIAGRAM TYPE ROUTING — choose diagram_type="sketch"')
-    routing_end = prompt.index("Choose diagram_type=\"data\"")
+    routing_start = prompt.index('diagram_type="sketch"')
+    routing_end = prompt.index("Do not default to")
     routing_section = prompt[routing_start:routing_end]
     assert "tokenization" not in routing_section.lower()
 
@@ -596,10 +595,10 @@ def test_validate_ta_rejects_long_voiceover():
 
 
 def test_validate_en_still_rejects_ta_length_voiceover():
-    # 110 words passes for Tamil but must fail for English
+    # 110 words passes for Tamil but must fail for English (min 140)
     short_for_en = " ".join(["word"] * 110)
     bad = {**MINIMAL_SCRIPT, "voiceover": short_for_en}
-    with pytest.raises(ValueError, match="150"):
+    with pytest.raises(ValueError, match="140"):
         script_agent._validate(bad, 1, lang="en")
 
 
@@ -621,18 +620,19 @@ def test_system_prompt_contains_diagram_guide():
 
 def test_system_prompt_contains_sketch_routing_section():
     prompt = script_agent._build_system_prompt("en")
-    assert "DIAGRAM TYPE ROUTING" in prompt
-    assert "sketch" in prompt
+    assert "TOPIC ROUTING" in prompt
+    assert 'diagram_type="sketch"' in prompt
 
 
 def test_system_prompt_sketch_routing_lists_keywords():
     prompt = script_agent._build_system_prompt("en")
+    prompt_lower = prompt.lower()
     for keyword in (
         "tokenization", "training", "backpropagation", "gradient",
         "attention", "transformer", "neural network", "context window",
-        "embedding", "RLHF",
+        "embedding", "rlhf",
     ):
-        assert keyword in prompt, f"missing routing keyword: {keyword}"
+        assert keyword in prompt_lower, f"missing routing keyword: {keyword}"
 
 
 def test_system_prompt_sketch_has_worked_example():

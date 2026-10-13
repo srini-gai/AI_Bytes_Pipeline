@@ -19,9 +19,11 @@ interface CTASceneProps {
   videoSrc?: string;
   theme?: SceneTheme;
   artDirection?: ArtDirection;
+  /** CTA button text — when absent the CTA button is hidden */
+  ctaText?: string;
 }
 
-export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme, artDirection: ad}) => {
+export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme, artDirection: ad, ctaText}) => {
   const frame = useCurrentFrame();
   const t = theme ?? DEFAULT_THEME;
 
@@ -118,7 +120,8 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme, ar
           {takeaway}
         </div>
 
-        {/* Follow Srini on AI — theme gradient pill button */}
+        {/* CTA pill button — hidden when no ctaText provided */}
+        {ctaText && (
         <div
           style={{
             opacity: btnOpacity,
@@ -135,8 +138,9 @@ export const CTAScene: React.FC<CTASceneProps> = ({takeaway, videoSrc, theme, ar
             textAlign: 'center' as const,
           }}
         >
-          Follow for practical AI, daily
+          {ctaText}
         </div>
+        )}
       </AbsoluteFill>
     </AbsoluteFill>
   );

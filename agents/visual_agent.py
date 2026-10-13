@@ -32,6 +32,7 @@ import av
 
 from agents import visual_director_agent
 from agents.cache_identity import json_identity, quarantine_stale, read_meta, write_meta
+from engine.channel_config import load_channel, get_default_channel
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +55,8 @@ FFMPEG = "ffmpeg"
 # landscape (16:9) source clips.
 PORTRAIT_SCALE_FILTER = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
 
-_DEFAULT_THEME = {
-    "name": "energy",
-    "accent": "#a78bfa",
-    "accent2": "#34d399",
-    "overlay": "rgba(5,5,16,0.35)",
-    "pexels_mood": "purple neon dark",
-}
+def _default_theme() -> dict:
+    return load_channel(get_default_channel()).visual.default_theme
 
 
 def _episode_dir(episode: int, week: int) -> Path:
@@ -556,6 +552,7 @@ def _build_props(
         }
         for s in script.get("slides", [])
     ]
+    cfg = load_channel(get_default_channel())
     props: dict = {
         "episode": script.get("episode", "01"),
         "topic": script.get("topic", ""),
@@ -565,7 +562,10 @@ def _build_props(
         "voiceover": script.get("voiceover", ""),
         "takeaway": script.get("takeaway", ""),
         "tags": script.get("tags", ""),
-        "theme": script.get("theme", _DEFAULT_THEME),
+        "theme": script.get("theme", _default_theme()),
+        "channelName": cfg.name,
+        "logoPath": cfg.brand.logo or None,
+        "ctaText": cfg.brand.cta_text or None,
     }
     if storyboard:
         props["storyboard"] = storyboard
@@ -671,7 +671,7 @@ def _render(output_path: Path, props: dict, episode: int) -> None:
         cmd = [
             NPX, "remotion", "render",
             ENTRY_POINT,
-            "AIBytesReel",
+            load_channel(get_default_channel()).visual.remotion_composition_id,
             str(output_path.resolve()),
             f"--props={props_file}",
             "--codec", "h264",

@@ -116,21 +116,36 @@ VALID_COMPONENTS = {
     "AssetScene",
 }
 
-# ── Quality gate thresholds (unchanged from v3.2) ───────────────────────────
-
+# ── Quality gate thresholds ─────────────────────────────────────────────────
+# Global structural gates (not channel-specific)
 MIN_VISUAL_BEATS = 8
 MAX_TYPOGRAPHY_RATIO = 0.25
 MAX_CONSECUTIVE_SAME_LAYOUT = 2
 MIN_VISUAL_DEMONSTRATIONS = 3
 MIN_VISUAL_FIRST_SCORE = 80
-# Allowed production range. Neither end is a preferred/default length — the
-# planner chooses the total from content complexity, narration length, beat
-# density and readability (see _validate_duration_decision).
-TARGET_MIN_SECONDS = 45.0
-TARGET_MAX_SECONDS = 60.0
-MAX_HOOK_SECONDS = 4.0
-MAX_CTA_SECONDS = 3.0
 MAX_SCENE_SECONDS_WITHOUT_BEATS = 6.0
+
+def _visual_cfg() -> "engine.channel_config.VisualConfig":
+    return load_channel(get_default_channel()).visual
+
+# Channel-configurable duration/pacing — resolved at call time
+def _target_min_seconds() -> float:
+    return _visual_cfg().target_min_seconds
+
+def _target_max_seconds() -> float:
+    return _visual_cfg().target_max_seconds
+
+def _max_hook_seconds() -> float:
+    return _visual_cfg().max_hook_seconds
+
+def _max_cta_seconds() -> float:
+    return _visual_cfg().max_cta_seconds
+
+def _min_narration_wps() -> float:
+    return _visual_cfg().min_narration_wps
+
+def _max_narration_wps() -> float:
+    return _visual_cfg().max_narration_wps
 
 # Duration decision (v4.1)
 DURATION_RATIONALE_KEYS = (
@@ -139,10 +154,6 @@ DURATION_RATIONALE_KEYS = (
     "beat_density",
     "readability",
 )
-# Narration pacing sanity band (words per second of storyboard). Voice B
-# (speed 1.05) measured ~2.55 wps: 163 words ≈ 64s.
-MIN_NARRATION_WPS = 2.0
-MAX_NARRATION_WPS = 3.2
 # Pacing is only checked once the storyboard carries real narration
 MIN_WORDS_FOR_PACING_CHECK = 40
 DURATION_SUM_TOLERANCE_S = 12.0
@@ -1271,25 +1282,28 @@ def _validate_storyboard(
 
     # ── Total duration ────────────────────────────────────────────────────────
     total = sum(s.get("duration_seconds", 0) for s in scenes)
-    if voice_duration is None and not (TARGET_MIN_SECONDS <= total <= TARGET_MAX_SECONDS):
+    t_min, t_max = _target_min_seconds(), _target_max_seconds()
+    if voice_duration is None and not (t_min <= total <= t_max):
         violations.append(
-            f"Total duration {total:.1f}s outside {TARGET_MIN_SECONDS}–{TARGET_MAX_SECONDS}s"
+            f"Total duration {total:.1f}s outside {t_min}–{t_max}s"
         )
 
-    # ── CTA must be last and ≤ MAX_CTA_SECONDS ───────────────────────────────
+    # ── CTA must be last and ≤ channel max ───────────────────────────────────
     last = scenes[-1]
+    cta_max = _max_cta_seconds()
     if last.get("component") != "CTAScene":
         violations.append("Last scene must be CTAScene")
-    elif last.get("duration_seconds", 999) > MAX_CTA_SECONDS:
+    elif last.get("duration_seconds", 999) > cta_max:
         violations.append(
-            f"CTA scene is {last['duration_seconds']}s — must be ≤{MAX_CTA_SECONDS}s"
+            f"CTA scene is {last['duration_seconds']}s — must be ≤{cta_max}s"
         )
 
-    # ── Hook must be ≤ MAX_HOOK_SECONDS ──────────────────────────────────────
+    # ── Hook must be ≤ channel max ───────────────────────────────────────────
     first = scenes[0]
-    if first.get("scene_type") == "HOOK" and first.get("duration_seconds", 0) > MAX_HOOK_SECONDS:
+    hook_max = _max_hook_seconds()
+    if first.get("scene_type") == "HOOK" and first.get("duration_seconds", 0) > hook_max:
         violations.append(
-            f"HOOK scene is {first['duration_seconds']}s — must be ≤{MAX_HOOK_SECONDS}s"
+            f"HOOK scene is {first['duration_seconds']}s — must be ≤{hook_max}s"
         )
 
     # ── Schema completeness ───────────────────────────────────────────────────
@@ -1479,17 +1493,18 @@ def _validate_duration_decision(
         else sum(len(str(s.get("narration", "")).split()) for s in scenes)
     )
     denom = declared if declared and declared > 0 else total
+    max_wps, min_wps = _max_narration_wps(), _min_narration_wps()
     if words >= MIN_WORDS_FOR_PACING_CHECK and denom > 0:
         wps = words / denom
-        if wps > MAX_NARRATION_WPS:
+        if wps > max_wps:
             violations.append(
                 f"DURATION_TOO_SHORT_FOR_NARRATION: {words} words in {denom:.1f}s "
-                f"({wps:.2f} w/s > {MAX_NARRATION_WPS}) — lengthen or tighten the script"
+                f"({wps:.2f} w/s > {max_wps}) — lengthen or tighten the script"
             )
-        elif wps < MIN_NARRATION_WPS:
+        elif wps < min_wps:
             violations.append(
                 f"DURATION_TOO_LONG_FOR_NARRATION: {words} words in {denom:.1f}s "
-                f"({wps:.2f} w/s < {MIN_NARRATION_WPS}) — shorten the storyboard"
+                f"({wps:.2f} w/s < {min_wps}) — shorten the storyboard"
             )
     return violations
 
@@ -1761,10 +1776,22 @@ def run(
                 f"EP{episode:02d} — Visual Director v4 Claude call (attempt {attempt}/3)"
             )
 
+            ch_cfg = load_channel(get_default_channel())
+            sys_prompt = _SYSTEM_PROMPT.replace(
+                '"Srini on AI"',
+                f'"{ch_cfg.name}"',
+            )
+            if ch_cfg.domain.visual_guidance.strip():
+                sys_prompt += (
+                    "\n\n══════════════════════════════════════════════════════\n"
+                    "DOMAIN VISUAL GUIDANCE\n"
+                    "══════════════════════════════════════════════════════\n"
+                    + ch_cfg.domain.visual_guidance.strip()
+                )
             response = client.messages.create(
                 model=MODEL,
                 max_tokens=16000,
-                system=_SYSTEM_PROMPT,
+                system=sys_prompt,
                 messages=[{"role": "user", "content": user_msg}],
             )
 
