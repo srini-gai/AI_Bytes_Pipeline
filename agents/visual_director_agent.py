@@ -885,28 +885,40 @@ The viewer with sound off must understand the core idea from animation alone.
 You must follow this planning order. Do NOT start from component selection:
 
   1. Visual Thesis — core concept, metaphor, continuity object, transformation journey
-  2. Claim Classification — classify every concept/claim as FACTUAL_EXACT, ILLUSTRATIVE, or VISUAL_METAPHOR
-  3. Conceptual Beat Decomposition — intellectual beats, not just narration sentences
-  4. Physical Visual Actions — use meaningful action verbs (split, merge, transform, etc.)
-  5. Continuity Object — carry one object through scenes as chapters of one journey
-  6. Visual Grammar — what to use, what to deliberately avoid
-  7. Art Director — explicitly select the episode's visual world (see ART DIRECTOR)
-  8. Modality Intent — for each beat, decide what it SEMANTICALLY needs: process flow,
+  2. EPISODE CREATIVE CONCEPT — before any component or mode selection, define the
+     episode-level creative concept (see EPISODE CREATIVE CONCEPT section). This is the
+     creative identity of the episode: its visual premise, visual world, progression arc,
+     hero visual moments, and emotional tone. This concept must be DISTINGUISHABLE from
+     recent approved episodes — changing component names alone is not sufficient.
+  3. Claim Classification — classify every concept/claim as FACTUAL_EXACT, ILLUSTRATIVE, or VISUAL_METAPHOR
+  4. Conceptual Beat Decomposition — intellectual beats, not just narration sentences
+  5. Physical Visual Actions — use meaningful action verbs (split, merge, transform, etc.)
+  6. Continuity Object — carry one object through scenes as chapters of one journey
+  7. Visual Grammar — what to use, what to deliberately avoid
+  8. Art Director — explicitly select the episode's visual world (see ART DIRECTOR)
+  9. Generated Opportunity Evaluation — for each beat, evaluate the strongest treatment:
+     NATIVE explanatory motion, GENERATED image/video/editorial, or TYPOGRAPHIC.
+     Consider: semantic clarity, emotional/cinematic potential, explanatory precision,
+     novelty relative to recent episodes, visual impact, generation cost.
+     If a beat has strong cinematic or metaphorical potential, fal.ai GENERATED
+     treatment should be considered BEFORE defaulting to a native diagram.
+     (see GENERATED OPPORTUNITY EVALUATION section)
+  10. Modality Intent — for each beat, decide what it SEMANTICALLY needs: process flow,
      data diagram, editorial metaphor, conceptual imagery, code walkthrough, comparison.
      This is about WHAT the beat communicates, not which component renders it.
-  9. Diversity Context — compare your modality intent and family pattern against the
+  11. Diversity Context — compare your modality intent and family pattern against the
      RECENT EPISODE FINGERPRINTS below. The fingerprints show each prior episode's
      COMPONENT FAMILIES (TYPOGRAPHY, FLOW_PIPELINE, DIAGRAM, TRANSFORMATION, COMPARISON,
      SEQUENCE, DATA, DOMAIN, GENERATED_EDITORIAL, TAKEAWAY, CTA). If your plan produces
      an excessively similar family sequence to the most recent approved episode, alter
      your approach — different families, different modality choices, different metaphors.
      Visual novelty is a real planning objective; the viewer watches these consecutively.
-  10. Visual Mode — for each beat, decide NATIVE or GENERATED (see VISUAL MODE).
+  12. Visual Mode — for each beat, decide NATIVE or GENERATED (see VISUAL MODE).
       Informed by modality intent AND diversity context. Do NOT let component
       availability determine visual mode — decide what the beat NEEDS first.
-  11. Scene Plan — duration, pacing, structure
-  12. Component Mapping — ONLY NOW choose implementation components
-  13. Renderability — can current components render each beat?
+  13. Scene Plan — duration, pacing, structure
+  14. Component Mapping — ONLY NOW choose implementation components
+  15. Renderability — can current components render each beat?
 
 ══════════════════════════════════════════════════════
 ART DIRECTOR (v4 — mandatory, no default)
@@ -969,6 +981,69 @@ STRUCTURE (proportions of the chosen total, not fixed timestamps):
   WHY IT MATTERS  — concrete real-world usage beats
   TAKEAWAY        — compress the lesson into one visual moment
   CTA             — always last, ≤3s
+
+══════════════════════════════════════════════════════
+EPISODE CREATIVE CONCEPT (required — before component selection)
+══════════════════════════════════════════════════════
+Before choosing components or visual modes, define an episode-level creative concept:
+
+  "episode_creative_concept": {
+    "visual_premise": "<one line — the creative idea that makes this episode visually distinct>",
+    "visual_world": "<the environment/atmosphere this concept lives in>",
+    "progression_arc": "<how the visual narrative progresses across the episode>",
+    "hero_moments": ["<2-4 specific moments that define the episode's visual identity>"],
+    "emotional_tone": "<the feeling the visuals create — e.g. tension, clarity, wonder>",
+    "recent_treatments_avoided": ["<specific visual approaches from recent episodes deliberately not used>"],
+    "generated_opportunities": ["<beats where cinematic/editorial/generated visuals would be strongest>"],
+    "native_strengths": ["<beats where deterministic native explanation is clearly superior>"]
+  }
+
+This concept is the creative identity of the episode. It must be DISTINGUISHABLE from
+recent approved episodes. Changing component names alone is not sufficient. Changing
+palette alone is not sufficient. The episode should have a distinct visual idea
+appropriate to its subject.
+
+══════════════════════════════════════════════════════
+GENERATED OPPORTUNITY EVALUATION (required per beat)
+══════════════════════════════════════════════════════
+For each narration clause / visual beat, evaluate the strongest treatment:
+
+  NATIVE — Remotion component renders deterministic explanatory motion.
+    Best for: process flow, graph, counter, comparison, pipeline, timeline,
+    data viz, architecture diagram, code execution, precise mechanism.
+
+  GENERATED — fal.ai editorial/cinematic image or video asset (AssetScene).
+    Best for: editorial metaphor, environment, real-world analogy, artistic
+    interpretation, conceptual imagery, emotional/cinematic moment.
+
+  TYPOGRAPHIC — Text-dominant kinetic treatment.
+    Best for: hook punch, key contrast, takeaway compression, CTA.
+
+For each beat, consider (in order):
+  1. Semantic clarity — does the beat explain a mechanism or evoke a concept?
+  2. Emotional/cinematic potential — would a generated image land harder?
+  3. Explanatory precision — does the beat need exact, repeatable animation?
+  4. Novelty relative to recent episodes — is this visual grammar overused?
+  5. Visual impact — which treatment creates the strongest single frame?
+  6. Generation cost — fal.ai has a budget; spend it on hero moments.
+
+Do NOT choose NATIVE simply because a matching Remotion component exists.
+When a beat has strong cinematic/metaphorical potential, GENERATED should be
+considered before defaulting to a native diagram.
+
+Include per-scene "treatment_evaluation" in the storyboard:
+  "treatment_evaluation": {
+    "considered": "<NATIVE | GENERATED | TYPOGRAPHIC>",
+    "chosen": "<NATIVE | GENERATED | TYPOGRAPHIC>",
+    "reason": "<why this treatment is strongest for this beat>"
+  }
+
+IMPORTANT: If the episode contains multiple strong GENERATED opportunities and
+you still select 100% NATIVE, you MUST include a "native_justification" field
+explaining why NATIVE is genuinely the best choice for every single beat.
+
+No forced quotas: 100% NATIVE is valid when truly appropriate. 100% GENERATED
+is valid for the right content. But the decision must be DELIBERATE, not default.
 
 ══════════════════════════════════════════════════════
 VISUAL MODE — per-beat production decision (required)
@@ -1131,6 +1206,17 @@ Storyboard FAILS if visual_first_score < 80.
 OUTPUT FORMAT — return ONLY this JSON, no fences
 ══════════════════════════════════════════════════════
 {
+  "episode_creative_concept": {
+    "visual_premise": "<one line — the creative idea that makes this episode visually distinct>",
+    "visual_world": "<the environment/atmosphere this concept lives in>",
+    "progression_arc": "<how the visual narrative progresses across the episode>",
+    "hero_moments": ["<2-4 specific moments that define the episode's visual identity>"],
+    "emotional_tone": "<the feeling the visuals create>",
+    "recent_treatments_avoided": ["<specific visual approaches from recent episodes deliberately not used>"],
+    "generated_opportunities": ["<beats where GENERATED treatment would be strongest>"],
+    "native_strengths": ["<beats where NATIVE treatment is clearly superior>"],
+    "distinguishing_concept": "<one sentence: how this episode is visually different from recent approved episodes>"
+  },
   "visual_thesis": {
     "core_concept": "<one line>",
     "primary_metaphor": "<one line>",
@@ -1179,6 +1265,15 @@ OUTPUT FORMAT — return ONLY this JSON, no fences
     "dominant_primitives": ["<list>"],
     "visual_world": "<description>"
   },
+  "generated_opportunity_evaluation": [
+    {
+      "scene_id": <int>,
+      "considered_treatment": "<NATIVE | GENERATED | TYPOGRAPHIC>",
+      "chosen_treatment": "<NATIVE | GENERATED | TYPOGRAPHIC>",
+      "reason": "<why this treatment wins for this beat>"
+    }
+  ],
+  "native_justification": "<required ONLY if 100% NATIVE despite generated opportunities — explain why>",
   "storyboard": [<array of scene objects>],
   "total_duration_seconds": <float>,
   "visual_summary": "<one line: the visual journey>",
@@ -1428,6 +1523,91 @@ def _validate_storyboard(
                 )
 
     return violations
+
+
+def _validate_creative_concept(
+    concept: object,
+    fingerprints: dict,
+    channel: str | None = None,
+) -> list[str]:
+    """Validate the Episode Creative Concept. Returns violation strings."""
+    if not isinstance(concept, dict) or not concept:
+        return [
+            "CREATIVE_CONCEPT_MISSING: episode_creative_concept is required — "
+            "define the creative identity before choosing components"
+        ]
+    violations: list[str] = []
+    required_keys = (
+        "visual_premise", "progression_arc", "hero_moments",
+        "emotional_tone", "distinguishing_concept",
+    )
+    for key in required_keys:
+        val = concept.get(key)
+        if not val or (isinstance(val, str) and not val.strip()):
+            violations.append(f"CREATIVE_CONCEPT_INCOMPLETE: {key} is empty")
+        elif isinstance(val, list) and len(val) == 0:
+            violations.append(f"CREATIVE_CONCEPT_INCOMPLETE: {key} is empty list")
+    hero = concept.get("hero_moments", [])
+    if isinstance(hero, list) and len(hero) < 2:
+        violations.append(
+            "CREATIVE_CONCEPT_INCOMPLETE: hero_moments needs at least 2 entries"
+        )
+    return violations
+
+
+def _validate_generated_opportunities(
+    scenes: list[dict],
+    concept: dict | None,
+    gen_eval: list | None,
+) -> list[str]:
+    """
+    When 100% NATIVE despite multiple strong GENERATED opportunities,
+    require explicit justification. Returns violation strings.
+    """
+    if not scenes:
+        return []
+
+    native_count = sum(1 for s in scenes if s.get("visual_mode") == "NATIVE")
+    gen_count = sum(1 for s in scenes if s.get("visual_mode") == "GENERATED")
+    total = native_count + gen_count
+
+    if gen_count > 0 or total == 0:
+        return []
+
+    gen_affinity_types = {"METAPHOR", "SIMULATION", "ZOOM", "DEMONSTRATION"}
+    affinity_scenes = [
+        s for s in scenes
+        if s.get("scene_type") in gen_affinity_types
+        and s.get("scene_type") != "HOOK"
+        and s.get("component") not in {"TakeawayScene", "CTAScene"}
+    ]
+
+    if len(affinity_scenes) < 2:
+        return []
+
+    gen_opps = []
+    if isinstance(concept, dict):
+        gen_opps = concept.get("generated_opportunities", [])
+
+    if len(gen_opps) >= 2:
+        native_just = None
+        if isinstance(concept, dict):
+            native_just = concept.get("native_justification")
+        if isinstance(gen_eval, list):
+            for entry in gen_eval:
+                if isinstance(entry, dict) and entry.get("native_justification"):
+                    native_just = entry["native_justification"]
+                    break
+
+        if not native_just:
+            return [
+                f"GENERATED_OPPORTUNITY_UNJUSTIFIED: episode has {len(gen_opps)} "
+                f"identified GENERATED opportunities and {len(affinity_scenes)} "
+                f"high-affinity scenes but selects 100% NATIVE — add "
+                f"native_justification explaining why NATIVE is genuinely "
+                f"the best choice for every beat"
+            ]
+    return []
 
 
 def _validate_novelty(
@@ -1705,28 +1885,31 @@ def run(
         f"══════════════════════════════════════════════════════\n"
         f"INSTRUCTIONS\n"
         f"══════════════════════════════════════════════════════\n"
-        f"Follow the v4.2 Creative Visual Reasoning pipeline:\n"
+        f"Follow the v4.3 Creative Visual Reasoning pipeline:\n"
         f"1. First think: what visual story makes this concept understandable muted?\n"
         f"2. Define your Visual Thesis before choosing any components\n"
-        f"3. Classify every claim as FACTUAL_EXACT / ILLUSTRATIVE / VISUAL_METAPHOR\n"
-        f"4. Decompose into conceptual beats with physical visual actions\n"
-        f"5. Define continuity object and its transformation journey\n"
-        f"6. Art Director: explicitly select art_direction from the registered worlds, "
+        f"3. EPISODE CREATIVE CONCEPT: define the episode's creative identity — "
+        f"visual premise, visual world, progression arc, hero moments, emotional tone, "
+        f"recent treatments to avoid, GENERATED opportunities, NATIVE strengths, and "
+        f"a distinguishing_concept sentence. This must be DIFFERENT from recent episodes.\n"
+        f"4. Classify every claim as FACTUAL_EXACT / ILLUSTRATIVE / VISUAL_METAPHOR\n"
+        f"5. Decompose into conceptual beats with physical visual actions\n"
+        f"6. Define continuity object and its transformation journey\n"
+        f"7. Art Director: explicitly select art_direction from the registered worlds, "
         f"justified by topic semantics, visual thesis, continuity object, attention "
         f"pattern and recent fingerprints (no default world)\n"
-        f"7. Modality Intent: for each beat, decide what it SEMANTICALLY NEEDS "
-        f"(process flow, diagram, editorial metaphor, data viz, code walkthrough, "
-        f"comparison, etc.) — before choosing any component\n"
-        f"8. Diversity Context: compare your modality intent and family pattern against "
-        f"the recent episode fingerprints. The fingerprints show COMPONENT FAMILIES. "
-        f"If your plan is excessively similar to the most recent approved episode, "
-        f"alter your approach for visual novelty. Viewers watch these consecutively.\n"
-        f"9. Visual Mode: decide NATIVE or GENERATED per beat based on semantic need "
-        f"AND diversity context. Do NOT let component availability determine mode.\n"
-        f"10. ONLY THEN map to implementation components (GENERATED -> AssetScene, "
-        f"NATIVE -> Remotion component)\n"
-        f"11. Include claim_type in each beat\n"
-        f"12. Compute visual_complexity score\n\n"
+        f"8. GENERATED OPPORTUNITY EVALUATION: for each beat, evaluate whether NATIVE, "
+        f"GENERATED, or TYPOGRAPHIC is the strongest treatment. Consider semantic "
+        f"clarity, cinematic potential, explanatory precision, novelty, visual impact, "
+        f"and generation cost. Do NOT default to NATIVE because a component exists. "
+        f"Report per-scene in generated_opportunity_evaluation.\n"
+        f"9. Modality Intent: for each beat, decide what it SEMANTICALLY NEEDS\n"
+        f"10. Diversity Context: compare against recent episode fingerprints\n"
+        f"11. Visual Mode: decide NATIVE or GENERATED per beat\n"
+        f"12. ONLY THEN map to implementation components\n"
+        f"13. Include claim_type in each beat and treatment_evaluation per scene\n"
+        f"14. Compute visual_complexity score\n"
+        f"15. If 100% NATIVE despite GENERATED opportunities, include native_justification\n\n"
         f"Constraints:\n"
         + (
             f"- LOCKED VOICE DURATION: {voice_duration:.1f}s. Scene durations MUST sum "
@@ -1748,8 +1931,9 @@ def run(
         f"- Every scene > 4s needs ≥2 beats, > 6s needs ≥3 beats\n"
         f"- visual_first_score must be ≥80\n"
         f"- Every numeric viz scene must include source_type\n"
-        f"- Return the COMPLETE JSON output including visual_thesis, art_direction, "
-        f"duration_decision, novelty_assessment, visual_fingerprint, storyboard, "
+        f"- Return the COMPLETE JSON output including episode_creative_concept, "
+        f"visual_thesis, art_direction, duration_decision, novelty_assessment, "
+        f"generated_opportunity_evaluation, visual_fingerprint, storyboard, "
         f"and visual_complexity\n\n"
         f"CRITICAL: Your ENTIRE response must be a single valid JSON object. "
         f"No markdown, no explanation, no code fences. Start with {{ and end with }}.\n"
@@ -1820,6 +2004,8 @@ def run(
             novelty_assessment = data.get("novelty_assessment", {})
             visual_fingerprint = data.get("visual_fingerprint", {})
             art_direction = data.get("art_direction")
+            episode_creative_concept = data.get("episode_creative_concept")
+            generated_opportunity_evaluation = data.get("generated_opportunity_evaluation")
 
             # Auto-repair common model omissions before validation
             for sc in scenes:
@@ -1885,6 +2071,22 @@ def run(
             novelty_violations = _validate_novelty(novelty_assessment)
             if novelty_violations:
                 violations.extend(novelty_violations)
+
+            # Validate episode creative concept
+            concept_violations = _validate_creative_concept(
+                episode_creative_concept, prior_fingerprints
+            )
+            violations.extend(concept_violations)
+
+            # Validate generated opportunity justification
+            native_justification = data.get("native_justification")
+            if isinstance(episode_creative_concept, dict) and native_justification:
+                episode_creative_concept["native_justification"] = native_justification
+            gen_opp_violations = _validate_generated_opportunities(
+                scenes, episode_creative_concept,
+                generated_opportunity_evaluation,
+            )
+            violations.extend(gen_opp_violations)
 
             # ── Diversity gate (v4.2) — component-family similarity ──────────
             # Runs BEFORE paid asset generation. ONE bounded re-plan on failure,
@@ -1999,10 +2201,12 @@ def run(
 
             result_data = {
                 "topic": script.get("topic", ""),
+                "episode_creative_concept": episode_creative_concept,
                 "art_direction": art_direction,
                 "duration_decision": duration_decision,
                 "visual_thesis": visual_thesis,
                 "novelty_assessment": novelty_assessment,
+                "generated_opportunity_evaluation": generated_opportunity_evaluation,
                 "visual_fingerprint": visual_fingerprint,
                 "diversity_gate": diversity_result,
                 "storyboard": scenes,
@@ -2039,6 +2243,8 @@ def run(
                 "visual_thesis": visual_thesis,
                 "visual_fingerprint": visual_fingerprint,
                 "art_direction": art_direction,
+                "episode_creative_concept": episode_creative_concept,
+                "generated_opportunity_evaluation": generated_opportunity_evaluation,
                 "novelty_assessment": novelty_assessment,
                 "diversity_gate": diversity_result,
                 "violations": violations,

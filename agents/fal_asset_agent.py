@@ -15,11 +15,11 @@ import base64
 import logging
 import os
 import time
-import urllib.request
 from pathlib import Path
 from typing import Any
 
 import fal_client
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -88,6 +88,27 @@ def _episode_dir(episode: int, week: int) -> Path:
     return d
 
 
+def _download_asset(
+    url: str, output_path: Path, asset_id: str, timeout: int = 60, retries: int = 3,
+) -> Path:
+    """Download a generated asset URL with retries. Never re-generates."""
+    for attempt in range(1, retries + 1):
+        try:
+            logger.info(f"fal download [{asset_id}] attempt {attempt}/{retries}")
+            resp = httpx.get(url, follow_redirects=True, timeout=timeout)
+            resp.raise_for_status()
+            output_path.write_bytes(resp.content)
+            kb = output_path.stat().st_size / 1024
+            logger.info(f"fal download [{asset_id}] saved: {output_path.name} ({kb:.0f} KB)")
+            return output_path
+        except Exception as e:
+            logger.warning(f"fal download [{asset_id}] attempt {attempt} failed: {e}")
+            if attempt == retries:
+                raise
+            time.sleep(2 ** attempt)
+    raise RuntimeError("unreachable")
+
+
 def generate_image(
     prompt: str,
     output_path: Path,
@@ -95,41 +116,47 @@ def generate_image(
     size: dict[str, int] | None = None,
     retries: int = 3,
 ) -> tuple[Path, float]:
-    """Generate a still image. Returns (path, estimated_cost)."""
+    """Generate a still image. Returns (path, estimated_cost).
+
+    Generation and download have separate retry loops: a download failure
+    never triggers another paid generation call.
+    """
     _ensure_key()
     sz = size or IMAGE_SIZE_9_16
+    image_url: str | None = None
+    request_id: str = "unknown"
+    generation_calls = 0
 
     for attempt in range(1, retries + 1):
         try:
-            logger.info(
-                f"fal image gen [{asset_id}] attempt {attempt}/{retries} "
-                f"model={IMAGE_MODEL} size={sz['width']}x{sz['height']}"
-            )
-            result = fal_client.subscribe(
-                IMAGE_MODEL,
-                arguments={
-                    "prompt": prompt,
-                    "image_size": sz,
-                    "num_images": 1,
-                    "enable_safety_checker": False,
-                },
-            )
-            images = result.get("images", [])
-            if not images:
-                raise RuntimeError("fal returned no images")
+            if image_url is None:
+                logger.info(
+                    f"fal image gen [{asset_id}] attempt {attempt}/{retries} "
+                    f"model={IMAGE_MODEL} size={sz['width']}x{sz['height']}"
+                )
+                generation_calls += 1
+                result = fal_client.subscribe(
+                    IMAGE_MODEL,
+                    arguments={
+                        "prompt": prompt,
+                        "image_size": sz,
+                        "num_images": 1,
+                        "enable_safety_checker": False,
+                    },
+                )
+                images = result.get("images", [])
+                if not images:
+                    raise RuntimeError("fal returned no images")
+                image_url = images[0].get("url", "")
+                if not image_url:
+                    raise RuntimeError("fal returned image with no URL")
+                request_id = result.get("request_id", "unknown")
+                logger.info(
+                    f"fal image [{asset_id}] generated: request_id={request_id} "
+                    f"est_cost=${COST_PER_IMAGE:.2f} gen_calls={generation_calls}"
+                )
 
-            image_url = images[0].get("url", "")
-            if not image_url:
-                raise RuntimeError("fal returned image with no URL")
-
-            request_id = result.get("request_id", "unknown")
-            urllib.request.urlretrieve(image_url, str(output_path))
-            kb = output_path.stat().st_size / 1024
-            logger.info(
-                f"fal image [{asset_id}] saved: {output_path.name} "
-                f"({kb:.0f} KB) request_id={request_id} "
-                f"est_cost=${COST_PER_IMAGE:.2f}"
-            )
+            _download_asset(image_url, output_path, asset_id, timeout=60)
             return output_path, COST_PER_IMAGE
 
         except Exception as e:
@@ -148,7 +175,11 @@ def generate_video(
     asset_id: str = "",
     retries: int = 3,
 ) -> tuple[Path, float]:
-    """Generate a video clip via image-to-video. Returns (path, estimated_cost)."""
+    """Generate a video clip via image-to-video. Returns (path, estimated_cost).
+
+    Generation and download have separate retry loops: a download failure
+    never triggers another paid generation call.
+    """
     _ensure_key()
 
     with open(source_image_path, "rb") as f:
@@ -157,32 +188,38 @@ def generate_video(
     ext = source_image_path.suffix.lower()
     mime = "image/png" if ext == ".png" else "image/jpeg"
     data_uri = f"data:{mime};base64,{img_b64}"
+    video_url: str | None = None
+    generation_calls = 0
 
     for attempt in range(1, retries + 1):
         try:
-            logger.info(
-                f"fal video gen [{asset_id}] attempt {attempt}/{retries} "
-                f"model={VIDEO_MODEL} resolution=480p"
-            )
-            result = fal_client.subscribe(
-                VIDEO_MODEL,
-                arguments={
-                    "prompt": prompt,
-                    "image_url": data_uri,
-                },
-            )
-            video = result.get("video", {})
-            video_url = video.get("url", "")
-            if not video_url:
-                raise RuntimeError("fal returned video with no URL")
+            if video_url is None:
+                logger.info(
+                    f"fal video gen [{asset_id}] attempt {attempt}/{retries} "
+                    f"model={VIDEO_MODEL} resolution=480p"
+                )
+                generation_calls += 1
+                result = fal_client.subscribe(
+                    VIDEO_MODEL,
+                    arguments={
+                        "prompt": prompt,
+                        "image_url": data_uri,
+                    },
+                )
+                video = result.get("video", {})
+                video_url = video.get("url", "")
+                if not video_url:
+                    raise RuntimeError("fal returned video with no URL")
+                request_id = result.get("request_id", "unknown")
+                logger.info(
+                    f"fal video [{asset_id}] generated: request_id={request_id} "
+                    f"est_cost=${COST_PER_VIDEO_480P:.2f} gen_calls={generation_calls}"
+                )
 
-            request_id = result.get("request_id", "unknown")
-            urllib.request.urlretrieve(video_url, str(output_path))
+            _download_asset(video_url, output_path, asset_id, timeout=120)
             size_mb = output_path.stat().st_size / (1024 * 1024)
             logger.info(
-                f"fal video [{asset_id}] saved: {output_path.name} "
-                f"({size_mb:.1f} MB) request_id={request_id} "
-                f"est_cost=${COST_PER_VIDEO_480P:.2f}"
+                f"fal video [{asset_id}] saved: {output_path.name} ({size_mb:.1f} MB)"
             )
             return output_path, COST_PER_VIDEO_480P
 

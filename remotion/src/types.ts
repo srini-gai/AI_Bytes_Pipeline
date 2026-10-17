@@ -143,18 +143,20 @@ export type DataSceneType = 'bars' | 'counter' | 'comparison';
 export interface DataBar {
   label: string;
   value: number;
-  maxValue: number;
+  maxValue?: number;
   color?: string;
 }
 
 export interface DataSpec {
   type: DataSceneType;
-  title: string;
+  title?: string;
   bars?: DataBar[];
+  items?: DataBar[];
   counterValue?: number;
   counterLabel?: string;
   counterSuffix?: string;
   unit?: string;
+  gap_label?: string;
 }
 
 // ─── Token scene types (animated text tokenization) ────────────────────────────

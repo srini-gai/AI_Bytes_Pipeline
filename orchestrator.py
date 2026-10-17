@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from agents import (
     assembly_agent,
+    fal_asset_agent,
     publisher_agent,
     script_agent,
     visual_agent,
@@ -135,6 +136,103 @@ def _validate_config(langs: list[str]) -> list[str]:
     return issues
 
 
+def _build_fal_beat_map(storyboard: list[dict], script: dict) -> dict | None:
+    """Build a fal_asset_agent beat_map from GENERATED storyboard scenes.
+
+    Returns None if no GENERATED scenes exist.
+    """
+    gen_scenes = [
+        s for s in storyboard
+        if s.get("visual_mode") == "GENERATED"
+        and s.get("component") == "AssetScene"
+    ]
+    if not gen_scenes:
+        return None
+
+    hero_images: list[dict] = []
+    for scene in gen_scenes:
+        sid = scene.get("scene_id", 0)
+        asset_id = f"s{sid:02d}_hero"
+        visual_goal = scene.get("visual_goal", "")
+        narration = scene.get("narration", "")
+        topic = script.get("topic", "")
+        prompt = (
+            f"Cinematic editorial visual for AI explainer video: {visual_goal}. "
+            f"Context: {narration[:120]}. Topic: {topic}. "
+            f"Dark moody atmosphere, abstract, no text, no people, "
+            f"9:16 portrait, high quality, dramatic lighting."
+        )
+        hero_images.append({"id": asset_id, "prompt": prompt})
+
+    return {
+        "asset_plan": {
+            "hero_images": hero_images,
+            "hero_videos": [],
+        }
+    }
+
+
+def _stage_fal_assets(
+    assets: dict[str, str], storyboard: list[dict], episode: int,
+) -> dict[str, str]:
+    """Stage fal-generated assets into remotion/public/assets/ and return
+    {scene_id: public-relative path} for Remotion props injection."""
+    import shutil
+    remotion_assets = Path(__file__).parent / "remotion" / "public" / "assets"
+    remotion_assets.mkdir(parents=True, exist_ok=True)
+    staged: dict[str, str] = {}
+    for asset_id, abs_path in assets.items():
+        src = Path(abs_path)
+        if not src.exists():
+            continue
+        dst_name = f"ep{episode:02d}_{asset_id}{src.suffix}"
+        dst = remotion_assets / dst_name
+        shutil.copy2(str(src), str(dst))
+        scene_id_str = asset_id.split("_")[0]
+        staged[scene_id_str] = f"assets/{dst_name}"
+        logger.info(f"EP{episode:02d} staged fal asset {asset_id} -> remotion/public/{staged[scene_id_str]}")
+    return staged
+
+
+def _inject_asset_paths(storyboard: list[dict], staged: dict[str, str]) -> None:
+    """Set data.src on GENERATED AssetScene entries so Remotion can find them."""
+    for scene in storyboard:
+        if scene.get("visual_mode") != "GENERATED" or scene.get("component") != "AssetScene":
+            continue
+        sid = scene.get("scene_id", 0)
+        key = f"s{sid:02d}"
+        if key in staged:
+            if not isinstance(scene.get("data"), dict):
+                scene["data"] = {}
+            scene["data"]["src"] = staged[key]
+
+
+def _validate_narration_immutability(
+    storyboard: list[dict], canonical_voiceover: str,
+) -> list[str]:
+    """Check that storyboard narration clauses reconstruct the canonical voiceover.
+
+    Concatenates all scene narration fields in order and compares against
+    the canonical voiceover after whitespace normalization. Returns a list
+    of violation strings (empty = pass).
+    """
+    import re
+    clauses = [s.get("narration", "") for s in storyboard if s.get("narration", "").strip()]
+    reconstructed = " ".join(clauses)
+    normalize = lambda t: re.sub(r"\s+", " ", t.strip())
+    canonical_norm = normalize(canonical_voiceover)
+    reconstructed_norm = normalize(reconstructed)
+    if canonical_norm == reconstructed_norm:
+        return []
+    canonical_words = canonical_norm.split()
+    reconstructed_words = reconstructed_norm.split()
+    return [
+        f"NARRATION_MUTATION: storyboard narration ({len(reconstructed_words)} words) "
+        f"does not match canonical voiceover ({len(canonical_words)} words). "
+        f"Visual Director may segment but must not paraphrase, add, or remove words."
+    ]
+
+
 def _run_episode(
     episode: int, week: int, topic: str, langs: list[str],
     dry_run: bool, publish: bool = False,
@@ -200,7 +298,63 @@ def _run_episode(
             print(f"  FAIL {msg}")
             scripts.pop(lang, None)
 
-    # ── Phase 2.6: Duration gate ─────────────────────────────────────────────
+    # ── Phase 2.6: Bounded voice-duration recovery ───────────────────────────
+    # If voice > 60s, compress narration and re-synthesize (max 2 retries).
+    MAX_VOICE_RECOVERY_ATTEMPTS = 2
+    for lang in list(voice_durations.keys()):
+        dur = voice_durations[lang]
+        if dur <= 60.0:
+            continue
+        original_dur = dur
+        for recovery in range(1, MAX_VOICE_RECOVERY_ATTEMPTS + 1):
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] voice {dur:.1f}s > 60s — "
+                f"compression attempt {recovery}/{MAX_VOICE_RECOVERY_ATTEMPTS}"
+            )
+            print(
+                f"  RECOVER Voice {dur:.1f}s > 60s — compressing narration "
+                f"(attempt {recovery}/{MAX_VOICE_RECOVERY_ATTEMPTS})"
+            )
+            try:
+                scripts[lang] = script_agent.compress_narration(
+                    scripts[lang],
+                    measured_duration=dur,
+                    target_duration=55.0,
+                    episode=episode,
+                    week=week,
+                    lang=lang,
+                )
+                # Quarantine old voice so cache miss forces re-synthesis
+                ep_dir = OUTPUT_BASE / f"week_{week:02d}" / f"ep{episode:02d}"
+                old_voice = ep_dir / f"ep{episode:02d}_voice_{lang.upper()}.mp3"
+                old_hash = ep_dir / f"ep{episode:02d}_voice_hash_{lang.upper()}.txt"
+                for f in (old_voice, old_hash):
+                    if f.exists():
+                        f.unlink()
+                # Re-synthesize
+                out = voice_agent.run(scripts[lang], episode, week, lang=lang)
+                dur = out.get("duration", 0.0)
+                voice_durations[lang] = dur
+                logger.info(
+                    f"EP{episode:02d} [{lang.upper()}] recovery {recovery}: "
+                    f"new voice {dur:.1f}s"
+                )
+                print(f"  RECOVER New voice duration: {dur:.1f}s")
+                if dur <= 60.0:
+                    break
+            except Exception as e:
+                logger.error(
+                    f"EP{episode:02d} [{lang.upper()}] recovery {recovery} failed: {e}"
+                )
+                print(f"  FAIL Recovery attempt {recovery} failed: {e}")
+                break
+        result["voice_recovery"] = {
+            "original_duration": original_dur,
+            "final_duration": voice_durations.get(lang, 0),
+            "attempts": recovery if dur <= 60.0 else recovery,
+        }
+
+    # ── Phase 2.7: Duration gate ─────────────────────────────────────────────
     for lang in list(voice_durations.keys()):
         dur = voice_durations[lang]
         if dur < 45.0:
@@ -212,10 +366,10 @@ def _run_episode(
         elif dur > 60.0:
             logger.error(
                 f"EP{episode:02d} [{lang.upper()}] voice {dur:.1f}s > 60s — "
-                f"narration too long for Shorts format"
+                f"narration too long even after recovery"
             )
-            print(f"  FAIL Voice {dur:.1f}s > 60s — narration too long, needs rewrite")
-            msg = f"duration_gate [{lang.upper()}]: voice {dur:.1f}s exceeds 60s limit"
+            print(f"  FAIL Voice {dur:.1f}s > 60s — stopping before visual generation")
+            msg = f"duration_gate [{lang.upper()}]: voice {dur:.1f}s exceeds 60s limit after recovery"
             result["errors"].append(msg)
             scripts.pop(lang, None)
             voice_durations.pop(lang)
@@ -260,7 +414,27 @@ def _run_episode(
             msg = f"visual_director_agent [{lang.upper()}]: {e}"
             result["errors"].append(msg)
             logger.error(f"EP{episode:02d} {msg}")
-            print(f"  WARN {msg} — will fall back to legacy rendering")
+            print(f"  FAIL {msg} — CREATIVE_PLAN_QA_FAILED, stopping episode")
+
+    # ── Phase 3.25: Narration immutability gate (per lang) ───────────────────
+    for lang in list(storyboards.keys()):
+        voiceover = scripts.get(lang, {}).get("voiceover", "")
+        if not voiceover:
+            continue
+        nar_violations = _validate_narration_immutability(
+            storyboards[lang], voiceover,
+        )
+        if nar_violations:
+            for v in nar_violations:
+                logger.error(f"EP{episode:02d} [{lang.upper()}] {v}")
+                print(f"  FAIL {v}")
+            result["errors"].append(
+                f"narration_immutability [{lang.upper()}]: {nar_violations[0]}"
+            )
+            storyboards.pop(lang)
+        else:
+            logger.info(f"EP{episode:02d} [{lang.upper()}] narration immutability PASS")
+            print(f"  GATE Narration immutability — PASS")
 
     # ── Phase 3.5: Visual mode routing validation (per lang) ──────────────────
     # New manifests with planner-declared visual_mode: routing issues are a
@@ -311,6 +485,44 @@ def _run_episode(
             logger.warning(f"EP{episode:02d} [{lang.upper()}] routing validation skipped: {e}")
             print(f"  WARN routing validation skipped: {e}")
 
+    # ── Phase 4: fal.ai asset generation (for GENERATED scenes) ────────────────
+    fal_staged_assets: dict[str, str] = {}
+    reference_lang = "en" if "en" in scripts else next(iter(scripts), None)
+    if reference_lang and reference_lang in storyboards:
+        beat_map = _build_fal_beat_map(storyboards[reference_lang], scripts[reference_lang])
+        if beat_map is not None:
+            n_gen = len(beat_map["asset_plan"]["hero_images"])
+            print(f"\n[EP{episode:02d}] Generating {n_gen} fal.ai assets...")
+            try:
+                fal_result = fal_asset_agent.run(
+                    episode=episode, week=week, input_data={"beat_map": beat_map},
+                )
+                fal_staged_assets = _stage_fal_assets(
+                    fal_result["assets"], storyboards[reference_lang], episode,
+                )
+                _inject_asset_paths(storyboards[reference_lang], fal_staged_assets)
+                sb_path = (
+                    OUTPUT_BASE / f"week_{week:02d}" / f"ep{episode:02d}"
+                    / f"ep{episode:02d}_storyboard_{reference_lang.upper()}.json"
+                )
+                if sb_path.exists():
+                    sb_data = json.loads(sb_path.read_text(encoding="utf-8"))
+                    sb_data["storyboard"] = storyboards[reference_lang]
+                    sb_path.write_text(
+                        json.dumps(sb_data, indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                cost = fal_result.get("total_cost_usd", 0)
+                print(f"  OK   {len(fal_staged_assets)} assets staged (${cost:.2f})")
+                logger.info(
+                    f"EP{episode:02d} fal assets: {len(fal_staged_assets)} staged, "
+                    f"${cost:.2f}"
+                )
+            except Exception as e:
+                msg = f"fal_asset_agent: {e}"
+                logger.warning(f"EP{episode:02d} {msg} — GENERATED scenes will render without assets")
+                print(f"  WARN {msg}")
+
     # Dry-run ends after voice
     if dry_run:
         # Print a summary of storyboards so the user can review before full run
@@ -338,6 +550,17 @@ def _run_episode(
     visual_ok = False
     visual_rendered_duration: float | None = None
     visual_storyboard_planned: float | None = None
+
+    # Gate: storyboard required for production render (no legacy fallback)
+    if reference_lang and reference_lang not in storyboards:
+        msg = (
+            f"CREATIVE_PLAN_QA_FAILED: no approved storyboard for "
+            f"[{reference_lang.upper()}] — stopping before visual render"
+        )
+        result["errors"].append(msg)
+        logger.error(f"EP{episode:02d} {msg}")
+        print(f"\n[EP{episode:02d}] {msg}")
+        reference_lang = None
 
     if reference_lang:
         print(f"\n[EP{episode:02d}] Rendering visuals...")

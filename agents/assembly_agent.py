@@ -381,6 +381,142 @@ def _validate_output(path: Path, episode: int, lang: str = "en") -> float:
     return duration
 
 
+# ── Semantic voice-visual sync ──────────────────────────────────────────────
+
+NARRATED_REGION_TOLERANCE = 2.0
+MAX_POST_NARRATION_TAIL = 4.0
+LEGITIMATE_TAIL_ROLES = frozenset({
+    "TAKEAWAY", "CTA", "OUTRO", "END",
+})
+LEGITIMATE_TAIL_COMPONENTS = frozenset({
+    "TakeawayScene", "CTAScene",
+})
+
+
+def _semantic_voice_visual_sync(
+    voice_duration: float,
+    visual_duration: float,
+    render_props_path: Path,
+    episode: int,
+    lang: str,
+) -> dict:
+    """Two-region voice-visual sync check.
+
+    Region 1 — Narrated region: the portion of the visual timeline covered
+    by scenes that carry narration. Must be within NARRATED_REGION_TOLERANCE
+    of voice_duration.
+
+    Region 2 — Post-narration tail: scenes after the last narrated scene.
+    Allowed only when every trailing scene has a legitimate ending role
+    (TAKEAWAY, CTA, OUTRO) and the tail is <= MAX_POST_NARRATION_TAIL.
+    """
+    tag = f"EP{episode:02d} [{lang.upper()}]"
+
+    storyboard: list[dict] = []
+    if render_props_path.exists():
+        try:
+            props = json.loads(render_props_path.read_text(encoding="utf-8"))
+            storyboard = props.get("storyboard", [])
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if not storyboard:
+        raw_delta = abs(voice_duration - visual_duration)
+        logger.info(
+            f"{tag} VOICE_VISUAL_SYNC check (no storyboard): "
+            f"voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  "
+            f"delta={raw_delta:.2f}s  tolerance={NARRATED_REGION_TOLERANCE:.1f}s"
+        )
+        if raw_delta > NARRATED_REGION_TOLERANCE:
+            msg = (
+                f"{tag} VOICE_VISUAL_SYNC=FAIL: "
+                f"voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  "
+                f"delta={raw_delta:.2f}s exceeds {NARRATED_REGION_TOLERANCE:.1f}s tolerance. "
+                f"No storyboard available for semantic analysis."
+            )
+            logger.error(msg)
+            return {"pass": False, "message": msg}
+        logger.info(f"{tag} VOICE_VISUAL_SYNC=PASS (no storyboard, within tolerance)")
+        logger.info(f"VOICE_VISUAL_SYNC=PASS  voice={voice_duration:.2f}s  visual={visual_duration:.2f}s")
+        return {"pass": True, "message": "PASS"}
+
+    overhang = visual_duration - voice_duration
+
+    if overhang < 0:
+        shortfall = abs(overhang)
+        if shortfall > NARRATED_REGION_TOLERANCE:
+            msg = (
+                f"{tag} VOICE_VISUAL_SYNC=FAIL (visual shorter than voice): "
+                f"voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  "
+                f"shortfall={shortfall:.2f}s exceeds {NARRATED_REGION_TOLERANCE:.1f}s tolerance."
+            )
+            logger.error(msg)
+            return {"pass": False, "message": msg}
+    elif overhang <= NARRATED_REGION_TOLERANCE:
+        pass
+    else:
+        tail_duration = 0.0
+        tail_scenes: list[dict] = []
+        cumulative = 0.0
+        for s in storyboard:
+            dur = s.get("duration_seconds", 0.0)
+            scene_start = cumulative
+            cumulative += dur
+            if scene_start >= voice_duration:
+                tail_scenes.append(s)
+                tail_duration += dur
+            elif cumulative > voice_duration:
+                partial = cumulative - voice_duration
+                tail_scenes.append(s)
+                tail_duration += partial
+
+        for s in tail_scenes:
+            scene_type = (s.get("scene_type") or "").upper()
+            component = s.get("component", "")
+            if scene_type not in LEGITIMATE_TAIL_ROLES and component not in LEGITIMATE_TAIL_COMPONENTS:
+                msg = (
+                    f"{tag} VOICE_VISUAL_SYNC=FAIL (illegitimate tail): "
+                    f"scene s{s.get('scene_id', '?'):02d} ({component}) has "
+                    f"scene_type='{scene_type}' which is not a legitimate "
+                    f"post-narration role ({', '.join(sorted(LEGITIMATE_TAIL_ROLES))}). "
+                    f"Non-ending content after narration ends indicates a sync error."
+                )
+                logger.error(msg)
+                return {"pass": False, "message": msg}
+
+        if overhang > MAX_POST_NARRATION_TAIL:
+            msg = (
+                f"{tag} VOICE_VISUAL_SYNC=FAIL (excessive tail): "
+                f"post_narration_tail={overhang:.2f}s exceeds "
+                f"{MAX_POST_NARRATION_TAIL:.1f}s maximum."
+            )
+            logger.error(msg)
+            return {"pass": False, "message": msg}
+
+    narrated_delta = min(overhang, NARRATED_REGION_TOLERANCE) if overhang >= 0 else abs(overhang)
+    post_roll = max(0.0, overhang)
+
+    logger.info(
+        f"{tag} VOICE_VISUAL_SYNC semantic check: "
+        f"voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  "
+        f"overhang={overhang:.2f}s  "
+        f"narrated_delta={narrated_delta:.2f}s  post_roll={post_roll:.2f}s"
+    )
+    logger.info(f"{tag} VOICE_VISUAL_SYNC=PASS")
+    logger.info(
+        f"VOICE_VISUAL_SYNC=PASS  voice={voice_duration:.2f}s  "
+        f"visual={visual_duration:.2f}s  "
+        f"overhang={overhang:.2f}s  post_roll={post_roll:.2f}s"
+    )
+    return {
+        "pass": True,
+        "message": "PASS",
+        "narrated_delta": narrated_delta,
+        "post_roll": post_roll,
+        "overhang": overhang,
+    }
+
+
 def run(
     episode: int,
     week: int,
@@ -533,24 +669,11 @@ def run(
     finally:
         visual_container.close()
 
-    sync_delta = abs(voice_duration - visual_duration)
-    SYNC_TOLERANCE = 2.0
-
-    logger.info(
-        f"EP{episode:02d} [{lang.upper()}] VOICE_VISUAL_SYNC check: "
-        f"voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  "
-        f"delta={sync_delta:.2f}s  tolerance={SYNC_TOLERANCE:.1f}s"
+    sync_result = _semantic_voice_visual_sync(
+        voice_duration, visual_duration, render_props_path, episode, lang,
     )
-
-    if sync_delta > SYNC_TOLERANCE:
-        raise RuntimeError(
-            f"EP{episode:02d} [{lang.upper()}] VOICE_VISUAL_SYNC=FAIL: "
-            f"voice_duration={voice_duration:.2f}s  visual_duration={visual_duration:.2f}s  "
-            f"delta={sync_delta:.2f}s exceeds {SYNC_TOLERANCE:.1f}s tolerance. "
-            f"Never silently truncate. Fix the source durations."
-        )
-    logger.info(f"EP{episode:02d} [{lang.upper()}] VOICE_VISUAL_SYNC=PASS")
-    print(f"VOICE_VISUAL_SYNC=PASS  voice={voice_duration:.2f}s  visual={visual_duration:.2f}s  delta={sync_delta:.2f}s")
+    if not sync_result["pass"]:
+        raise RuntimeError(sync_result["message"])
 
     # ── THREE-HASH CONSISTENCY GUARD ─────────────────────────────────────
     # canonical_script_hash == storyboard_narration_hash == voice_source_hash

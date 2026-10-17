@@ -517,6 +517,105 @@ def _validate(data: dict, episode: int, lang: str = "en") -> None:
         _validate_token_spec(data.get("token_spec"))
 
 
+def compress_narration(
+    script: dict,
+    measured_duration: float,
+    target_duration: float,
+    episode: int,
+    week: int,
+    lang: str = "en",
+) -> dict:
+    """Tighten the voiceover narration to hit a shorter duration target.
+
+    Preserves hook, takeaway, meaning, and CTA. Only compresses the
+    explanation body. Returns the updated script dict with the new voiceover
+    written to disk.
+
+    Args:
+        script:            Current script dict
+        measured_duration: Actual Voice B duration in seconds
+        target_duration:   Desired duration in seconds (e.g. 55)
+        episode:           Episode number
+        week:              Week number
+        lang:              Language code
+
+    Returns:
+        Updated script dict with compressed voiceover.
+    """
+    current_voiceover = script.get("voiceover", "")
+    current_words = len(current_voiceover.split())
+    ratio = target_duration / measured_duration
+    target_words = max(120, int(current_words * ratio))
+
+    system_prompt = (
+        "You are a script compression specialist. Your job is to tighten a "
+        "voiceover narration so it fits within a shorter time budget.\n\n"
+        "RULES:\n"
+        "- Preserve the opening hook EXACTLY (first sentence)\n"
+        "- Preserve the closing CTA EXACTLY (last sentence)\n"
+        "- Preserve meaning, technical accuracy, and flow\n"
+        "- Remove filler, redundant phrases, and unnecessary transitions\n"
+        "- Tighten explanations — fewer words, same concepts\n"
+        f"- Target EXACTLY {target_words} words (±5)\n"
+        "- Output ONLY the compressed voiceover text, nothing else\n"
+        "- Do NOT add new content or concepts"
+    )
+
+    user_msg = (
+        f"Current voiceover ({current_words} words, {measured_duration:.1f}s actual):\n\n"
+        f"{current_voiceover}\n\n"
+        f"Compress to ~{target_words} words (targeting {target_duration:.0f}s). "
+        f"Keep the hook and CTA sentences verbatim."
+    )
+
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    for attempt in range(1, 4):
+        try:
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] — narration compression "
+                f"attempt {attempt}/3 (target ~{target_words} words)"
+            )
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=800,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            compressed = response.content[0].text.strip()
+            word_count = len(compressed.split())
+            if word_count < 100 or word_count > target_words + 15:
+                raise ValueError(
+                    f"Compressed voiceover has {word_count} words "
+                    f"(expected ~{target_words})"
+                )
+            script["voiceover"] = compressed
+            output_path = (
+                _episode_dir(episode, week)
+                / f"ep{episode:02d}_script_{lang.upper()}.json"
+            )
+            output_path.write_text(
+                json.dumps(script, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            logger.info(
+                f"EP{episode:02d} [{lang.upper()}] — narration compressed: "
+                f"{current_words} -> {word_count} words"
+            )
+            return script
+        except Exception as e:
+            logger.warning(
+                f"EP{episode:02d} [{lang.upper()}] — compression attempt "
+                f"{attempt} failed: {e}"
+            )
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+
+    raise RuntimeError(
+        f"EP{episode:02d} [{lang.upper()}] narration compression failed after 3 attempts"
+    )
+
+
 def run(topic: str, episode: int, week: int, lang: str = "en") -> dict:
     """Generate a structured script JSON for one episode.
 

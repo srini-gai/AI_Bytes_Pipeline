@@ -50,7 +50,7 @@ interface DataSceneProps {
   qualitative?: boolean;
 }
 
-export const DataScene: React.FC<DataSceneProps> = ({dataSpec, accentColor, durationInFrames, qualitative = false}) => {
+export const DataScene: React.FC<DataSceneProps> = ({dataSpec: rawSpec, accentColor, durationInFrames, qualitative = false}) => {
   const frame = useCurrentFrame();
   const titleOpacity = interpolate(
     frame,
@@ -58,6 +58,16 @@ export const DataScene: React.FC<DataSceneProps> = ({dataSpec, accentColor, dura
     [0, 1],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
   );
+
+  // Normalize: VD may output `items` instead of `bars` — unify to `bars`.
+  // Default maxValue when absent so comparison columns scale correctly.
+  const normalizedBars = (rawSpec.bars ?? rawSpec.items ?? []).map(b => ({
+    ...b,
+    maxValue: b.maxValue ?? 100,
+  }));
+  const dataSpec: DataSpec = {...rawSpec, bars: normalizedBars};
+
+  const title = dataSpec.title ?? dataSpec.gap_label ?? '';
 
   return (
     <AbsoluteFill style={{backgroundColor: BG}}>
@@ -83,7 +93,7 @@ export const DataScene: React.FC<DataSceneProps> = ({dataSpec, accentColor, dura
           textShadow: '0 4px 20px rgba(0,0,0,0.9)',
         }}
       >
-        {dataSpec.title}
+        {title}
       </div>
 
       {dataSpec.type === 'bars' && <TokenTrainBars spec={dataSpec} accentColor={accentColor} frame={frame} durationInFrames={durationInFrames} qualitative={qualitative} />}
@@ -339,7 +349,7 @@ interface ComparisonColumnProps {
 }
 
 const ComparisonColumn: React.FC<ComparisonColumnProps> = ({bar, centerX, color, growProgress, unit, qualitative = false}) => {
-  const maxValue = bar.maxValue || 1;
+  const maxValue = bar.maxValue ?? 100;
   const heightRatio = Math.min(bar.value / maxValue, 1);
   const barH = Math.round(COMPARISON_MAX_BAR_H * heightRatio * growProgress);
   const currentValue = Math.round(bar.value * growProgress);
