@@ -37,7 +37,7 @@ from agents import (
     visual_mode_router,
     voice_agent,
 )
-from engine.channel_config import load_channel, get_default_channel
+from engine.channel_config import load_channel, get_default_channel, set_default_channel
 
 TOPICS_FILE = Path(__file__).parent / "topics.txt"
 OUTPUT_BASE = Path(os.getenv("OUTPUT_BASE_PATH", "./output"))
@@ -517,13 +517,19 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    set_default_channel(args.channel)
     channel_cfg = load_channel(args.channel)
+
+    global OUTPUT_BASE
+    if args.channel != "srini_on_ai":
+        OUTPUT_BASE = OUTPUT_BASE / args.channel
+        os.environ["OUTPUT_BASE_PATH"] = str(OUTPUT_BASE)
 
     week = args.week if args.week is not None else _auto_week()
     langs = (
         [lang.strip().lower() for lang in args.lang.split(",")]
         if args.lang
-        else _configured_langs()
+        else channel_cfg.languages
     )
 
     print(f"\nAI Bytes Pipeline")

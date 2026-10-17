@@ -1,0 +1,216 @@
+# ============================================================================
+# Cricket Pulse — Channel Pack v1 (internal proof channel)
+# ============================================================================
+# Proof that Engine v1 can produce a completely different channel identity
+# without inheriting Srini-on-AI branding, prompts, fingerprints, or
+# AI-domain guidance.
+#
+# NOT a public channel. Used for Channel Factory validation only.
+# ============================================================================
+
+id: cricket_pulse
+name: "Cricket Pulse"
+tagline: "Cricket, explained in 60 seconds."
+format: youtube_shorts
+language_default: en
+languages: [en]
+
+
+# ── Brand ────────────────────────────────────────────────────────────────────
+# Warm green-and-gold palette inspired by cricket outfields and stumps,
+# deliberately different from the cold purple/teal AI Bytes palette.
+
+brand:
+  colors:
+    bg: "#0a1a0a"
+    accent: "#4ade80"
+    accent2: "#facc15"
+  logo: "cricket-pulse-logo.png"
+  cta_text: "Follow Cricket Pulse for quick cricket explainers."
+  hashtag: "#CricketPulse"
+  default_title_pattern: "Cricket Pulse EP{episode:02d} #Shorts"
+
+
+# ── Voice (ElevenLabs) ───────────────────────────────────────────────────────
+# LIMITATION: No dedicated sports voice configured. Using the shared
+# ElevenLabs infrastructure with cricket-appropriate pacing settings.
+# Voice ID is read from the same env key — a production cricket channel
+# would need its own voice clone and env key.
+
+voice:
+  model_id: "eleven_multilingual_v2"
+  output_format: "mp3_44100_128"
+  defaults:
+    stability: 0.38
+    similarity_boost: 0.75
+    style: 0.15
+    speed: 1.08
+    use_speaker_boost: true
+  env_voice_id_key: "ELEVENLABS_VOICE_ID"
+  duration_windows:
+    en:
+      min: 40.0
+      max: 66.0
+
+
+# ── Script ───────────────────────────────────────────────────────────────────
+
+script:
+  persona: >-
+    You are a YouTube Shorts scriptwriter for the Cricket Pulse channel.
+    Cricket Pulse produces 60-second educational shorts explaining cricket
+    concepts, tactics, physics, rules and history to casual fans who want
+    to understand the game better.
+  voiceover_word_range: [150, 175]
+  voiceover_target_words: 155
+  tags_always_include: "#CricketPulse"
+  theme_guide:
+    energy:
+      accent: "#4ade80"
+      accent2: "#facc15"
+      overlay: "rgba(10,26,10,0.35)"
+      pexels_mood: "cricket green stadium sport"
+    danger:
+      accent: "#ef4444"
+      accent2: "#f97316"
+      overlay: "rgba(20,5,0,0.45)"
+      pexels_mood: "red dramatic sport intense"
+    calm:
+      accent: "#38bdf8"
+      accent2: "#e2e8f0"
+      overlay: "rgba(0,10,30,0.40)"
+      pexels_mood: "soft blue sky cricket ground"
+    creative:
+      accent: "#f59e0b"
+      accent2: "#fb923c"
+      overlay: "rgba(20,10,0,0.40)"
+      pexels_mood: "warm golden sunlight cricket"
+    future:
+      accent: "#22d3ee"
+      accent2: "#818cf8"
+      overlay: "rgba(0,10,20,0.45)"
+      pexels_mood: "modern sport technology stadium"
+    technical:
+      accent: "#22c55e"
+      accent2: "#86efac"
+      overlay: "rgba(0,15,5,0.45)"
+      pexels_mood: "green field pitch analysis"
+
+
+# ── Visual Director ──────────────────────────────────────────────────────────
+
+visual:
+  remotion_composition_id: "AIBytesReel"
+  default_theme:
+    name: "energy"
+    accent: "#4ade80"
+    accent2: "#facc15"
+    overlay: "rgba(10,26,10,0.35)"
+    pexels_mood: "cricket green stadium sport"
+  quality_gates:
+    target_min_seconds: 45.0
+    target_max_seconds: 60.0
+    max_hook_seconds: 4.0
+    max_cta_seconds: 3.0
+  narration_pacing:
+    min_wps: 2.0
+    max_wps: 4.0
+  weekly_diversity_guideline:
+    native_motion: "~3/week"
+    hybrid_generated: "~2/week"
+  fingerprint_channel_key: "cricket_pulse"
+
+
+# ── Domain (content subject matter) ──────────────────────────────────────────
+# Cricket-specific guidance. No AI terminology, no technology-explainer
+# language, no neural-network metaphors.
+
+domain:
+  id: cricket_sports
+  description: >-
+    Cricket concepts, tactics, physics, rules, and history explained to
+    casual fans. No AI, no technology, no programming.
+  content_guidance: |
+    DOMAIN-SPECIFIC TOPIC ROUTING:
+    Choose diagram_type="flow" when the topic involves:
+    - A sequence of events or decisions in cricket (batting order, field
+      placement strategy, bowling spell planning, DRS review process).
+    - Match formats and their progression (powerplay phases, innings
+      structure, super over rules).
+
+    Choose diagram_type="sketch" when the topic involves:
+    - Physical or mechanical processes with connected components
+      (ball swing mechanics, seam position, spin axis, bat angle physics).
+    - Field placement diagrams showing player positions and movement.
+    - Pitch maps, bowling lines, or batting zones.
+
+    Choose diagram_type="hub_spoke" when the topic involves:
+    - A central cricket concept with branching variations (types of
+      deliveries from a single bowler, fielding positions around a
+      batsman, formats of the game branching from cricket).
+
+    Choose diagram_type="split_compare" when the topic involves:
+    - Comparing two approaches, techniques, or eras (pace vs spin,
+      Test vs T20, conventional swing vs reverse swing).
+
+    Choose diagram_type="dial" when the topic involves:
+    - A single variable on a spectrum (pitch hardness, ball age,
+      batting strike rate, bowling economy rate).
+
+    Choose diagram_type="data" when the topic involves:
+    - Statistics, records, scoring rates, bowling figures, run rates,
+      averages, or strike rates.
+
+    DOMAIN-SPECIFIC DIAGRAM ASSOCIATIONS:
+    hub_spoke    → Types of spin bowling, Fielding positions
+    flow         → DRS review process, Powerplay phases, Innings structure
+    sketch       → Ball swing mechanics, Seam positions, Field placements
+    split_compare → Pace vs Spin, Test vs T20, Conventional vs Reverse swing
+    dial         → Bowling speed, Strike rate, Economy rate
+    bar_chart    → Batting averages, Run rates, Records
+    side_by_side → Red ball vs White ball, ODI vs T20
+
+    DOMAIN-SPECIFIC THEME ASSOCIATIONS:
+    - danger:    injuries, controversial decisions, match-fixing, bouncers
+    - calm:      Test cricket, strategy, patient batting, field settings
+    - creative:  unorthodox shots, spin wizardry, innovative captaincy
+    - future:    T20 evolution, Impact Player rule, cricket technology
+    - technical: bowling mechanics, pitch science, ball physics, DRS
+    - energy:    general cricket concepts, exciting matches, records
+  visual_guidance: |
+    ART DIRECTION: Use art_direction.id = "field-green" for all cricket episodes.
+    This is the registered sports visual world — do NOT propose NEW_WORLD_REQUIRED.
+
+    VISUAL MODE: Use NATIVE visual_mode for ALL scenes. Do NOT use GENERATED mode.
+    No fal image generation is configured for this channel. Every scene must use
+    Remotion-native components (FlowScene, SketchScene, SplitCompareScene, etc.)
+    with Pexels background clips.
+
+    DOMAIN-SPECIFIC VISUAL RULES:
+    - Use cricket imagery: stadium outfields, pitch surfaces, stumps,
+      cricket balls, bats, protective gear, scoreboards.
+    - Avoid: robots, neural networks, circuit boards, server rooms, code
+      editors, AI assistants, chatbots, or any technology imagery.
+    - Cricket-specific visual approaches:
+      * Ball physics (swing, seam, spin) → sketch diagrams showing forces,
+        airflow arrows, seam position angles.
+      * Field placements → hub_spoke or sketch with positional markers.
+      * Match statistics → data bars/counters with cricket-specific units
+        (runs, wickets, overs, strike rate).
+      * Rule explanations → flow diagrams with decision nodes.
+    - Prefer NATIVE mode with FlowScene/PipelineScene for cricket
+      processes and sequences.
+    - Use GENERATED mode for atmospheric cricket moments, stadium
+      panoramas, or player-action metaphors — never for technology imagery.
+
+
+# ── Publisher (YouTube) ──────────────────────────────────────────────────────
+# PREVIEW ONLY — no real YouTube credentials configured.
+# Publishing gate must remain closed for this proof channel.
+
+publisher:
+  category_id: "17"
+  env_keys:
+    en:
+      channel_id: "YOUTUBE_CHANNEL_ID_CRICKET"
+      refresh_token: "YOUTUBE_REFRESH_TOKEN_CRICKET"

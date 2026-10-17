@@ -381,11 +381,114 @@ export const BRIGHT_WORKSPACE: ArtDirection = {
   pexels_mood: 'bright workspace productivity',
 };
 
+// ─── Field Green (sports / outdoor channels) ──────────────────────────────
+
+export const FIELD_GREEN: ArtDirection = {
+  id: 'field-green',
+  name: 'Field Green — Sports Editorial',
+
+  visual_world: 'sports outfield — deep green base with golden accents, chalk-line diagrams, warm ambient light, stadium atmosphere',
+  light_or_dark: 'dark',
+
+  palette: {
+    bg: '#0a1a0a',
+    surface: 'rgba(74,222,128,0.06)',
+    border: 'rgba(74,222,128,0.18)',
+    text: '#f0fdf4',
+    muted: 'rgba(240,253,244,0.55)',
+    primary: '#4ade80',
+    secondary: '#facc15',
+    success: '#4ade80',
+    warning: '#facc15',
+    danger: '#ef4444',
+    structural: '#22c55e',
+    passive: '#4b5563',
+  },
+
+  background: {
+    description: 'deep green-black with subtle radial green glow',
+    css: '#0a1a0a',
+  },
+
+  surface_style: {
+    background: 'rgba(74,222,128,0.06)',
+    border: '2px solid rgba(74,222,128,0.18)',
+    borderRadius: 16,
+    shadow: '0 0 40px rgba(74,222,128,0.08)',
+  },
+
+  border_style: {
+    width: 2,
+    color: 'rgba(74,222,128,0.18)',
+    separator: 'rgba(74,222,128,0.10)',
+  },
+
+  depth: {
+    description: 'flat 2D with soft green glow accents',
+    shadow_sm: '0 0 16px rgba(74,222,128,0.06)',
+    shadow_md: '0 0 32px rgba(74,222,128,0.10)',
+    shadow_lg: '0 0 48px rgba(74,222,128,0.14)',
+    use_glow: true,
+    glow_color: 'rgba(74,222,128,0.20)',
+  },
+
+  typography: {
+    description: 'clean sports editorial — system sans, no glow, weight-based hierarchy',
+    font: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    mono: '"JetBrains Mono", "Fira Code", "SF Mono", monospace',
+    heading_color: '#f0fdf4',
+    heading_glow: false,
+  },
+
+  shape_language: 'rounded rectangles (12-16px), badge pills, directional arrows',
+  icon_language: 'emoji and sport-neutral geometric shapes',
+  transition_family: 'crossfade + cut',
+  ambient_motion: 'subtle green glow pulses, gentle parallax',
+  camera_language: 'static reveals, pan-follow for sequences',
+  framing_rules: 'centered composition, diagram panels with generous padding',
+
+  character_chatbot: {
+    idle: '#4b5563',
+    active: '#6b7280',
+    frozen: '#374151',
+  },
+
+  character_agent: {
+    idle: '#4ade80',
+    active: '#86efac',
+    done: '#facc15',
+  },
+
+  item_colors: ['#4ade80', '#22c55e', '#facc15', '#fb923c', '#38bdf8'],
+
+  split_compare: {
+    left_color: '#ef4444',
+    right_color: '#4ade80',
+    vs_bg: '#14271a',
+    vs_text: 'rgba(240,253,244,0.6)',
+    panel_text: 'rgba(240,253,244,0.88)',
+    verdict_bg_opacity: '15',
+  },
+
+  zones: {
+    track_fill: 'rgba(74,222,128,0.04)',
+    track_stroke: 'rgba(74,222,128,0.08)',
+    label_color: 'rgba(240,253,244,0.5)',
+    task_card_bg: 'rgba(74,222,128,0.06)',
+    task_card_border: 'rgba(74,222,128,0.18)',
+    task_card_text: '#f0fdf4',
+  },
+
+  overlay: 'rgba(10,26,10,0.40)',
+  pexels_mood: 'green field sport outdoor',
+};
+
 // ─── Registry ───────────────────────────────────────────────────────────────
 
 export const ART_DIRECTIONS: Record<string, ArtDirection> = {
   'cinematic-dark': CINEMATIC_DARK,
   'bright-workspace': BRIGHT_WORKSPACE,
+  'field-green': FIELD_GREEN,
 };
 
 /**

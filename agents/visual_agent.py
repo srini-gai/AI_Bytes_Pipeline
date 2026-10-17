@@ -571,6 +571,7 @@ def _build_props(
         props["storyboard"] = storyboard
         logger.info(f"Props include storyboard ({len(storyboard)} scenes) — Visual Director mode")
     else:
+        props["storyboard"] = None
         props["slides"] = slides
         # Legacy diagram / data specs only used in non-storyboard mode
         if script.get("diagram_spec"):

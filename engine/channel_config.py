@@ -224,5 +224,11 @@ def load_channel(channel_id: str = _DEFAULT_CHANNEL) -> ChannelConfig:
 
 
 def get_default_channel() -> str:
-    """Return the default channel ID."""
+    """Return the active channel ID (set by orchestrator --channel flag)."""
     return _DEFAULT_CHANNEL
+
+
+def set_default_channel(channel_id: str) -> None:
+    """Set the active channel for this process. Called once by the orchestrator."""
+    global _DEFAULT_CHANNEL
+    _DEFAULT_CHANNEL = channel_id

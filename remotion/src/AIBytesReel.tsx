@@ -85,6 +85,7 @@ import type {ArtDirection} from './themes';
 
 const FPS = 30;
 const CROSSFADE = 9; // 0.3s at 30fps
+const TRANSITION_FLOOR = 0.12; // incoming scene starts at 12% opacity — prevents content-free gap
 
 // Legacy fixed-section timings
 const HOOK_START      = 0;
@@ -112,7 +113,7 @@ const Fade: React.FC<{duration: number; noFadeIn?: boolean; children: React.Reac
   children,
 }) => {
   const frame = useCurrentFrame();
-  const fadeIn  = noFadeIn ? 1 : interpolate(frame, [0, CROSSFADE], [0, 1], {extrapolateRight: 'clamp'});
+  const fadeIn  = noFadeIn ? 1 : interpolate(frame, [0, CROSSFADE], [TRANSITION_FLOOR, 1], {extrapolateRight: 'clamp'});
   const fadeOut = interpolate(frame, [duration - CROSSFADE, duration], [1, 0], {extrapolateRight: 'clamp'});
   const opacity = Math.min(fadeIn, fadeOut);
   return <AbsoluteFill style={{opacity}}>{children}</AbsoluteFill>;
@@ -729,7 +730,7 @@ const StoryboardReel: React.FC<StoryboardProps> = ({
         <Sequence key={scene.scene_id} from={startFrame} durationInFrames={durationFrames + overlap}>
           <Fade duration={durationFrames + overlap} noFadeIn={i === 0}>
             {renderStoryboardScene(
-              scene, theme, durationFrames, topic, hook, takeaway,
+              scene, theme, durationFrames + overlap, topic, hook, takeaway,
               clips, episode, generatedVideoClips, artDirection,
               channelName, logoPath, ctaText,
             )}
