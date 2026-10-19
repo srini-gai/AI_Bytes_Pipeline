@@ -31,6 +31,9 @@ output/
 !remotion/package.json
 !remotion/src/**/*.json
 
+# Production queue runtime state (rebuilt via reconcile)
+production_queue/*/queue.json
+
 # Pexels clip cache
 remotion/public/clips/
 
