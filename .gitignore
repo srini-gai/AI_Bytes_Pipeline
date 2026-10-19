@@ -34,6 +34,9 @@ output/
 # Production queue runtime state (rebuilt via reconcile)
 production_queue/*/queue.json
 
+# Topic Director planning runs (runtime state, rebuilt via plan)
+topic_director/*/run_*.json
+
 # Pexels clip cache
 remotion/public/clips/
 
